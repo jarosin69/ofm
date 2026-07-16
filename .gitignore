@@ -1,0 +1,15 @@
+# Secrets and credentials — NEVER commit these
+.env
+**/.env
+deploy/mosquitto/config/passwd
+
+# Local runtime junk
+*.log
+node_modules/
+__pycache__/
+.DS_Store
+Thumbs.db
+
+# Database dumps kept locally, not in Git
+*.sql.backup
+config-backup.sql

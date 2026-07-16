@@ -1,0 +1,90 @@
+# OFM Proof of Concept stack
+# Usage: copy .env.example to .env, edit passwords, then: docker compose up -d
+name: ofm
+
+services:
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: ofm-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ofm
+      TZ: Etc/UTC                  # ADR-0003: database thinks in UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - tsdb-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro   # runs only on first start (empty volume)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ofm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: ofm-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"                # plain MQTT for the PoC; TLS (8883) comes later
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - mosq-data:/mosquitto/data
+      - mosq-log:/mosquitto/log
+
+  nodered:
+    image: nodered/node-red:4.0
+    container_name: ofm-nodered
+    restart: unless-stopped
+    environment:
+      TZ: Australia/Melbourne      # log readability only; data path uses epoch ms UTC
+    ports:
+      - "1880:1880"
+    volumes:
+      - nodered-data:/data
+      - sf-queue:/sfqueue          # store-and-forward disk queue (ADR-0002)
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: ofm-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      TZ: Australia/Melbourne      # display layer: local time lives here (ADR-0003)
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+  nocodb:
+    image: nocodb/nocodb:latest
+    container_name: ofm-nocodb
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - nocodb-data:/usr/app/data
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+volumes:
+  tsdb-data:
+  mosq-data:
+  mosq-log:
+  nodered-data:
+  grafana-data:
+  nocodb-data:
+  sf-queue:
