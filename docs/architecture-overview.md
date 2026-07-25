@@ -90,6 +90,40 @@ OFM organizes responsibilities into seven layers. Each layer talks only to its n
 
 The layering rule that matters most in practice: **PLC addresses exist only in Layers 1–3; business context exists everywhere above.** A Grafana dashboard, a Python script, or an AI assistant can be written by someone who has never heard of DB20 or a holding register.
 
+*Figure 1 — System architecture. The model feeds the cache (ADR-0001); the pipeline has two independent outputs: live state to the UNS, permanent record to the historian (ADR-0002). Applications touch only Layers 4–5.*
+
+```mermaid
+flowchart TB
+  subgraph L1["Layer 1 · Plant"]
+    PLC["PLCs and sensors<br/>S7 · Modbus · OPC UA"]
+  end
+  subgraph L3["Layer 3 · Runtime — Node-RED"]
+    PIPE["Generic pipeline<br/>normalize · validate · deadband"]
+    CACHE["Model cache<br/>3 indexes, O(1)"]
+  end
+  subgraph PG["PostgreSQL / TimescaleDB"]
+    MODEL["Layer 2 · config schema<br/>Industrial Information Model"]
+    HIST["Layer 5 · hist schema<br/>historian hypertables"]
+  end
+  MQTT["Layer 4 · Unified Namespace — Mosquitto<br/>live state + _meta, retained"]
+  subgraph APPS["Layers 6–7 · Applications and analytics"]
+    GRAF["Grafana"]
+    PY["Python · OEE"]
+    NOCO["NocoDB<br/>model editor"]
+  end
+  PLC -->|"raw values"| PIPE
+  CACHE -->|"context"| PIPE
+  MODEL -->|"load once + NOTIFY"| CACHE
+  PIPE -->|"publish"| MQTT
+  PIPE -->|"batched insert"| HIST
+  MQTT --> GRAF
+  MQTT --> PY
+  HIST --> GRAF
+  HIST --> PY
+  NOCO -->|"edit model"| MODEL
+  PY -->|"OEE topics"| MQTT
+```
+
 ## 5. The three models
 
 The information model is deliberately split into three sub-models with different lifecycles. The split keeps the schema clean and mirrors three distinct questions about a factory.
@@ -171,6 +205,29 @@ acquire (OPC UA subscribe / S7 poll / Modbus poll)
 ```
 
 Unmapped addresses divert to quarantine after the lookup step. Write-back (`_cmd`) flows run the pipeline in reverse with explicit per-tag enablement in the model.
+
+*Figure 2 — Runtime data flow. The model-change path (top) and the per-value path (bottom) never intersect: configuration edits reach the runtime through cache reload, and the hot path issues no SQL for model resolution.*
+
+```mermaid
+sequenceDiagram
+  participant P as PLC
+  participant R as Node-RED runtime
+  participant C as Model cache
+  participant DB as PostgreSQL config
+  participant M as Mosquitto UNS
+  participant H as TimescaleDB hist
+  Note over DB,C: Startup and every model edit
+  DB->>C: SELECT * FROM vw_RuntimeModel
+  DB--)C: NOTIFY model_changed → reload, atomic swap
+  Note over P,H: Every value change
+  P->>R: raw value + SourceTimestamp
+  R->>C: lookup by PLC address
+  C-->>R: topic, propertyId, unit, scale, deadband, limits
+  R->>R: normalize → validate → deadband
+  R->>M: publish {v, ts, q, tss} retained
+  R->>H: batched INSERT (ts, propertyId, value, quality)
+  Note over M: unmapped address? → ofm/_unmapped/... quarantine
+```
 
 ### 7.2 The model cache
 
