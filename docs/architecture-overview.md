@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.1 (draft for review) |
+| **Version** | 0.2 (2026-10-09) — aligned with ADR-0004 to ADR-0007 and the amendments to ADR-0001 to ADR-0003 |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -17,13 +17,13 @@ This document is deliberately short. It explains what OFM is, why it is shaped t
 
 OFM (Open Factory Model) is an open-source industrial data platform for manufacturing plants. It provides a single source of truth for operational technology (OT) data by combining two ideas that are usually implemented separately:
 
-**A Unified Namespace (UNS)** — an MQTT broker carrying the live state of the entire plant in a business-oriented topic hierarchy, so that every application (dashboards, MES functions, analytics, AI) consumes one consistent, contextualized stream instead of integrating point-to-point with PLCs.
+**A Unified Namespace (UNS)** — an MQTT broker carrying the live state of the entire plant in a business-oriented topic hierarchy, so that every application (dashboards, MES functions, analytics, AI) consumes one consistent, contextualised stream instead of integrating point-to-point with PLCs.
 
 **An Industrial Information Model (IIM)** — a relational model of the factory in PostgreSQL/TimescaleDB that describes every enterprise, site, area, line, machine, and property, together with its engineering metadata (units, limits, deadbands, PLC mappings). The UNS is *generated from* this model rather than configured by hand.
 
 The defining architectural principle is that OFM is **model-driven**: the database is the single authoritative description of the factory, and every other component — MQTT topics, retained metadata, historian mappings, dashboards, documentation — is derived from it. Adding a sensor to the platform means inserting rows into the model, not editing flows or typing topic strings.
 
-The platform is built entirely from free, open-source components: Node-RED as the runtime engine, Eclipse Mosquitto as the UNS transport, PostgreSQL/TimescaleDB as both the information model and the historian, Grafana for visualization, and Python for analytics. The initial deployment target is a single food-manufacturing site (chocolate production, Melbourne), scaling from one line to plant-wide coverage; the architecture deliberately leaves room for multi-site growth without requiring it.
+The platform is built entirely from components that are free to self-host: Node-RED as the runtime engine, Eclipse Mosquitto as the UNS transport, PostgreSQL/TimescaleDB as both the information model and the historian, Grafana for visualisation, and Python for analytics. All are open source except TimescaleDB's compression and continuous-aggregate features, which are free to self-host under the source-available Timescale License (section 12 lists each licence). The initial deployment target is a single food-manufacturing site (chocolate production, Melbourne), scaling from one line to plant-wide coverage; the architecture deliberately leaves room for multi-site growth without requiring it.
 
 ## 2. Vision and design philosophy
 
@@ -51,7 +51,7 @@ Seven principles govern every design decision. Where a principle was contested o
 
 ### 3.1 Functional scope
 
-OFM version 1 covers: acquisition of data from industrial controllers (OPC UA as the preferred protocol; Siemens S7, Modbus TCP and MQTT-native devices as required); normalization to engineering units and a canonical payload; contextualization against the information model; publication to the UNS with retained metadata; durable storage of measurements, events, machine states, and production counts in TimescaleDB; operator capture of downtime reason codes; OEE calculation at machine and line level; and visualization through Grafana.
+OFM version 1 covers: acquisition of data from industrial controllers (OPC UA as the preferred protocol; Siemens S7, Modbus TCP and MQTT-native devices as required); normalisation to engineering units and a canonical payload; contextualisation against the information model; publication to the UNS with retained metadata; durable storage of measurements, events, machine states, and production counts in TimescaleDB; operator capture of downtime reason codes; OEE calculation at machine and line level; and visualisation through Grafana.
 
 Explicitly out of scope for version 1: closed-loop control through the platform (PLCs remain the control authority; OFM writes setpoints only where a deliberate, per-tag decision is recorded), recipe management beyond identification of the active recipe, batch genealogy, multi-site federation, and safety functions of any kind. Safety circuits and E-stops remain entirely on dedicated safety PLCs and are invisible to OFM.
 
@@ -72,17 +72,17 @@ These are engineering targets for a single site, not guarantees; they size the d
 
 ## 4. System context — the seven layers
 
-OFM organizes responsibilities into seven layers. Each layer talks only to its neighbours; the numbering runs from the physical plant upward.
+OFM organises responsibilities into seven layers. Each layer talks only to its neighbours; the numbering runs from the physical plant upward.
 
 **Layer 1 — Industrial assets.** The physical plant: lines, machines, motors, valves, sensors, and the PLCs controlling them. OFM observes this layer; it does not replace any part of it.
 
 **Layer 2 — The Industrial Information Model.** The PostgreSQL schema describing Layer 1 and everything OFM should do with its data. Detailed in section 5.
 
-**Layer 3 — The runtime.** Node-RED instances executing generic, model-driven flows: read from controllers, resolve context from the cached model, normalize, validate, publish, and record. Detailed in section 7.
+**Layer 3 — The runtime.** Node-RED instances executing generic, model-driven flows: read from controllers, resolve context from the cached model, normalise, validate, publish, and record. Detailed in section 7.
 
 **Layer 4 — The Unified Namespace.** Mosquitto carrying live plant state as retained-where-appropriate MQTT topics in the ISA-95-style hierarchy generated from the model. The UNS holds *current state only* — it is the plant's live digital twin, not its memory.
 
-**Layer 5 — The historian.** TimescaleDB hypertables holding the permanent record: measurements, events, machine state intervals, production counts, energy. Shares the PostgreSQL instance with Layer 2 but lives in a separate schema with separate access roles.
+**Layer 5 — The historian.** TimescaleDB hypertables holding the permanent record: measurements, events, machine state events (from which intervals are derived), production counts, energy. History is append-only (ADR-0006). Shares the PostgreSQL instance with Layer 2 but lives in a separate schema with separate access roles.
 
 **Layer 6 — Applications.** Grafana dashboards, operator screens, Python services, future MES functions. Applications subscribe to the UNS for live data and query the historian for history. They never communicate with Layers 1–3 directly.
 
@@ -98,7 +98,7 @@ flowchart TB
     PLC["PLCs and sensors<br/>S7 · Modbus · OPC UA"]
   end
   subgraph L3["Layer 3 · Runtime — Node-RED"]
-    PIPE["Generic pipeline<br/>normalize · validate · deadband"]
+    PIPE["Generic pipeline<br/>normalise · validate · deadband"]
     CACHE["Model cache<br/>3 indexes, O(1)"]
   end
   subgraph PG["PostgreSQL / TimescaleDB"]
@@ -128,13 +128,15 @@ flowchart TB
 
 The information model is deliberately split into three sub-models with different lifecycles. The split keeps the schema clean and mirrors three distinct questions about a factory.
 
-**The Physical Model — what exists.** The asset hierarchy: Enterprise → Site → Area → Line → Machine, with optional sub-assets (motor, valve, sensor) below machine level. Rows here change rarely — when equipment is installed, moved, or renamed. Every entity carries an immutable surrogate ID and a mutable display name; all foreign keys and all historian rows reference the ID, never the name, so renaming `Line01` to `MouldingLine01` is a one-column update that automatically re-derives every topic while leaving five years of history intact.
+**The Physical Model — what exists.** The asset hierarchy: Enterprise → Site → Area → Line → Machine, with optional sub-assets (motor, valve, sensor) below machine level. Rows here change rarely — when equipment is installed, moved, or renamed. Every entity carries an immutable integer ID and a mutable name, unique within its parent; all foreign keys and all historian rows reference the ID, never the name (ADR-0004). Renaming `Line01` to `MouldingLine01` is therefore a one-column update that re-derives every topic, clears the old retained topics from the broker, and leaves five years of history intact. Entities with history are retired (`retired_at`), never deleted.
 
-**The Information Model — what is measured.** `MachineProperty` and its supporting tables: for each machine, the properties observed on it (Temperature, Speed, Running, Power…), each with datatype, engineering unit, scaling, deadband, publish policy, alarm limits, historian policy, and display metadata. The `PLCMapping` table binds each property to its current acquisition source (protocol, address, node ID). Mappings are expected to change independently of properties — when maintenance moves a tag from `DB20.Temp` to `DB30.Temp`, one mapping row changes and nothing else in the system notices.
+**The Information Model — what is measured.** `machine_property` and its supporting tables: for each machine, the properties observed on it (temperature, speed, running, power…), each with datatype, engineering unit (from an `engineering_unit` lookup table, so `degC`, `°C` and `C` cannot coexist), scaling, deadband, maximum publish interval (ADR-0007), alarm limits, historian policy, and display metadata. A `source` table describes each acquisition connection (a PLC or OPC UA server: protocol, endpoint, owning runtime instance). The `plc_mapping` table binds each property to an address on a source, unique per `(source_id, address)` because two PLCs can expose the same address (ADR-0001 amendment). Mappings are expected to change independently of properties — when maintenance moves a tag from `DB20.Temp` to `DB30.Temp`, one mapping row changes and nothing else in the system notices.
 
-**The Operational Model — what happens over time.** Entities that exist only in time: machine state intervals, downtime records with reason codes, production counts, shifts, operators, recipes-in-effect, alarms, batches. These tables sit at the boundary between configuration and history: their *definitions* (the state vocabulary, the reason-code catalogue, the shift calendar) are configuration; their *instances* are historian data.
+**The Operational Model — what happens over time.** Entities that exist only in time: machine state events, reason-code assignments, production counts, shifts, operators, recipes-in-effect, alarms, batches. All instances are recorded append-only — rows are inserted, never updated (ADR-0006). These tables sit at the boundary between configuration and history: their *definitions* (the state vocabulary, the reason-code catalogue, the shift calendar) are configuration; their *instances* are historian data.
 
-Everything else in OFM derives from these three models. The MQTT topic for a property is a deterministic function of its Physical-Model ancestry plus its property name, computed in the `vw_RuntimeModel` view. The retained `_meta` payload is a projection of Information-Model columns. Historian tables key on Information-Model IDs. Grafana dashboards are (in later phases) templated from the model. A separate `AssetRelationship (from_id, to_id, relation_type)` table is present from Phase 1 but unused until the semantic-graph work in section 20 — it is there so that the door stays open without committing to a vocabulary prematurely.
+All database identifiers are lowercase snake_case (ADR-0005); names such as `MachineProperty` in older material refer to `machine_property`.
+
+Everything else in OFM derives from these three models. The MQTT topic for a property is a deterministic function of its Physical-Model ancestry plus its property name, computed in the `vw_runtime_model` view. The retained `_meta` payload is a projection of Information-Model columns. Historian tables key on Information-Model IDs. Grafana dashboards are (in later phases) templated from the model. A separate `asset_relationship (from_id, to_id, relation_type)` table is present from Phase 1 but unused until the semantic-graph work in section 19 — it is there so that the door stays open without committing to a vocabulary prematurely.
 
 ## 6. The Unified Namespace
 
@@ -144,12 +146,12 @@ Topics encode business context only, following the Physical Model hierarchy:
 
 ```
 {enterprise}/{site}/{area}/{line}/{machine}/{property}
-mondelez/melbourne/chocolate/eggline01/depositor01/temperature
+acme/melbourne/chocolate/eggline01/depositor01/temperature
 ```
 
-Naming rules are enforced by the database (CHECK constraints on name columns), not by convention: lowercase, `a–z0–9_` only, no spaces, and never the MQTT-reserved characters `#`, `+`, `/` inside a segment. Because topics are generated, a malformed topic cannot reach the broker. Sub-asset properties extend the path by one segment (`.../depositor01/motor01/current`).
+Naming rules are enforced by the database (CHECK constraints on name columns), not by convention: lowercase, `a–z0–9_` only, no spaces, and never the MQTT-reserved characters `#`, `+`, `/` inside a segment. Because topics are generated, a malformed topic cannot reach the broker. Sub-asset properties extend the path by one segment (`.../depositor01/motor01/current`). The enterprise name `ofm` is reserved, so the platform branches below can never collide with the asset tree. (`acme` is a placeholder enterprise used in all examples.)
 
-Three reserved first-level branches exist outside the asset hierarchy: `ofm/_system/...` for platform health (cache status, historian queue depth), `ofm/_unmapped/...` for quarantined values whose PLC address is not in the model (ADR-0001), and `ofm/_cmd/...` for the deliberate, per-tag write-back paths, kept separate so that ACLs can treat commands differently from telemetry.
+Three reserved first-level branches exist outside the asset hierarchy: `ofm/_system/...` for platform health (cache status, historian queue depth, source status `ofm/_system/sources/{source}` and runtime status `ofm/_system/runtime/{runtime}` per ADR-0007), `ofm/_unmapped/{source}/{address}` for quarantined values whose address is not in the model (ADR-0001; `/`, `+` and `#` in the address are replaced by `_`, and the original address travels in the payload), and `ofm/_cmd/...` for the deliberate, per-tag write-back paths, kept separate so that ACLs can treat commands differently from telemetry.
 
 ### 6.2 Live payload
 
@@ -164,7 +166,7 @@ Every telemetry topic carries one canonical JSON payload, defined normatively in
 }
 ```
 
-`v` is the value after normalization (engineering units, correct datatype); `ts` is epoch milliseconds UTC; `q` is quality (`good` | `uncertain` | `bad`); `tss` is timestamp provenance (`device` | `gateway`) per ADR-0003. Keys are terse deliberately — this payload is published thousands of times per second and parsed by everything. Values are published on change-after-deadband, retained, so any newly connected subscriber immediately receives current plant state.
+`v` is the value after normalisation (engineering units, correct datatype); `ts` is epoch milliseconds UTC; `q` is quality (`good` | `uncertain` | `bad`); `tss` is timestamp provenance (`device` | `gateway`) per ADR-0003. Keys are terse deliberately — this payload is published thousands of times per second and parsed by everything. Values are published retained, so any newly connected subscriber immediately receives current plant state. A value is published when it changes beyond its deadband, and in any case at least once per `max_publish_interval_ms` (default 60 s), so a consumer can treat a value older than twice its interval as stale. When a source loses communication, the runtime republishes all its properties with their last value and `q: "bad"` (ADR-0007). Values read by S7 polling carry no device time and are always `tss: "gateway"` (ADR-0003 amendment).
 
 ### 6.3 Metadata topics
 
@@ -177,16 +179,17 @@ Each property additionally exposes `.../{property}/_meta`, retained, republished
   "unit": "degC",
   "displayName": "Chocolate temperature",
   "low": 18.0, "high": 35.0,
+  "maxPublishIntervalMs": 60000,
   "alarmLow": 20.0, "alarmHigh": 32.0,
   "description": "Chocolate after temperer"
 }
 ```
 
-The split between live and meta topics keeps the hot payload small while making the namespace self-describing: a consumer can discover the entire plant, with engineering context, by subscribing to `+/+/+/+/+/+/_meta` and never touching the database. The `propertyId` field is the bridge for consumers that need to join UNS data with historian queries.
+The split between live and meta topics keeps the hot payload small while making the namespace self-describing: a consumer can discover the entire plant, with engineering context, by subscribing to `+/+/+/+/+/+/_meta` and, for sub-asset properties, `+/+/+/+/+/+/+/_meta`, without ever touching the database. When a property is renamed or retired, its old value and `_meta` topics are cleared with an empty retained message (ADR-0004). The `propertyId` field is the bridge for consumers that need to join UNS data with historian queries.
 
 ### 6.4 What the UNS is not
 
-The UNS carries current state, not history and not guaranteed delivery. Consumers requiring completeness read the historian (ADR-0002). The broker is Mosquitto with TLS, per-role ACLs (section 14), and no anonymous access; plain MQTT with JSON was chosen over Sparkplug B for v1 because human-readable payloads and a hand-shaped ISA-95 tree were judged more valuable than Sparkplug's birth/death semantics at single-site scale — recorded as a revisit-able decision (future ADR if multi-site or Ignition interoperability changes the calculus).
+The UNS carries current state, not history and not guaranteed delivery. Consumers requiring completeness read the historian (ADR-0002). The broker is Mosquitto with per-role ACLs, TLS (from Phase 2), and no anonymous access (section 13). Plain MQTT with JSON was chosen over Sparkplug B for v1 because human-readable payloads and a hand-shaped ISA-95 tree were judged more valuable at single-site scale. Sparkplug's one essential feature — birth/death certificates that expose dead sources — is replaced by OFM's own liveness signalling (ADR-0007). The choice is revisitable in a future ADR if multi-site or Ignition interoperability changes the calculus.
 
 ## 7. Runtime architecture
 
@@ -196,15 +199,15 @@ Node-RED runs a small number of *generic* flows; none contains machine-specific 
 
 ```
 acquire (OPC UA subscribe / S7 poll / Modbus poll)
-  → cache lookup (PLC address → property context)     [O(1), no SQL]
-  → normalize (scale, cast, unit)
+  → cache lookup ((source, address) → property context)  [O(1), no SQL]
+  → normalise (scale, cast, unit)
   → validate (range, datatype, timestamp sanity)
-  → deadband + rate limit (per-property policy)
+  → deadband + rate limit + max-interval republish (per-property policy)
   → publish UNS (retained, canonical payload)
   → historian write (batched, parallel path)
 ```
 
-Unmapped addresses divert to quarantine after the lookup step. Write-back (`_cmd`) flows run the pipeline in reverse with explicit per-tag enablement in the model.
+Unmapped addresses divert to quarantine after the lookup step. Separately from the per-value path, the runtime watches each source connection: on loss it publishes the source status, republishes the affected properties as `bad`, and records `unknown` for the affected machines (ADR-0007, ADR-0006). Write-back (`_cmd`) flows run the pipeline in reverse with explicit per-tag enablement in the model.
 
 *Figure 2 — Runtime data flow. The model-change path (top) and the per-value path (bottom) never intersect: configuration edits reach the runtime through cache reload, and the hot path issues no SQL for model resolution.*
 
@@ -217,89 +220,93 @@ sequenceDiagram
   participant M as Mosquitto UNS
   participant H as TimescaleDB hist
   Note over DB,C: Startup and every model edit
-  DB->>C: SELECT * FROM vw_RuntimeModel
-  DB--)C: NOTIFY model_changed → reload, atomic swap
+  DB->>C: SELECT * FROM vw_runtime_model (startup, Phase 1)
+  DB--)C: NOTIFY model_changed → reload, atomic swap (Phase 2)
   Note over P,H: Every value change
   P->>R: raw value + SourceTimestamp
-  R->>C: lookup by PLC address
+  R->>C: lookup by (source, address)
   C-->>R: topic, propertyId, unit, scale, deadband, limits
-  R->>R: normalize → validate → deadband
+  R->>R: normalise → validate → deadband
   R->>M: publish {v, ts, q, tss} retained
-  R->>H: batched INSERT (ts, propertyId, value, quality)
+  R->>H: batched INSERT (ts, property_id, value, quality, ts_source)
   Note over M: unmapped address? → ofm/_unmapped/... quarantine
 ```
 
 ### 7.2 The model cache
 
-Per ADR-0001, the runtime never queries SQL on the hot path. On startup, Node-RED loads `SELECT * FROM vw_RuntimeModel` — a view that pre-joins the full Physical and Information Models and pre-computes each property's topic — and builds three global-context indexes: by PLC address (ingest), by machine ID (state and OEE logic), and by MQTT topic (command path). PostgreSQL triggers on all configuration tables fire `NOTIFY model_changed`; a listener flow reloads the view and atomically swaps all three indexes, giving a model-edit-to-runtime latency under one second with no restarts and no polling.
+Per ADR-0001, the runtime never queries SQL on the hot path. On startup, Node-RED loads `SELECT * FROM vw_runtime_model` — a view that pre-joins the full Physical and Information Models and pre-computes each property's topic — and builds three global-context indexes: by `(source, address)` (ingest), by machine ID (state and OEE logic), and by MQTT topic (command path). The startup load is part of Phase 1, so the hot path never issues SQL even in the first phase. From Phase 2, PostgreSQL triggers on all configuration tables fire `NOTIFY model_changed`; a listener flow reloads the view and atomically swaps all three indexes, giving a model-edit-to-runtime latency under one second with no restarts and no polling (in Phase 1, a model change is picked up by redeploying the flow). Each reload compares the old and new topic sets and clears retained topics that no longer exist (ADR-0004).
 
 ### 7.3 Runtime topology
 
-One Node-RED instance per plant is the Phase 1 topology. The scaling unit is the instance: if tag count, CPU, or blast-radius concerns demand it, additional instances are added per area or per line, each owning a disjoint set of PLC mappings (an `owner` column in `PLCMapping`) and each running the identical generic flows against the same model. Node-RED is single-threaded; the ceiling per instance is expected around the targets in section 3.2 and will be validated with load tests in Phase 2.
+One Node-RED instance per plant is the Phase 1 topology. The scaling unit is the instance: if tag count, CPU, or blast-radius concerns demand it, additional instances are added per area or per line, each owning a disjoint set of sources (an owning-instance column on `source`) and each running the identical generic flows against the same model. Every instance announces itself on `ofm/_system/runtime/{runtime}` with an MQTT Last Will, and writes a heartbeat row to the historian (ADR-0007, ADR-0006). Node-RED is single-threaded; the ceiling per instance is expected around the targets in section 3.2 and will be validated with load tests in Phase 2.
 
 ## 8. Historian architecture
 
-Per ADR-0002, history is written directly from the runtime to TimescaleDB, in parallel with — never through — the broker. Telemetry inserts are batched (1–2 s flush); MES-significant events (state changes, counts, downtime) are written transactionally per event. A local disk queue provides store-and-forward across database outages, with queue depth exposed on `ofm/_system/historian`.
+Per ADR-0002, history is written directly from the runtime to TimescaleDB, in parallel with — never through — the broker. Telemetry inserts are batched (1–2 s flush); MES-significant events (state events, reason assignments, counts) are written transactionally per event. A local disk queue provides store-and-forward across database outages, with queue depth exposed on `ofm/_system/historian`.
 
-The historian schema is narrow and ID-keyed. `measurement (ts timestamptz, property_id int, value double precision, quality smallint, ts_source smallint)` is a hypertable partitioned on `ts`; text values and states go to sibling tables rather than overloading one table with nullable columns. Native TimescaleDB compression is applied after 7 days and continuous aggregates maintain 1-minute and 1-hour rollups per property, which serve most dashboard queries and the 5-year retention tier while raw data ages out at 90 days. Operational-Model instance tables (`machine_state_history`, `production_count`, `downtime`, `event`) follow the same pattern: immutable IDs, `timestamptz`, no display names.
+The historian schema is narrow and ID-keyed. `measurement (ts timestamptz, property_id int, value double precision, quality smallint, ts_source smallint)` is a hypertable partitioned on `ts`; text values and states go to sibling tables rather than overloading one table with nullable columns. Native TimescaleDB compression is applied after 7 days and continuous aggregates maintain 1-minute and 1-hour rollups per property, which serve most dashboard queries and the 5-year retention tier while raw data ages out at 90 days. Operational-Model instance tables (`machine_state_event`, `state_reason`, `production_count`, `event`, `runtime_heartbeat`) follow the same pattern: immutable IDs, `timestamptz`, no display names — and all are append-only: the runtime's database role can SELECT and INSERT in `hist` but never UPDATE or DELETE (ADR-0002 amendment, ADR-0006). Inserts are idempotent (`ON CONFLICT DO NOTHING`), so a store-and-forward queue replayed twice is harmless.
 
 Nothing in the historian references topics or display names. Historical queries join to the model at read time, so equipment renames and topic restructures never corrupt history.
 
 ## 9. Timestamps and data quality
 
-ADR-0003 in one paragraph: source timestamps (OPC UA `SourceTimestamp`, publisher time for MQTT sources) are used whenever available, gateway arrival time is the flagged fallback, and provenance travels with every value (`tss` in payloads, `ts_source` in the historian). All times are epoch milliseconds UTC in the data path; Australia/Melbourne local time exists only in display layers. The ingest pipeline flags future-skewed (> 5 min) and regressing device timestamps as `uncertain` rather than dropping them, making unsynchronised PLC clocks a visible data-quality signal. NTP synchronisation of PLCs, runtime host, and database host is a commissioning-checklist item for every device.
+ADR-0003 in one paragraph: source timestamps (OPC UA `SourceTimestamp`, publisher time for MQTT sources) are used whenever available, gateway arrival time is the flagged fallback, and provenance travels with every value (`tss` in payloads, `ts_source` in the historian). All times are epoch milliseconds UTC in the data path; Australia/Melbourne local time exists only in display layers. Nothing is rejected: a device timestamp more than 5 minutes ahead of gateway time is replaced by gateway time and flagged `uncertain` (a future timestamp would otherwise masquerade as the current value), and a device timestamp that goes backwards is kept and flagged `uncertain` — making unsynchronised PLC clocks a visible data-quality signal (ADR-0003 and its amendment). NTP synchronisation of PLCs, runtime host, and database host is a commissioning-checklist item for every device.
+
+Data quality also covers *liveness*: a value that stopped arriving must not look like a value that stopped changing. Source status topics, bad-quality republication on communication loss, the runtime's MQTT Last Will, and the maximum publish interval together make a dead source, a dead runtime and a stable process distinguishable to every consumer, live and in history (ADR-0007).
 
 ## 10. Machine states and OEE
 
 ### 10.1 State model
 
-Machine states are captured as *transitions*, not derived after the fact. Each machine's state — from the fixed vocabulary `running, idle, blocked, starved, fault, setup, cleaning, maintenance` — is evaluated in the runtime from PLC signals according to per-machine rules stored in the model. On every transition, the runtime publishes the new state to the UNS (retained, so current state is always readable at `.../{machine}/state`) and transactionally closes the previous interval and opens the next in `machine_state_history`. Deriving states retrospectively from raw signals is explicitly rejected: transition-time capture is simpler, auditable, and gives operators something to annotate while memory is fresh.
+Machine states are captured as *transitions*, not derived after the fact, and recorded append-only (ADR-0006). Each machine's state — from the fixed vocabulary `running, idle, blocked, starved, fault, setup, cleaning, maintenance, unknown` — is evaluated in the runtime from PLC signals according to per-machine rules stored in the model. On every transition, the runtime publishes the new state to the UNS (retained, so current state is always readable at `.../{machine}/state`) and inserts one complete row into `machine_state_event (machine_id, ts, state_id, source)`. No row is ever updated: the view `vw_machine_state_interval` derives each interval's end from the next event's start, so a machine can never have more than one open interval. Deriving states retrospectively from raw signals is explicitly rejected: transition-time capture is simpler, auditable, and gives operators something to annotate while memory is fresh.
+
+`unknown` records time the platform could not observe. It is inserted when a source loses communication (at the moment of loss) and after a runtime outage: on startup, the runtime inserts `unknown` at the later of its last heartbeat and each machine's last event, then reads and records the actual state. States are recorded per machine; line, area and site states are derived (the derivation rule is an open question in ADR-0006).
 
 The vocabulary is fixed platform-wide; per-machine mapping from PLC signals to states is configuration. `cleaning` is first-class rather than a downtime reason because in food manufacturing hygiene time is planned, measured, and excluded differently from failure time in OEE availability.
 
 ### 10.2 Reason codes and the operator
 
-Downtime *causes* cannot come from the PLC. When a stoppage (any non-`running` interval outside planned exclusions) exceeds a configurable threshold, an operator screen — Node-RED Dashboard 2.0 in early phases — presents the reason-code catalogue from the Operational Model, filtered to that machine's applicable codes, and writes the selection to the `downtime` table. Un-coded intervals remain visible as "unclassified" on dashboards; making the gap visible is the enforcement mechanism, not blocking the operator.
+Downtime *causes* cannot come from the PLC. When a stoppage (any non-`running` interval outside planned exclusions) exceeds a configurable threshold, an operator screen — Node-RED Dashboard 2.0 in early phases — presents the reason-code catalogue from the Operational Model, filtered to that machine's applicable codes, and inserts the selection into `state_reason`, linked to the state event it explains by `(machine_id, event_ts)`. PLC fault codes, operator selections and supervisor corrections are all separate rows; the latest assignment is the effective reason, and the full history of changes is kept automatically. Un-coded intervals remain visible as "unclassified" on dashboards; making the gap visible is the enforcement mechanism, not blocking the operator.
 
 ### 10.3 OEE calculation
 
-OEE is computed in SQL over historian tables, not in the runtime: availability from `machine_state_history` against the shift calendar; performance from `production_count` against the ideal cycle time of the recipe in effect; quality from good/reject counts. Machine OEE aggregates to line, area, and site by model-defined roll-up rules. Results are both queryable (Grafana) and republished to the UNS (`.../{line}/oee/...`) by a scheduled Python job, so live OEE is an ordinary namespace citizen. Definitions (what counts as planned time, which states hit availability) live in the model and are versioned — an OEE number without its definition version is treated as meaningless.
+OEE is computed in SQL over historian tables, not in the runtime: availability from `vw_machine_state_interval` against the shift calendar, with `unknown` time reported explicitly and never counted as running; performance from `production_count` against the ideal cycle time of the recipe in effect; quality from good/reject counts. Machine OEE aggregates to line, area, and site by model-defined roll-up rules. Results are both queryable (Grafana) and republished to the UNS (`.../{line}/oee/...`) by a scheduled Python job, so live OEE is an ordinary namespace citizen. Definitions (what counts as planned time, which states hit availability) live in the model and are versioned — an OEE number without its definition version is treated as meaningless.
 
 ## 11. Configuration management
 
 The model is edited through three doors, all converging on the same PostgreSQL schema with the same constraints and audit trail. **NocoDB** (or Baserow) provides the human interface in early phases: relational grids with foreign-key dropdowns, validation, and change history over the configuration schema — deferring any custom UI until the schema has survived contact with reality. **SQL migrations** (numbered files under `db/migrations/`, applied by Flyway or plain psql discipline) are the only mechanism that changes schema *structure*; the migration history in Git is the schema documentation. **Direct SQL** remains available to engineers, because the model being an ordinary database is the point.
 
-Every configuration table carries `created_at, created_by, updated_at, updated_by`, and an `audit_log` table records old/new row images via trigger. In a food plant, "who changed the alarm limit on that temperature and when" is a question with a compliance dimension; the platform must answer it without archaeology. Model changes propagate to the runtime via NOTIFY (section 7.2) and to consumers via republished `_meta` topics — no restarts anywhere.
+Every configuration table carries `created_at, created_by, updated_at, updated_by`, and an `audit_log` table records old/new row images via trigger. In a food plant, "who changed the alarm limit on that temperature and when" is a question with a compliance dimension; the platform must answer it without archaeology. One limitation is stated honestly: NocoDB connects with the single `ofm_config` role, so database triggers record the role, not the person. Per-person attribution for edits made in NocoDB comes from NocoDB's own audit log; the database trail records what changed and when. Model changes propagate to the runtime via NOTIFY (section 7.2) and to consumers via republished `_meta` topics — no restarts anywhere.
 
 ## 12. Technology stack
 
-| Role | Choice | Why this, briefly |
-|---|---|---|
-| Information model + historian | PostgreSQL 16 + TimescaleDB | One engine for both jobs; excellent relational core; hypertables, compression, continuous aggregates for time-series |
-| Runtime | Node-RED | Protocol node ecosystem (OPC UA, S7, Modbus), low-code visibility for OT engineers, good-enough throughput per instance |
-| UNS transport | Eclipse Mosquitto | Lightweight, ubiquitous, MQTT 5, trivial to operate; clustering not needed at single-site scale |
-| Visualization | Grafana | First-class TimescaleDB and MQTT support; the de facto standard |
-| Analytics | Python | OEE jobs, SPC, future AI; talks natively to both PostgreSQL and MQTT |
-| Config UI (interim) | NocoDB / Baserow | Validated relational editing over the live schema with zero custom code |
-| Deployment | Docker Compose | Whole platform as one reviewable file; sufficient below Kubernetes scale |
+| Role | Choice | Licence | Why this, briefly |
+|---|---|---|---|
+| Information model + historian | PostgreSQL 16 + TimescaleDB | PostgreSQL Licence; TimescaleDB core Apache 2.0, compression and continuous aggregates Timescale License (free to self-host, source-available) | One engine for both jobs; excellent relational core; hypertables, compression, continuous aggregates for time-series |
+| Runtime | Node-RED | Apache 2.0 | Protocol node ecosystem (OPC UA, S7, Modbus), low-code visibility for OT engineers, good-enough throughput per instance |
+| UNS transport | Eclipse Mosquitto | EPL 2.0 / EDL 1.0 | Lightweight, ubiquitous, MQTT 5, trivial to operate; clustering not needed at single-site scale |
+| Visualisation | Grafana | AGPL 3.0 | First-class TimescaleDB and MQTT support; the de facto standard |
+| Analytics | Python | PSF | OEE jobs, SPC, future AI; talks natively to both PostgreSQL and MQTT |
+| Config UI (interim) | NocoDB / Baserow | verify current licence before public release | Validated relational editing over the live schema with zero custom code |
+| Deployment | Docker Compose | Apache 2.0 | Whole platform as one reviewable file; sufficient below Kubernetes scale |
 
-Substitution points are deliberate: EMQX can replace Mosquitto if clustering is ever needed; additional Node-RED instances (or a Benthos pipeline for a hot path) can join without touching the model; Grafana is replaceable by anything that speaks SQL and MQTT. The model schema is the one component with real switching costs, which is why it gets migrations, audit, and ADRs while everything else gets a Compose entry.
+Substitution points are deliberate: EMQX can replace Mosquitto if clustering is ever needed; additional Node-RED instances (or a Benthos pipeline for a hot path) can join without touching the model; Grafana is replaceable by anything that speaks SQL and MQTT. Container images are pinned to exact versions in the Compose file; an upgrade is a deliberate, reviewed commit, never a side effect of `docker compose pull`. The model schema is the one component with real switching costs, which is why it gets migrations, audit, and ADRs while everything else gets a Compose entry.
 
 ## 13. Security architecture
 
 OFM assumes a segmented OT network and adds application-layer controls on top; it never substitutes for network segmentation. The runtime host sits in the OT/IT DMZ pattern: plant protocols (S7, Modbus, OPC UA) terminate at the runtime and are never routed north; only MQTT-over-TLS and PostgreSQL-over-TLS cross upward. Modbus and S7 have no native security, so their segments are isolated at the network layer; OPC UA connections use signed-and-encrypted mode with certificates where the controller supports it.
 
-Mosquitto runs with TLS, no anonymous access, and per-role ACLs: acquisition credentials may publish telemetry but not `_cmd`; applications may subscribe broadly but publish nothing; only the command flow's credential may publish `_cmd`, and only operator-facing services may trigger it. PostgreSQL follows the same least-privilege split — `ofm_runtime` (SELECT on model, INSERT on historian), `ofm_config` (DML on configuration schema, used by NocoDB), `ofm_reader` (Grafana/analytics, read-only) — so a compromised dashboard cannot alter the model and a compromised runtime cannot rewrite history. Secrets live in the deployment environment (Compose env files with restricted permissions in v1), never in flows or the repository.
+Mosquitto runs with TLS, no anonymous access, and per-role ACLs: acquisition credentials may publish telemetry but not `_cmd`; applications may subscribe broadly but publish nothing; only the command flow's credential may publish `_cmd`, and only operator-facing services may trigger it. PostgreSQL follows the same least-privilege split — `ofm_runtime` (SELECT on model; SELECT and INSERT on historian, never UPDATE or DELETE), `ofm_config` (DML on configuration schema, used by NocoDB), `ofm_reader` (Grafana/analytics, read-only) — so a compromised dashboard cannot alter the model and a compromised runtime cannot rewrite history. Secrets — including database role passwords — live in the deployment environment (Compose env files with restricted permissions in v1), never in flows or the repository. The Node-RED editor is protected by `adminAuth`, because anyone who can reach an unprotected editor can deploy code that runs next to the PLCs. In the single-laptop proof of concept, all service ports are bound to the loopback interface.
 
 ## 14. Deployment architecture
 
 The reference deployment is a single Docker Compose stack on one industrial-grade Linux host at the site: `postgres` (with TimescaleDB), `mosquitto`, `nodered`, `grafana`, `nocodb`, plus named volumes for each stateful service and the store-and-forward queue directory. The Compose file in the repository *is* the deployment documentation.
 
-Placement matters more than orchestration at this scale: the runtime must be network-close to the PLCs (polling latency, broadcast domains), and the historian benefits from local SSD. A second host can split the stack (runtime at the edge; database, Grafana and NocoDB on a server VM) with no architectural change — every arrow between containers is already TCP with TLS. Kubernetes is explicitly not used in v1; the operational cost is not justified for a single-site, restart-tolerant posture. The home-lab and the plant run the identical Compose file with different `.env` values, which keeps the development environment honest.
+Placement matters more than orchestration at this scale: the runtime must be network-close to the PLCs (polling latency, broadcast domains), and the historian benefits from local SSD. A second host can split the stack (runtime at the edge; database, Grafana and NocoDB on a server VM) with no architectural change — every arrow between containers is already TCP with TLS. Kubernetes is explicitly not used in v1; the operational cost is not justified for a single-site, restart-tolerant posture. The home-lab and the plant run the identical Compose file with different `.env` values, which keeps the development environment honest. The proof of concept runs on Windows 11 with Docker on WSL2. Docker Desktop is free only for personal use, education and small businesses; for use within a larger organisation, either licence it or run the free Docker Engine directly inside a WSL2 Linux distribution — the Compose file is identical either way.
 
 ## 15. Performance and scalability
 
-The design scales in three independent dimensions. **Tags** scale by adding Node-RED instances partitioned by `PLCMapping.owner` (section 7.3) — the cache, flows, and model are identical per instance. **Consumers** scale freely on the broker side; Mosquitto handles the realistic single-site subscriber count, and retained messages mean new consumers impose no replay load. **History** scales with TimescaleDB chunking, compression (~90 % typical on telemetry), and continuous aggregates that keep dashboard queries off raw data.
+The design scales in three independent dimensions. **Tags** scale by adding Node-RED instances partitioned by source ownership (section 7.3) — the cache, flows, and model are identical per instance. **Consumers** scale freely on the broker side; Mosquitto handles the realistic single-site subscriber count, and retained messages mean new consumers impose no replay load. **History** scales with TimescaleDB chunking, compression (~90 % typical on telemetry), and continuous aggregates that keep dashboard queries off raw data.
 
 Known ceilings, recorded so they are watched rather than discovered: Node-RED single-thread throughput (validated by Phase 2 load test against the 2,000 msg/s target); Mosquitto's single-node nature (no HA — acceptable per section 3.2's availability posture; a broker restart costs seconds of live-state visibility and zero history thanks to ADR-0002); and PostgreSQL insert throughput, which batching keeps far below limits at target rates. Each ceiling has a named escape hatch (more instances; EMQX; ingest via a queue) that is deliberately *not* built until measurement demands it.
 
@@ -311,7 +318,7 @@ Broker state is deliberately expendable — retained messages regenerate from th
 
 ## 17. Testing strategy
 
-The strategy leans on the model-driven design: because flows are generic, testing effort concentrates on a small pipeline instead of per-machine logic. Four tiers. **Schema tests** (pgTAP or plain SQL assertions in CI) verify constraints, the naming rules, `vw_RuntimeModel` correctness, and NOTIFY triggers. **Pipeline tests** run the ingest flow against a simulated source — an OPC UA test server and a Modbus simulator publishing known patterns — and assert the exact UNS payloads and historian rows produced, including deadband, quality-flagging, and quarantine behaviour. **Failure drills** are scripted, not aspirational: kill the broker mid-stream (history must be complete afterwards), kill PostgreSQL (UNS must keep flowing; queue must drain on recovery), send an unmapped address, send a skewed timestamp. **Load tests** validate the section 3.2 targets before each phase exit.
+The strategy leans on the model-driven design: because flows are generic, testing effort concentrates on a small pipeline instead of per-machine logic. Four tiers. **Schema tests** (pgTAP or plain SQL assertions in CI) verify constraints, the naming rules, `vw_runtime_model` and `vw_machine_state_interval` correctness, and NOTIFY triggers. **Pipeline tests** run the ingest flow against a simulated source — an OPC UA test server and a Modbus simulator publishing known patterns — and assert the exact UNS payloads and historian rows produced, including deadband, quality-flagging, and quarantine behaviour. **Failure drills** are scripted, not aspirational: kill the broker mid-stream (history must be complete afterwards), kill PostgreSQL (UNS must keep flowing; queue must drain on recovery), send an unmapped address, send a skewed timestamp, cut a PLC connection (source status and `bad` quality must appear, ADR-0007), restart the runtime (the correct `unknown` interval must be recorded, ADR-0006), and replay the store-and-forward queue twice (no duplicates). **Load tests** validate the section 3.2 targets before each phase exit.
 
 The simulator doubles as the development environment: contributors without PLC hardware run the full stack against simulated lines, which is also how the home-lab-to-plant path stays credible.
 
@@ -319,22 +326,22 @@ The simulator doubles as the development environment: contributors without PLC h
 
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
-| 1 | Model schema (config + historian DDL, migrations, audit), Mosquitto, generic ingest for one real PLC, Grafana | One line's temperatures flowing PLC → UNS → historian → dashboard from model configuration only |
-| 2 | Cache + LISTEN/NOTIFY, `_meta` topics, deadbanding, batched historian writer, store-and-forward, NocoDB, load test | Model edit visible in runtime < 1 s; broker-kill drill passes; 2,000 msg/s sustained |
-| 3 | State model, counts, downtime capture, operator reason-code screen, OEE queries and republication, DR rehearsal | Line OEE on a dashboard traceable to raw intervals; restore rehearsal documented |
-| 4 | Dashboard templating from the model, Python analytics framework, semantic relationships (populate `AssetRelationship`) | New machine gets default dashboards with zero Grafana editing |
+| 1 | Model schema (config + historian DDL as migrations, audit), Mosquitto with ACLs, model cache loaded at startup, generic ingest for one source, runtime Last Will and source status topics, Grafana | One line's temperatures flowing PLC → UNS → historian → dashboard from model configuration only |
+| 2 | Cache reload via LISTEN/NOTIFY, `_meta` topics and retained-topic cleanup, deadbanding and max-interval republish, `bad` quality on source loss, batched historian writer, store-and-forward, NocoDB, broker TLS, load test | Model edit visible in runtime < 1 s; broker-kill and PLC-disconnect drills pass; 2,000 msg/s sustained |
+| 3 | Append-only state events and derived intervals, runtime heartbeat and startup reconciliation, counts, operator reason-code screen, OEE queries and republication, DR rehearsal | Line OEE on a dashboard traceable to raw state events; runtime-restart drill records the correct `unknown` interval; restore rehearsal documented |
+| 4 | Dashboard templating from the model, Python analytics framework, semantic relationships (populate `asset_relationship`) | New machine gets default dashboards with zero Grafana editing |
 | 5 | `node-red-contrib-ofm` custom nodes, REST API over the model, AI assistant over model + historian | Property commissioning via dropdowns; natural-language operational queries |
 
 Each phase is independently useful; nothing in a later phase is load-bearing for an earlier one. Documentation grows with the phases: ADRs as decisions are made, generated artefacts (topic tree, data dictionary) from Phase 2, and the comprehensive reference document — the "book" — only once it can be written about working software and partly generated by it.
 
 ## 19. Future directions
 
-Three directions are anticipated by the architecture but deliberately unbuilt. **Semantic relationships**: populating `AssetRelationship` with a curated vocabulary (`feeds`, `supplies`, `belongs_to`) turns the Physical Model into a graph, enabling impact analysis ("everything downstream of Tank01") and richer diagnostics; the vocabulary will be chosen after operating experience, not before. **Custom Node-RED nodes** (`node-red-contrib-ofm`): a Factory Asset node with cascading model-driven dropdowns replaces the generic subflow for commissioning ergonomics — valuable, but only worth building against a stabilized schema. **AI over the model**: because the model is a well-structured relational description of the plant and the UNS is self-describing, an LLM-based assistant can be grounded on `vw_RuntimeModel`, `_meta` topics, and historian aggregates to answer operational questions; the model-driven principle is what makes this tractable, and it is the long-term payoff of keeping that principle strict.
+Three directions are anticipated by the architecture but deliberately unbuilt. **Semantic relationships**: populating `asset_relationship` with a curated vocabulary (`feeds`, `supplies`, `belongs_to`) turns the Physical Model into a graph, enabling impact analysis ("everything downstream of Tank01") and richer diagnostics; the vocabulary will be chosen after operating experience, not before. **Custom Node-RED nodes** (`node-red-contrib-ofm`): a Factory Asset node with cascading model-driven dropdowns replaces the generic subflow for commissioning ergonomics — valuable, but only worth building against a stabilised schema. **AI over the model**: because the model is a well-structured relational description of the plant and the UNS is self-describing, an LLM-based assistant can be grounded on `vw_runtime_model`, `_meta` topics, and historian aggregates to answer operational questions; the model-driven principle is what makes this tractable, and it is the long-term payoff of keeping that principle strict.
 
 ## 20. Document map
 
-Where the details live, by concern: contested decisions and their alternatives → `docs/adr/` (ADR-0001 cache, ADR-0002 historian path, ADR-0003 timestamps, and successors); payload contracts → `schemas/*.schema.json` (normative); database structure → `db/migrations/` (normative) with diagrams regenerated from the live schema; deployment → `deploy/docker-compose.yml` and its `.env.example`; generated references (topic tree, tag list, data dictionary) → `docs/generated/`, produced by `tools/gen_docs.py` from the model and never edited by hand. When this overview and a normative artefact disagree, the artefact wins and this document gets a correcting commit.
+Where the details live, by concern: contested decisions and their alternatives → `docs/adr/` (ADR-0001 cache, ADR-0002 historian path, ADR-0003 timestamps, ADR-0004 immutable IDs, ADR-0005 naming, ADR-0006 append-only operational history, ADR-0007 stale-data signalling, and successors; accepted ADRs change only by dated amendment lines or by superseding ADRs); current phase, next steps and open questions → `docs/STATUS.md`; payload contracts — live value, `_meta`, and `ofm/_system` status payloads → `schemas/*.schema.json` (normative); database structure → `db/migrations/` (normative) with diagrams regenerated from the live schema; deployment → `deploy/docker-compose.yml` and its `.env.example`; generated references (topic tree, tag list, data dictionary) → `docs/generated/`, produced by `tools/gen_docs.py` from the model and never edited by hand. When this overview and a normative artefact disagree, the artefact wins and this document gets a correcting commit.
 
 ---
 
-*End of Architecture Overview v0.1. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.2. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

@@ -40,14 +40,26 @@ Include the negative consequences honestly; they are the most valuable part.
 
 Links to discussion threads, benchmarks, vendor docs, related ADRs.
 
+## Amendments
+
+(Omit this section until the first amendment is needed.)
+
+- YYYY-MM-DD: What was corrected or clarified, and why.
+
 ---
 
 ### Conventions for this repository
 
 - One decision per ADR. If you are writing "and" in the title, split it.
+- A **Proposed** ADR may be edited freely until it is accepted.
 - ADRs are immutable once **Accepted**. To change a decision, write a new
   ADR that supersedes the old one and update the old ADR's status line.
   Never edit history — the point of the record is what was decided and when.
+- The one exception is a dated line appended under **Amendments**. An
+  amendment may correct a name, align terminology with a later ADR, or
+  clarify a point the original left ambiguous. It must not change what was
+  decided; if it would, write a superseding ADR instead. The original text
+  above the Amendments section is never altered.
 - Number sequentially (`0001`, `0002`, ...); filename is
   `NNNN-kebab-case-title.md` in `docs/adr/`.
 - Keep each ADR to roughly one page. If it grows past two, the decision is

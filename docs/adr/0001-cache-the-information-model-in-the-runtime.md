@@ -74,3 +74,23 @@ completely different change rates and must not share a hot path.
   PropertyID for its inserts.
 - PostgreSQL NOTIFY payload limit is 8000 bytes — send an entity hint, not
   the changed row; the reload always re-reads the full view.
+
+## Amendments
+
+- 2026-10-09: **Cache key.** `global.assetModel` is keyed by the pair
+  (source, address), e.g. `plc1|DB20.Press`, not by address alone. Two PLCs
+  can expose the same address, and an address-only key would silently send
+  one PLC's value to the other's property. `plc_mapping` carries a matching
+  unique constraint on `(source_id, address)`.
+- 2026-10-09: **Quarantine topic encoding.** In `ofm/_unmapped/<source>/<address>`,
+  the characters `/`, `+` and `#` in the address are replaced by `_` (OPC UA
+  NodeIds may contain them, and they would break the topic). The original,
+  unaltered address is carried in the payload as `addr`.
+- 2026-10-09: **Phasing.** The startup load of the cache is part of Phase 1,
+  so the runtime path never issues SQL even in Phase 1. Reload via
+  LISTEN/NOTIFY follows in Phase 2; until then a model change is picked up by
+  redeploying the flow.
+- 2026-10-09: **Naming.** Per ADR-0005, `vw_RuntimeModel`, `MachineProperty`,
+  `PLCMapping` and `MachineID` read as `vw_runtime_model`, `machine_property`,
+  `plc_mapping` and `machine_id`. Per ADR-0004, each cache reload also clears
+  retained topics that no longer exist in the model.

@@ -76,3 +76,16 @@ a database transaction is the correct tool for the second.
   stored).
 - Mosquitto docs are explicit that it is not a message queue with durable
   log semantics; this ADR exists so nobody re-litigates that in a year.
+
+## Amendments
+
+- 2026-10-09: **Role name and grants.** The INSERT-only writer role named
+  `ofm_writer` above is implemented as `ofm_runtime`, matching the
+  Architecture Overview §13: SELECT on `config`; SELECT and INSERT on `hist`;
+  never UPDATE or DELETE. SELECT on `hist` is needed for startup
+  reconciliation (ADR-0006).
+- 2026-10-09: **Operational records.** The "downtime records" in decision
+  point 5 are implemented as append-only state events and reason rows per
+  ADR-0006, so the per-event transactional writes are always INSERTs.
+- 2026-10-09: **Naming.** Per ADR-0005, `Measurement` reads as `measurement`
+  and `PropertyID` as `property_id`.

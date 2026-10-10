@@ -77,3 +77,19 @@ OPC UA delivers a `SourceTimestamp` with every value change; other sources
   source timestamps matter most).
 - OPC UA also provides `ServerTimestamp`; OFM deliberately uses
   `SourceTimestamp` as it is closest to the physical event.
+
+## Amendments
+
+- 2026-10-09: **"Rejects/flags" clarified: values are never rejected.**
+  - A device timestamp more than the skew limit ahead of gateway time is
+    replaced by gateway time, with `ts_source = 'gateway'` and
+    `quality = 'uncertain'`. A future timestamp kept as-is would sort after
+    all genuine data and masquerade as the current value (or current machine
+    state) until real time caught up.
+  - A device timestamp that goes backwards for the same property is kept
+    as-is and flagged `quality = 'uncertain'`.
+- 2026-10-09: **S7 polling.** S7 PUT/GET reads carry no device timestamp, so
+  all S7 values are `ts_source = 'gateway'`. This is expected, not a fault.
+  OPC UA subscriptions provide `device` time.
+- 2026-10-09: **Naming.** Per ADR-0005, `Measurement` reads as `measurement`.
+  The live payload abbreviates `ts_source` as `tss` (Architecture Overview §6.2).
