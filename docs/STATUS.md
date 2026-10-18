@@ -1,6 +1,6 @@
 # OFM — Project status
 
-*Updated: 2026-10-09. Update this file at the end of every working session.*
+*Updated: 2026-10-18. Update this file at the end of every working session.*
 
 ## Where we are
 
@@ -11,9 +11,14 @@ first Phase 1 build loop. No database migrations, schemas or flows exist yet.
 
 ## Done
 
-- Architecture Overview v0.2, aligned with all accepted ADRs.
-- ADR-0001 to ADR-0007 accepted. ADR-0001 to ADR-0003 carry dated amendments;
-  the template defines the amendment rule.
+- Architecture Overview v0.3: aligned with all accepted ADRs; manufacturing
+  efficiency metrics (§10.3) and work orders with the operator whiteboard
+  (§10.4) added; Phase 3 split into 3a and 3b.
+- ADR-0001 to ADR-0010 accepted. ADR-0001 to ADR-0003 and ADR-0006 carry dated
+  amendments; the template defines the amendment rule.
+- `deploy/README.md` aligned with the overview.
+- The external metrics draft (PDF) is fully absorbed into Overview §10.3 and
+  ADR-0008 to ADR-0010. It is not part of the repository.
 - Proof-of-concept Docker stack (`deploy/`) running on the Windows 11 laptop.
 - GitHub repository (private).
 
@@ -36,7 +41,9 @@ first Phase 1 build loop. No database migrations, schemas or flows exist yet.
    - `vw_runtime_model`;
    - the `hist.measurement` hypertable;
    - audit columns and trigger;
-   - `asset_relationship`.
+   - `asset_relationship`;
+   - reserved names in the naming CHECK constraints: enterprise `ofm`;
+     machine names `workorder` and `kpi` (ADR-0010).
 
    Plus a generated ERD (Mermaid) for review.
 4. **Phase 1 build:** generic ingest flow (cache loaded at startup, runtime
@@ -50,16 +57,20 @@ first Phase 1 build loop. No database migrations, schemas or flows exist yet.
 | 2 | Docker Desktop licence vs. Docker Engine directly in WSL2 (Docker Desktop is free only for personal and small-business use) | Before plant use |
 | 3 | Employer policy on open-sourcing work developed for or at the site | Before going public |
 | 4 | NocoDB current licence | Before going public |
-| 5 | Rule for deriving line state from machine states (ADR-0006) | Phase 3 |
-| 6 | Threshold for "uncoded stop" alerts (ADR-0006) | Phase 3 |
-| 7 | Runtime heartbeat interval: 60 s assumed, shorter reduces `unknown` attribution error (ADR-0006) | Phase 3 |
-| 8 | Default `max_publish_interval_ms`: 60 000 assumed (ADR-0007) | Phase 2 |
+| 5 | Runtime heartbeat interval: 60 s assumed, shorter reduces `unknown` attribution error (ADR-0006) | Phase 3a |
+| 6 | Default `max_publish_interval_ms`: 60 000 assumed (ADR-0007) | Phase 2 |
+| 7 | Minor-stop threshold per line: 5 min assumed (ADR-0009) | Phase 3a |
+| 8 | Source of good and reject counts per line: PLC counters, or manual reject entry where no counter exists | Phase 3a |
+| 9 | Source of rated speeds per product and line, and of the shift calendar and schedule (manual first; ERP/SAP later) | Phase 3a |
+| 10 | Treatment of ramp-up after a changeover: inside the changeover window, or counted as speed loss (ADR-0010) | Phase 3a |
+| 11 | Defined capacity per line for CU: entered manually or taken from ERP/SAP | Phase 3b |
+| 12 | Verify OFM's KPI terminology against the ISO 22400-2 text (ADR-0008) | Before going public |
 
 ## Known gaps
 
-- `deploy/README.md` is aligned with Overview v0.2 (backup procedure, upgrade
-  procedure, licensing note, hardening warning). It will need another pass
-  when the deploy-kit fixes land.
-- The root `README.md` has not yet been reviewed against Overview v0.2.
+- `deploy/README.md` needs another pass when the deploy-kit fixes land.
+- The root `README.md` has not yet been reviewed against the current overview.
+- KPI definitions must be presented as OFM's own, anchored to ISO 22400-2,
+  not as a reproduction of any company-internal standard (see open question 3).
 - Git history contains the earlier enterprise example name. Decide before going
   public whether to rewrite or squash history.

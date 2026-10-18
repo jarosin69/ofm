@@ -100,3 +100,12 @@ existing decisions:
   (constraint machine, worst state, or configured per line).
 - Open question: the threshold for "uncoded stop" alerts.
 - Related: ADR-0002, ADR-0003, ADR-0007.
+
+## Amendments
+
+- 2026-10-18: The open question on deriving line state is resolved by
+  ADR-0008: line state is the state of the designated constraint machine, or
+  of a line-level machine where the PLC provides a line state signal.
+- 2026-10-18: `state_reason` gains an optional free-text `comment` column
+  (ADR-0009). The "uncoded stop" threshold is the minor-stop threshold of
+  ADR-0009.

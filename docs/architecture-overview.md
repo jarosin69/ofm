@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.2 (2026-10-09) — aligned with ADR-0004 to ADR-0007 and the amendments to ADR-0001 to ADR-0003 |
+| **Version** | 0.3 (2026-10-18) — manufacturing efficiency metrics and work orders (ADR-0008 to ADR-0010) |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -51,9 +51,9 @@ Seven principles govern every design decision. Where a principle was contested o
 
 ### 3.1 Functional scope
 
-OFM version 1 covers: acquisition of data from industrial controllers (OPC UA as the preferred protocol; Siemens S7, Modbus TCP and MQTT-native devices as required); normalisation to engineering units and a canonical payload; contextualisation against the information model; publication to the UNS with retained metadata; durable storage of measurements, events, machine states, and production counts in TimescaleDB; operator capture of downtime reason codes; OEE calculation at machine and line level; and visualisation through Grafana.
+OFM version 1 covers: acquisition of data from industrial controllers (OPC UA as the preferred protocol; Siemens S7, Modbus TCP and MQTT-native devices as required); normalisation to engineering units and a canonical payload; contextualisation against the information model; publication to the UNS with retained metadata; durable storage of measurements, events, machine states, and production counts in TimescaleDB; operator capture of downtime reason codes and comments; manual entry of work orders; efficiency KPIs (GE, OEE with its availability, performance and quality factors, Downtime, MTBF, MTTR, CU, LU, TEEP) from a time-based loss waterfall at machine and line level; an operator whiteboard; and visualisation through Grafana.
 
-Explicitly out of scope for version 1: closed-loop control through the platform (PLCs remain the control authority; OFM writes setpoints only where a deliberate, per-tag decision is recorded), recipe management beyond identification of the active recipe, batch genealogy, multi-site federation, and safety functions of any kind. Safety circuits and E-stops remain entirely on dedicated safety PLCs and are invisible to OFM.
+Explicitly out of scope for version 1: closed-loop control through the platform (PLCs remain the control authority; OFM writes setpoints only where a deliberate, per-tag decision is recorded), recipe management beyond identification of the active product, ERP/SAP integration (work orders are entered manually in v1), batch genealogy, multi-site federation, and safety functions of any kind. Safety circuits and E-stops remain entirely on dedicated safety PLCs and are invisible to OFM.
 
 ### 3.2 Non-functional targets
 
@@ -132,7 +132,7 @@ The information model is deliberately split into three sub-models with different
 
 **The Information Model — what is measured.** `machine_property` and its supporting tables: for each machine, the properties observed on it (temperature, speed, running, power…), each with datatype, engineering unit (from an `engineering_unit` lookup table, so `degC`, `°C` and `C` cannot coexist), scaling, deadband, maximum publish interval (ADR-0007), alarm limits, historian policy, and display metadata. A `source` table describes each acquisition connection (a PLC or OPC UA server: protocol, endpoint, owning runtime instance). The `plc_mapping` table binds each property to an address on a source, unique per `(source_id, address)` because two PLCs can expose the same address (ADR-0001 amendment). Mappings are expected to change independently of properties — when maintenance moves a tag from `DB20.Temp` to `DB30.Temp`, one mapping row changes and nothing else in the system notices.
 
-**The Operational Model — what happens over time.** Entities that exist only in time: machine state events, reason-code assignments, production counts, shifts, operators, recipes-in-effect, alarms, batches. All instances are recorded append-only — rows are inserted, never updated (ADR-0006). These tables sit at the boundary between configuration and history: their *definitions* (the state vocabulary, the reason-code catalogue, the shift calendar) are configuration; their *instances* are historian data.
+**The Operational Model — what happens over time.** Entities that exist only in time: machine state events, reason-code assignments, work-order execution events, production counts, shifts, operators, alarms, batches. All instances are recorded append-only — rows are inserted, never updated (ADR-0006). These tables sit at the boundary between configuration and history: their *definitions* (the state vocabulary, the reason-code catalogue and its loss-waterfall mapping, the shift calendar and schedule, products, rated speeds, work orders) are configuration; their *instances* are historian data.
 
 All database identifiers are lowercase snake_case (ADR-0005); names such as `MachineProperty` in older material refer to `machine_property`.
 
@@ -149,7 +149,7 @@ Topics encode business context only, following the Physical Model hierarchy:
 acme/melbourne/chocolate/eggline01/depositor01/temperature
 ```
 
-Naming rules are enforced by the database (CHECK constraints on name columns), not by convention: lowercase, `a–z0–9_` only, no spaces, and never the MQTT-reserved characters `#`, `+`, `/` inside a segment. Because topics are generated, a malformed topic cannot reach the broker. Sub-asset properties extend the path by one segment (`.../depositor01/motor01/current`). The enterprise name `ofm` is reserved, so the platform branches below can never collide with the asset tree. (`acme` is a placeholder enterprise used in all examples.)
+Naming rules are enforced by the database (CHECK constraints on name columns), not by convention: lowercase, `a–z0–9_` only, no spaces, and never the MQTT-reserved characters `#`, `+`, `/` inside a segment. Because topics are generated, a malformed topic cannot reach the broker. Sub-asset properties extend the path by one segment (`.../depositor01/motor01/current`). The enterprise name `ofm` is reserved, so the platform branches below can never collide with the asset tree. Line-level topics (`.../{line}/workorder`, `.../{line}/kpi/{name}`, ADR-0010) make `workorder` and `kpi` reserved machine names. (`acme` is a placeholder enterprise used in all examples.)
 
 Three reserved first-level branches exist outside the asset hierarchy: `ofm/_system/...` for platform health (cache status, historian queue depth, source status `ofm/_system/sources/{source}` and runtime status `ofm/_system/runtime/{runtime}` per ADR-0007), `ofm/_unmapped/{source}/{address}` for quarantined values whose address is not in the model (ADR-0001; `/`, `+` and `#` in the address are replaced by `_`, and the original address travels in the payload), and `ofm/_cmd/...` for the deliberate, per-tag write-back paths, kept separate so that ACLs can treat commands differently from telemetry.
 
@@ -242,9 +242,9 @@ One Node-RED instance per plant is the Phase 1 topology. The scaling unit is the
 
 ## 8. Historian architecture
 
-Per ADR-0002, history is written directly from the runtime to TimescaleDB, in parallel with — never through — the broker. Telemetry inserts are batched (1–2 s flush); MES-significant events (state events, reason assignments, counts) are written transactionally per event. A local disk queue provides store-and-forward across database outages, with queue depth exposed on `ofm/_system/historian`.
+Per ADR-0002, history is written directly from the runtime to TimescaleDB, in parallel with — never through — the broker. Telemetry inserts are batched (1–2 s flush); MES-significant events (state events, reason assignments, work-order events, counts) are written transactionally per event. A local disk queue provides store-and-forward across database outages, with queue depth exposed on `ofm/_system/historian`.
 
-The historian schema is narrow and ID-keyed. `measurement (ts timestamptz, property_id int, value double precision, quality smallint, ts_source smallint)` is a hypertable partitioned on `ts`; text values and states go to sibling tables rather than overloading one table with nullable columns. Native TimescaleDB compression is applied after 7 days and continuous aggregates maintain 1-minute and 1-hour rollups per property, which serve most dashboard queries and the 5-year retention tier while raw data ages out at 90 days. Operational-Model instance tables (`machine_state_event`, `state_reason`, `production_count`, `event`, `runtime_heartbeat`) follow the same pattern: immutable IDs, `timestamptz`, no display names — and all are append-only: the runtime's database role can SELECT and INSERT in `hist` but never UPDATE or DELETE (ADR-0002 amendment, ADR-0006). Inserts are idempotent (`ON CONFLICT DO NOTHING`), so a store-and-forward queue replayed twice is harmless.
+The historian schema is narrow and ID-keyed. `measurement (ts timestamptz, property_id int, value double precision, quality smallint, ts_source smallint)` is a hypertable partitioned on `ts`; text values and states go to sibling tables rather than overloading one table with nullable columns. Native TimescaleDB compression is applied after 7 days and continuous aggregates maintain 1-minute and 1-hour rollups per property, which serve most dashboard queries and the 5-year retention tier while raw data ages out at 90 days. Operational-Model instance tables (`machine_state_event`, `state_reason`, `work_order_event`, `production_count`, `event`, `runtime_heartbeat`) follow the same pattern: immutable IDs, `timestamptz`, no display names — and all are append-only: the runtime's database role can SELECT and INSERT in `hist` but never UPDATE or DELETE (ADR-0002 amendment, ADR-0006). Inserts are idempotent (`ON CONFLICT DO NOTHING`), so a store-and-forward queue replayed twice is harmless.
 
 Nothing in the historian references topics or display names. Historical queries join to the model at read time, so equipment renames and topic restructures never corrupt history.
 
@@ -254,7 +254,7 @@ ADR-0003 in one paragraph: source timestamps (OPC UA `SourceTimestamp`, publishe
 
 Data quality also covers *liveness*: a value that stopped arriving must not look like a value that stopped changing. Source status topics, bad-quality republication on communication loss, the runtime's MQTT Last Will, and the maximum publish interval together make a dead source, a dead runtime and a stable process distinguishable to every consumer, live and in history (ADR-0007).
 
-## 10. Machine states and OEE
+## 10. Machine states, efficiency metrics and work orders
 
 ### 10.1 State model
 
@@ -266,11 +266,37 @@ The vocabulary is fixed platform-wide; per-machine mapping from PLC signals to s
 
 ### 10.2 Reason codes and the operator
 
-Downtime *causes* cannot come from the PLC. When a stoppage (any non-`running` interval outside planned exclusions) exceeds a configurable threshold, an operator screen — Node-RED Dashboard 2.0 in early phases — presents the reason-code catalogue from the Operational Model, filtered to that machine's applicable codes, and inserts the selection into `state_reason`, linked to the state event it explains by `(machine_id, event_ts)`. PLC fault codes, operator selections and supervisor corrections are all separate rows; the latest assignment is the effective reason, and the full history of changes is kept automatically. Un-coded intervals remain visible as "unclassified" on dashboards; making the gap visible is the enforcement mechanism, not blocking the operator.
+Downtime *causes* cannot come from the PLC. When a stoppage (any non-`running` interval outside planned exclusions) exceeds a configurable threshold, an operator screen — Node-RED Dashboard 2.0 in early phases — presents the reason-code catalogue from the Operational Model, filtered to that machine's applicable codes, and inserts the selection — with an optional free-text comment — into `state_reason`, linked to the state event it explains by `(machine_id, event_ts)`. Every reason maps to exactly one loss-waterfall position, so coding a stop also classifies it (ADR-0009). Stops shorter than the line's minor-stop threshold are classified automatically as minor stops and need no coding. PLC fault codes, operator selections and supervisor corrections are all separate rows; the latest assignment is the effective reason, and the full history of changes is kept automatically. Uncoded stops above the threshold remain visible as "unaccounted" on dashboards and in the waterfall; making the gap visible is the enforcement mechanism, not blocking the operator.
 
-### 10.3 OEE calculation
+### 10.3 Manufacturing efficiency metrics
 
-OEE is computed in SQL over historian tables, not in the runtime: availability from `vw_machine_state_interval` against the shift calendar, with `unknown` time reported explicitly and never counted as running; performance from `production_count` against the ideal cycle time of the recipe in effect; quality from good/reject counts. Machine OEE aggregates to line, area, and site by model-defined roll-up rules. Results are both queryable (Grafana) and republished to the UNS (`.../{line}/oee/...`) by a scheduled Python job, so live OEE is an ordinary namespace citizen. Definitions (what counts as planned time, which states hit availability) live in the model and are versioned — an OEE number without its definition version is treated as meaningless.
+All efficiency KPIs derive from one time-based loss waterfall (ADR-0008). Calendar time steps down through loss categories to good production, so the positions always sum to calendar time and every KPI is a ratio of two positions. The 13 positions are reference data in the model:
+
+| Pos | Category | Type | Reduces |
+|---|---|---|---|
+| 1 | Maximum Time | Milestone (calendar time) | — |
+| 2 | No Activity | No activity: not scheduled, no demand, force majeure | LU, CU, TEEP |
+| 3 | Hours Used | Milestone (scheduled time) | — |
+| 4–7 | Maintenance, Cleaning, Changeover, Other Planned DT | Planned downtime | GE, TEEP |
+| 8 | Production Hours | Milestone | — |
+| 9 | Breakdowns | Unplanned downtime | GE, OEE, TEEP |
+| 10 | Speed Loss | Performance (calculated) | GE, OEE, TEEP |
+| 11 | Quality Loss | Quality (calculated) | GE, OEE, TEEP |
+| 12 | Other Unplanned DT | Minor stops, starved/blocked, shortages | GE, OEE, TEEP |
+| — | Unaccounted | `unknown` time and uncoded stops | GE, OEE, TEEP |
+| 13 | Operating Time | Milestone (good count × ideal cycle time) | — |
+
+**Operations KPIs** (real time, shift, day): GE = Pos 13 ÷ Pos 3; OEE = Pos 13 ÷ Pos 8, shown with its factors availability, performance and quality (OEE = A × P × Q); Downtime = Pos 9 + Pos 12 + unaccounted, in hours; MTBF = running time ÷ number of breakdowns; MTTR = breakdown duration ÷ number of breakdowns, both per machine. **Management KPIs** (week, month, year): GE, OEE, LU = Pos 3 ÷ Pos 1, CU = Pos 3 ÷ defined capacity, TEEP = Pos 13 ÷ Pos 1 = LU × GE.
+
+Downtime positions come from classifying state intervals (ADR-0009): outside the schedule is No Activity; a coded stop takes its reason's position; changeover and planned windows apply to uncoded stops; short stops become minor stops; everything else is unaccounted until coded. Speed and quality losses are not events but are calculated from good and reject counts and the ideal cycle time of the active product (ADR-0010). A performance above 100 % flags a rated speed set too low; it is never clipped.
+
+Line KPIs come from line output counts and the line state — the state of the line's constraint machine, or of a line-level machine where the PLC provides one — never from summing machines, which would double-count starvation. Periods are bounded in Melbourne local time, so a daylight-saving day has 23 or 25 hours. KPIs are SQL views calculated at read time, so a late reason or a schedule correction updates every affected figure; each result carries the `kpi_definition_version` of the rules that produced it. Live line KPIs are republished to `.../{line}/kpi/{name}` so they are ordinary namespace citizens. Terminology follows ISO 22400-2 where equivalents exist; GE is OFM's named variant.
+
+### 10.4 Work orders and the operator whiteboard
+
+KPIs need to know what is being made. Products and their rated speed per line live in the model as effective-dated rows, so a rate change never rewrites history. Work orders (SKU, line, planned quantity) are master data, planned ahead or created on the spot. Their execution is append-only: `start`, `changeover_end` and `complete` events in `hist.work_order_event`. Starting a new order completes the previous one and opens a changeover window, which closes at `changeover_end` or the first good count. The active order is derived from the events and published retained on `.../{line}/workorder` (ADR-0010).
+
+The operator whiteboard (Node-RED Dashboard 2.0) is the shift-floor screen: one row per hour with produced count against target, the hour's GE, rejects, and the list of stops with type, duration, reason and comment. Each hour's bar is the loss waterfall expressed in units: good count plus the unit-equivalent of every stop and of the speed loss adds up to the hourly target. Operators code stops, add comments, and start and complete work orders on this screen, and it reminds them to start the new order when a changeover begins. Grafana carries the analytical dashboards: GE, OEE and A·P·Q trends, downtime Pareto by reason, MTBF and MTTR per machine for operations, and the weekly-to-yearly GE, OEE, CU, LU and TEEP views for management.
 
 ## 11. Configuration management
 
@@ -314,11 +340,11 @@ Known ceilings, recorded so they are watched rather than discovered: Node-RED si
 
 Two things need protecting, and they differ. **The model** is small, precious, and slow-changing: nightly `pg_dump` of the configuration schema, retained 90 days, tested by an automated restore-and-diff job — plus, in effect, a second life in Git via migrations and NocoDB audit history. **The historian** is large and append-only: weekly base backup plus WAL archiving (pgBackRest) with the RPO defined by WAL shipping frequency; store-and-forward in the runtime covers database downtime up to queue capacity, so a restore loses no telemetry within that window.
 
-Broker state is deliberately expendable — retained messages regenerate from the runtime within one publish cycle of each property, so Mosquitto needs no backup beyond its config file (in Git). Recovery of the full platform on fresh hardware is: restore PostgreSQL, `docker compose up`, and wait one cache-load plus one publish cycle. This procedure is rehearsed, not assumed — a DR rehearsal is a Phase 3 exit criterion.
+Broker state is deliberately expendable — retained messages regenerate from the runtime within one publish cycle of each property, so Mosquitto needs no backup beyond its config file (in Git). Recovery of the full platform on fresh hardware is: restore PostgreSQL, `docker compose up`, and wait one cache-load plus one publish cycle. This procedure is rehearsed, not assumed — a DR rehearsal is a Phase 3b exit criterion.
 
 ## 17. Testing strategy
 
-The strategy leans on the model-driven design: because flows are generic, testing effort concentrates on a small pipeline instead of per-machine logic. Four tiers. **Schema tests** (pgTAP or plain SQL assertions in CI) verify constraints, the naming rules, `vw_runtime_model` and `vw_machine_state_interval` correctness, and NOTIFY triggers. **Pipeline tests** run the ingest flow against a simulated source — an OPC UA test server and a Modbus simulator publishing known patterns — and assert the exact UNS payloads and historian rows produced, including deadband, quality-flagging, and quarantine behaviour. **Failure drills** are scripted, not aspirational: kill the broker mid-stream (history must be complete afterwards), kill PostgreSQL (UNS must keep flowing; queue must drain on recovery), send an unmapped address, send a skewed timestamp, cut a PLC connection (source status and `bad` quality must appear, ADR-0007), restart the runtime (the correct `unknown` interval must be recorded, ADR-0006), and replay the store-and-forward queue twice (no duplicates). **Load tests** validate the section 3.2 targets before each phase exit.
+The strategy leans on the model-driven design: because flows are generic, testing effort concentrates on a small pipeline instead of per-machine logic. Four tiers. **Schema tests** (pgTAP or plain SQL assertions in CI) verify constraints, the naming rules, `vw_runtime_model` and `vw_machine_state_interval` correctness, and NOTIFY triggers. **Pipeline tests** run the ingest flow against a simulated source — an OPC UA test server and a Modbus simulator publishing known patterns — and assert the exact UNS payloads and historian rows produced, including deadband, quality-flagging, and quarantine behaviour. **Failure drills** are scripted, not aspirational: kill the broker mid-stream (history must be complete afterwards), kill PostgreSQL (UNS must keep flowing; queue must drain on recovery), send an unmapped address, send a skewed timestamp, cut a PLC connection (source status and `bad` quality must appear, ADR-0007), restart the runtime (the correct `unknown` interval must be recorded, ADR-0006), and replay the store-and-forward queue twice (no duplicates). **KPI tests** feed scripted state, reason, count and work-order sequences through the classification and KPI views and assert the expected waterfall, including that every period closes (positions sum to Maximum Time) on both daylight-saving days. **Load tests** validate the section 3.2 targets before each phase exit.
 
 The simulator doubles as the development environment: contributors without PLC hardware run the full stack against simulated lines, which is also how the home-lab-to-plant path stays credible.
 
@@ -328,7 +354,8 @@ The simulator doubles as the development environment: contributors without PLC h
 |---|---|---|
 | 1 | Model schema (config + historian DDL as migrations, audit), Mosquitto with ACLs, model cache loaded at startup, generic ingest for one source, runtime Last Will and source status topics, Grafana | One line's temperatures flowing PLC → UNS → historian → dashboard from model configuration only |
 | 2 | Cache reload via LISTEN/NOTIFY, `_meta` topics and retained-topic cleanup, deadbanding and max-interval republish, `bad` quality on source loss, batched historian writer, store-and-forward, NocoDB, broker TLS, load test | Model edit visible in runtime < 1 s; broker-kill and PLC-disconnect drills pass; 2,000 msg/s sustained |
-| 3 | Append-only state events and derived intervals, runtime heartbeat and startup reconciliation, counts, operator reason-code screen, OEE queries and republication, DR rehearsal | Line OEE on a dashboard traceable to raw state events; runtime-restart drill records the correct `unknown` interval; restore rehearsal documented |
+| 3a | Append-only state events and derived intervals, runtime heartbeat and startup reconciliation, good/reject counts, products and rated speeds, shift calendar, work orders, reason catalogue with waterfall mapping, operator whiteboard (reason coding, comments, work-order entry) | One line's shift whiteboard matches the plant's existing tool hour by hour; runtime-restart drill records the correct `unknown` interval |
+| 3b | Time ledger and KPI views (GE, OEE with A·P·Q, Downtime, MTBF, MTTR, CU, LU, TEEP), KPI republication to the UNS, Grafana operations and management dashboards, DR rehearsal | Line waterfall closes for every period, including daylight-saving days; every KPI traceable to raw events; restore rehearsal documented |
 | 4 | Dashboard templating from the model, Python analytics framework, semantic relationships (populate `asset_relationship`) | New machine gets default dashboards with zero Grafana editing |
 | 5 | `node-red-contrib-ofm` custom nodes, REST API over the model, AI assistant over model + historian | Property commissioning via dropdowns; natural-language operational queries |
 
@@ -340,8 +367,8 @@ Three directions are anticipated by the architecture but deliberately unbuilt. *
 
 ## 20. Document map
 
-Where the details live, by concern: contested decisions and their alternatives → `docs/adr/` (ADR-0001 cache, ADR-0002 historian path, ADR-0003 timestamps, ADR-0004 immutable IDs, ADR-0005 naming, ADR-0006 append-only operational history, ADR-0007 stale-data signalling, and successors; accepted ADRs change only by dated amendment lines or by superseding ADRs); current phase, next steps and open questions → `docs/STATUS.md`; payload contracts — live value, `_meta`, and `ofm/_system` status payloads → `schemas/*.schema.json` (normative); database structure → `db/migrations/` (normative) with diagrams regenerated from the live schema; deployment → `deploy/docker-compose.yml` and its `.env.example`; generated references (topic tree, tag list, data dictionary) → `docs/generated/`, produced by `tools/gen_docs.py` from the model and never edited by hand. When this overview and a normative artefact disagree, the artefact wins and this document gets a correcting commit.
+Where the details live, by concern: contested decisions and their alternatives → `docs/adr/` (ADR-0001 cache, ADR-0002 historian path, ADR-0003 timestamps, ADR-0004 immutable IDs, ADR-0005 naming, ADR-0006 append-only operational history, ADR-0007 stale-data signalling, ADR-0008 loss waterfall, ADR-0009 loss classification, ADR-0010 work orders, and successors; accepted ADRs change only by dated amendment lines or by superseding ADRs); current phase, next steps and open questions → `docs/STATUS.md`; payload contracts — live value, `_meta`, and `ofm/_system` status payloads → `schemas/*.schema.json` (normative); database structure → `db/migrations/` (normative) with diagrams regenerated from the live schema; deployment → `deploy/docker-compose.yml` and its `.env.example`; generated references (topic tree, tag list, data dictionary) → `docs/generated/`, produced by `tools/gen_docs.py` from the model and never edited by hand. When this overview and a normative artefact disagree, the artefact wins and this document gets a correcting commit.
 
 ---
 
-*End of Architecture Overview v0.2. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.3. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
