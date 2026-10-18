@@ -1,0 +1,15 @@
+# OFM Mosquitto access control (Architecture Overview §13).
+# Every PUBLISH and SUBSCRIBE is checked against these rules. A user that is
+# not listed here can do nothing. 'deny' rules are checked before any grant.
+
+# Runtime (Node-RED): publishes telemetry, metadata and platform topics.
+# It may not use the write-back branch, which gets its own credential when
+# write-back is built.
+user ofm_runtime
+topic deny ofm/_cmd/#
+topic readwrite #
+
+# Consumers (Grafana, Python, debug clients): subscribe only.
+user ofm_reader
+topic read #
+topic read $SYS/#

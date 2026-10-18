@@ -5,11 +5,16 @@ Node-RED, Grafana and NocoDB as separate containers under Docker Compose.
 The same file, with different `.env` values, is the plant deployment
 (Architecture Overview §14).
 
-> **Before connecting this laptop to any OT network**, complete the deploy-kit
-> hardening listed in `docs/STATUS.md`: Node-RED editor login (`adminAuth`),
-> service ports bound to the laptop only, Mosquitto ACLs, and database role
-> passwords taken from `.env`. An unprotected Node-RED editor lets anyone who
-> can reach it deploy code that runs next to your PLCs.
+The kit is hardened for a single laptop (Architecture Overview §13):
+
+- every service port is bound to `127.0.0.1`, so it is reachable from this
+  laptop only;
+- all passwords live in one generated file, `.env` (never committed); the
+  database roles, MQTT users and Grafana datasource are created from it;
+- the Node-RED editor requires a login;
+- Mosquitto refuses anonymous clients and applies per-user topic rules
+  (`mosquitto/config/acl`);
+- image versions are pinned in `docker-compose.yml`.
 
 ## 1. Prepare Windows
 
@@ -20,110 +25,122 @@ The same file, with different `.env` values, is the plant deployment
    ```powershell
    wsl --install
    ```
-   Reboot when prompted. (On up-to-date Windows 11 this one command installs
-   the WSL2 kernel and an Ubuntu distribution. If WSL was already present,
-   run `wsl --update` instead.)
+   Reboot when prompted. (If WSL was already present, run `wsl --update`.)
 3. **Install Docker Desktop** from https://www.docker.com/products/docker-desktop/.
-   During setup, keep **"Use WSL 2 based engine"** checked (it is the default).
-   Start Docker Desktop once and let it finish initialising.
-   In Docker Desktop → Settings → General, enable **"Start Docker Desktop
-   when you sign in"** — a historian that starts on demand records nothing.
+   Keep **"Use WSL 2 based engine"** checked (the default). Start Docker
+   Desktop once and let it finish initialising. In Docker Desktop → Settings →
+   General, enable **"Start Docker Desktop when you sign in"** — a historian
+   that does not start with Windows records nothing. If any `docker` command
+   reports `open //./pipe/dockerDesktopLinuxEngine`, Docker Desktop is not
+   running: start it and wait until it reports "running".
 
    *Licensing:* Docker Desktop is free for personal use, education and small
    businesses only. For use within a larger organisation, either obtain a
    subscription or install the free Docker Engine directly inside the WSL2
-   Ubuntu distribution instead; the Compose file is identical either way.
+   Ubuntu distribution; the Compose file is identical either way.
 4. **Stop the laptop from sleeping.** Settings → System → Power → Screen and
-   sleep → set "When plugged in, put my device to sleep" to **Never**. Also
+   sleep → "When plugged in, put my device to sleep" → **Never**. Also
    disable Fast Startup (Control Panel → Power Options → Choose what the
-   power buttons do → untick "Turn on fast startup") — it can leave the WSL
-   VM in a stale state across reboots.
-5. *(Optional but recommended)* Cap the WSL VM so it never starves Windows.
-   Create `C:\Users\<you>\.wslconfig`:
+   power buttons do → untick "Turn on fast startup").
+5. *(Optional but recommended)* Cap the WSL VM in
+   `C:\Users\<you>\.wslconfig`:
    ```ini
    [wsl2]
    memory=6GB
    processors=4
    ```
-   Then `wsl --shutdown` once; Docker Desktop will restart the VM.
+   Then `wsl --shutdown` once; Docker Desktop restarts the VM.
 
-## 2. Prepare the project
+## 2. Install OFM (two commands)
 
-6. Clone the repository to `C:\ofm`; this guide assumes you work from
-   `C:\ofm\deploy` (any path without spaces works).
-7. In `C:\ofm\deploy`, copy `.env.example` to `.env` and set real passwords.
-   Secrets live only in `.env` and the Mosquitto `passwd` file; both are
-   excluded from Git by `.gitignore`, and nothing else in the repository may
-   contain a password.
-8. Create the MQTT users (Mosquitto refuses anonymous connections).
-   In PowerShell, from `C:\ofm\deploy`:
+6. Get the repository into `C:\ofm` (clone it, or download and unzip it), then
+   open PowerShell in the deploy folder:
    ```powershell
-   docker run --rm -v ${PWD}\mosquitto\config:/mosquitto/config eclipse-mosquitto:2 `
-     mosquitto_passwd -c -b /mosquitto/config/passwd ofm_runtime YourMqttPassword
+   cd C:\ofm\deploy
    ```
-   Add a second user for consumers (Grafana, Python, debug clients):
+7. **Generate the secrets.** This creates `.env` with a random password for
+   every service and prints the two logins you need. It runs inside a small
+   throw-away container, so nothing needs installing, and the same command
+   works in a Linux shell:
    ```powershell
-   docker run --rm -v ${PWD}\mosquitto\config:/mosquitto/config eclipse-mosquitto:2 `
-     mosquitto_passwd -b /mosquitto/config/passwd ofm_reader AnotherPassword
+   docker run --rm -v "${PWD}:/work" -w /work alpine:3.22 sh make-env.sh
    ```
-   (Use `-c` only on the first command — it creates the file; the second
-   appends.) The intent is that `ofm_reader` may only subscribe; this is
-   enforced once the Mosquitto ACL file is added (Architecture Overview §13).
-   Passwords typed this way remain in PowerShell's command history; clear it
-   with `Clear-History` and by deleting
-   `(Get-PSReadLineOption).HistorySavePath` if that matters to you.
-
-## 3. Start and verify
-
-9. From `C:\ofm\deploy` in PowerShell:
+   Save a copy of `.env` in a password manager: it is the only place these
+   passwords exist, and it is never committed to Git. The script refuses to
+   overwrite an existing `.env`.
+8. **Start the stack:**
    ```powershell
    docker compose up -d
    docker compose ps
    ```
-   All five services should reach "running" (TimescaleDB shows "healthy"
-   after ~15 s).
-10. Verify each component:
-    - **TimescaleDB** — `docker exec -it ofm-timescaledb psql -U ofm_admin -d ofm -c "\dn"`
-      should list the `config` and `hist` schemas (proves the init script ran).
-    - **Mosquitto** — open two PowerShell windows:
-      ```powershell
-      docker exec -it ofm-mosquitto mosquitto_sub -u ofm_reader -P AnotherPassword -t "test/#" -v
-      docker exec -it ofm-mosquitto mosquitto_pub -u ofm_runtime -P YourMqttPassword -t test/hello -m "ofm"
-      ```
-      The subscriber window should print `test/hello ofm`.
-    - **Node-RED** — http://localhost:1880
-    - **Grafana** — http://localhost:3000 (login from `.env`)
-    - **NocoDB** — http://localhost:8080 (create the local account on first visit)
+   The first start downloads the images (a few minutes). All five services
+   should then be "running", TimescaleDB "healthy" after about 15 s.
+
+That is the whole installation. On first start the stack creates the database
+roles, the MQTT users and the Grafana datasource from `.env` by itself.
+
+## 3. Check it works
+
+9. **Logins** (users and passwords were printed by step 7; they are also in
+   `.env`):
+   - **Node-RED** — http://localhost:1880 must ask for a login.
+   - **Grafana** — http://localhost:3000. Then Connections → Data sources →
+     **OFM historian** → **Test** must report success.
+   - **NocoDB** — http://localhost:8080 (create the local account on first
+     visit).
+10. **Database** — schemas and roles exist:
+    ```powershell
+    docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "\dn" -c "\du"
+    ```
+    Expect schemas `config` and `hist`, and roles `ofm_runtime`,
+    `ofm_config`, `ofm_reader`.
+11. **MQTT access rules** — the commands read the passwords inside the broker
+    container, so nothing needs typing. In one PowerShell window, subscribe
+    as the reader:
+    ```powershell
+    docker exec -it ofm-mosquitto sh -c 'mosquitto_sub -u ofm_reader -P $OFM_MQTT_READER_PASSWORD -t test/# -t ofm/# -v'
+    ```
+    In a second window, publish three messages:
+    ```powershell
+    docker exec ofm-mosquitto sh -c 'mosquitto_pub -u ofm_runtime -P $OFM_MQTT_RUNTIME_PASSWORD -t test/hello -m allowed'
+    docker exec ofm-mosquitto sh -c 'mosquitto_pub -u ofm_reader -P $OFM_MQTT_READER_PASSWORD -t test/hello -m reader-publish'
+    docker exec ofm-mosquitto sh -c 'mosquitto_pub -u ofm_runtime -P $OFM_MQTT_RUNTIME_PASSWORD -t ofm/_cmd/test -m cmd'
+    ```
+    The subscriber must print **only** `test/hello allowed`: the reader may
+    not publish, and the runtime may not use the write-back branch
+    (`mosquitto/config/acl`). MQTT drops refused messages silently. Stop the
+    subscriber with Ctrl+C.
 
 ## 4. First wiring (do once)
 
-11. **Node-RED palettes.** Menu → Manage palette → Install:
+12. **Node-RED palettes.** Menu → Manage palette → Install:
     `node-red-contrib-opcua`, `node-red-contrib-s7`, `node-red-contrib-modbus`,
     `node-red-contrib-postgresql`, `@flowfuse/node-red-dashboard`.
     (The OPC UA package compiles native modules — allow several minutes.)
-12. **Container-to-container addresses.** Inside flows and datasources, use
+13. **Container-to-container addresses.** Inside flows and datasources, use
     Compose service names, never `localhost`:
     - MQTT broker host: `mosquitto`, port 1883
     - PostgreSQL host: `timescaledb`, port 5432, database `ofm`
 
     `localhost` works only from Windows itself (your browser, MQTT Explorer).
-13. **Grafana datasource.** Connections → Data sources → PostgreSQL:
-    host `timescaledb:5432`, database `ofm`, user `ofm_reader` with the
-    password set for that role by the database init script, TLS disabled
-    (PoC), and enable the TimescaleDB option.
-14. **NocoDB connection.** Create a Base → external PostgreSQL:
+14. **Passwords in flows.** Node-RED receives `OFM_RUNTIME_DB_PASSWORD` and
+    `OFM_MQTT_RUNTIME_PASSWORD` as environment variables, so flows refer to
+    them as `${OFM_RUNTIME_DB_PASSWORD}` instead of storing the password.
+    The exact use is set up with the first Phase 1 flow.
+15. **NocoDB connection.** Create a Base → external PostgreSQL:
     host `timescaledb`, port 5432, database `ofm`, user `ofm_config`,
-    schema `config`. (Empty until the Phase 1 DDL lands.) NocoDB connects
-    with this one role for every user, so per-person change history comes
-    from NocoDB's own audit log (Architecture Overview §11).
+    password `OFM_CONFIG_DB_PASSWORD` from `.env`, schema `config`. (Empty
+    until the Phase 1 migrations land.) NocoDB connects with this one role for
+    every user, so per-person change history comes from NocoDB's own audit log
+    (Architecture Overview §11).
 
 ## 5. Reaching a real PLC later
 
 Containers reach your LAN through outbound NAT, which is exactly what
-S7/Modbus/OPC UA polling needs — Node-RED simply opens outbound TCP to the
-PLC's IP. When the time comes (and after the hardening note at the top):
-connect the laptop to the OT network by **Ethernet**, give it an address in
-the PLC subnet, and test reachability from inside the container first:
+S7/Modbus/OPC UA polling needs — Node-RED opens outbound TCP to the PLC's IP.
+Binding the service ports to `127.0.0.1` does not affect this. When the time
+comes, connect the laptop to the OT network by **Ethernet**, give it an
+address in the PLC subnet, and test reachability from inside the container:
 ```powershell
 docker exec -it ofm-nodered ping <plc-ip>
 ```
@@ -145,9 +162,10 @@ docker compose down                # stop all (volumes/data survive)
 docker compose down -v             # stop AND DELETE ALL DATA — careful
 ```
 
-**Upgrading images** is deliberate, never routine: change the image version
-in `docker-compose.yml`, commit the change, then run (two separate commands —
-Windows PowerShell 5.1 does not support `&&`):
+**Upgrading an image** is a deliberate change: edit its version in
+`docker-compose.yml`, read the release notes (TimescaleDB upgrades also need
+`ALTER EXTENSION timescaledb UPDATE;`), commit, then run (two separate
+commands — Windows PowerShell 5.1 does not support `&&`):
 ```powershell
 docker compose pull
 docker compose up -d
@@ -159,29 +177,46 @@ dashboards.
 
 **Back up the model.** The dump is written inside the container and copied
 out, because PowerShell `>` redirection writes UTF-16, which `psql` cannot
-restore. Backups go to a folder outside the repository so they can never be
-committed by accident:
+restore. Backups go outside the repository so they are never committed:
 ```powershell
 New-Item -ItemType Directory -Force C:\ofm-backups | Out-Null
 docker exec ofm-timescaledb pg_dump -U ofm_admin -n config -f /tmp/config-backup.sql ofm
 docker cp ofm-timescaledb:/tmp/config-backup.sql "C:\ofm-backups\config-$(Get-Date -Format yyyyMMdd-HHmm).sql"
 ```
-Restoring is rehearsed as part of Phase 3 (Architecture Overview §16).
+Restoring is rehearsed as part of Phase 3b (Architecture Overview §16).
+
+**Changing a password** after the first start:
+- *MQTT and Node-RED:* edit `.env`, then `docker compose up -d` (the broker
+  rebuilds its password file at every start; Node-RED reads its login at
+  start).
+- *Database roles:* the init script does not run again, so change the role
+  in the database as well as in `.env`, then `docker compose up -d`:
+  ```powershell
+  docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "ALTER ROLE ofm_reader PASSWORD 'NewPassword'"
+  ```
+- *Grafana administrator:* `GRAFANA_PASSWORD` only applies to a brand-new
+  Grafana volume. To make an existing Grafana match `.env`:
+  ```powershell
+  docker exec ofm-grafana grafana cli admin reset-admin-password NewPassword
+  ```
+- *`NODE_RED_CREDENTIAL_SECRET`:* never change it; stored Node-RED
+  credentials would become unreadable.
 
 ## Gotchas worth knowing
 
-- **Port collisions.** If 5432/3000/1880/8080 are taken on Windows, change
-  only the left (host) side of the mapping in `docker-compose.yml`
-  (e.g. `"15432:5432"`).
-- **The init script runs once.** `db/init/*` executes only when the
-  `tsdb-data` volume is empty. To re-run it, `docker compose down -v` (data
-  loss). From Phase 1, schema changes travel as migrations in
-  `db/migrations/` instead.
-- **Access from other devices.** The PoC is meant to be used from the laptop
-  itself. Making Grafana, MQTT or anything else reachable from other devices
-  is a deliberate security decision (Architecture Overview §13), not a
-  firewall tweak.
-- **Clock discipline (ADR-0003).** Windows NTP keeps the WSL VM in sync
-  after sleep/resume on current builds, but if you ever see timestamps
-  drift after resume, `wsl --shutdown` and restart Docker Desktop — and
-  remember the laptop shouldn't be sleeping anyway.
+- **The init script runs once.** `db/init/001-init.sh` executes only when the
+  `tsdb-data` volume is empty. From Phase 1, schema changes travel as
+  migrations in `db/migrations/`.
+- **Line endings.** `make-env.sh` and `db/init/001-init.sh` must keep Linux
+  (LF) line endings or they fail inside a container. `.gitattributes` enforces this for Git; do not
+  re-save it from an editor set to Windows line endings.
+- **Operator dashboards are not covered by the editor login.** Node-RED
+  Dashboard pages are protected separately when they are built (Phase 3a).
+- **Access from other devices** is deliberately impossible while ports are
+  bound to `127.0.0.1`. Opening a service to the network is a security
+  decision (Architecture Overview §13), not a configuration tweak.
+- **Port collisions.** If a port is taken on Windows, change only the host
+  port in `docker-compose.yml` (e.g. `"127.0.0.1:15432:5432"`).
+- **Clock discipline (ADR-0003).** If timestamps drift after sleep/resume,
+  `wsl --shutdown` and restart Docker Desktop — and the laptop should not be
+  sleeping anyway.

@@ -4,9 +4,9 @@
 
 ## Where we are
 
-**Process step:** step 3 (architecture and functional design) complete,
-including the payload contracts. Next is the environment fix-up, then the first
-Phase 1 build loop. No database migrations or flows exist yet.
+**Process step:** step 3 (architecture and functional design) and the
+environment hardening are complete. Next is the first Phase 1 build loop,
+starting with the database design. No database migrations or flows exist yet.
 
 **Roadmap phase:** pre-Phase-1 (see Architecture Overview §18).
 
@@ -17,7 +17,14 @@ Phase 1 build loop. No database migrations or flows exist yet.
   (§10.4) added; Phase 3 split into 3a and 3b.
 - ADR-0001 to ADR-0010 accepted. ADR-0001 to ADR-0003 and ADR-0006 carry dated
   amendments; the template defines the amendment rule.
-- `deploy/README.md` aligned with the overview.
+- Deploy kit hardened: role passwords from `.env` (`db/init/001-init.sh`),
+  image versions pinned, ports bound to 127.0.0.1, Node-RED editor login and
+  credential secret (`nodered/settings.js`), Mosquitto ACL, Grafana datasource
+  provisioned as `ofm_reader`, `.gitattributes` for LF line endings.
+- Installation simplified to two commands: `make-env.sh` (run in a throw-away
+  Alpine container) generates `.env` with random passwords; the broker builds
+  its password file from `.env` at every start; Node-RED checks its login
+  against `.env` directly (no bcrypt hash). `deploy/README.md` rewritten.
 - Payload contracts in `schemas/` (JSON Schema 2020-12): live value, `_meta`,
   unmapped, work order, and `ofm/_system` source, runtime, cache and historian
   status. 33 example payloads in `tests/schemas/`, checked by
@@ -31,15 +38,7 @@ Phase 1 build loop. No database migrations or flows exist yet.
 
 ## Next, in order
 
-1. **Deploy kit fixes** (before any real data flows; the init script runs only
-   on a fresh database volume):
-   - role passwords from `.env`, not committed in `001-init.sql`;
-   - pin image versions;
-   - bind ports to 127.0.0.1;
-   - Node-RED `adminAuth` and `credentialSecret`;
-   - Mosquitto ACL file;
-   - `flows_cred.json` in `.gitignore`.
-2. **Phase 1 database design:** `db/migrations/001-…` covering
+1. **Phase 1 database design:** `db/migrations/001-…` covering
    - the Physical Model tables;
    - `source`, `machine_property`, `plc_mapping` and `engineering_unit`;
    - `vw_runtime_model`;
@@ -50,9 +49,11 @@ Phase 1 build loop. No database migrations or flows exist yet.
      machine names `workorder` and `kpi` (ADR-0010).
 
    Plus a generated ERD (Mermaid) for review.
-3. **Phase 1 build:** generic ingest flow (cache loaded at startup, runtime
+2. **Phase 1 build:** generic ingest flow (cache loaded at startup, runtime
    Last Will, source status topics), Grafana dashboard, first tests. The
-   runtime validates its outgoing payloads against `schemas/` in tests.
+   runtime validates its outgoing payloads against `schemas/` in tests
+   (`ajv` in its 2020-12 mode). Confirm that `${ENV_VAR}` references work in
+   the MQTT and PostgreSQL config-node password fields.
 
 ## Open questions
 
@@ -74,8 +75,18 @@ Phase 1 build loop. No database migrations or flows exist yet.
 
 ## Known gaps
 
-- `deploy/README.md` needs another pass when the deploy-kit fixes land.
-- The root `README.md` has not yet been reviewed against the current overview.
+- Pinned versions (2026-10-18): TimescaleDB 2.30.2-pg16, Mosquitto
+  2.1.2-alpine, Node-RED 4.1.16 (Node 22), Grafana 13.2.4 (image
+  `grafana/grafana`; `grafana/grafana-oss` is no longer updated), NocoDB
+  2026.09.1.
+- Mosquitto 2.1 deprecates `password_file`/`acl_file` in favour of plugins
+  (removal planned for 3.0). Migrate before any upgrade to 3.x.
+- The root `README.md` has not yet been reviewed against the current overview;
+  it should point newcomers straight to the two-command install in
+  `deploy/README.md`.
+- The installation has been run end-to-end on one machine only (Windows 11,
+  Docker Desktop). A fresh-clone install test on a second machine, or by
+  someone else, is worth doing before going public.
 - KPI definitions must be presented as OFM's own, anchored to ISO 22400-2,
   not as a reproduction of any company-internal standard (see open question 3).
 - Git history contains the earlier enterprise example name. Decide before going

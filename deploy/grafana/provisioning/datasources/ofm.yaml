@@ -1,0 +1,19 @@
+# Grafana datasource for the OFM historian, created automatically at start.
+# Connects as the read-only role; the password comes from deploy/.env.
+apiVersion: 1
+
+datasources:
+  - name: OFM historian
+    uid: ofm-historian
+    type: grafana-postgresql-datasource
+    url: timescaledb:5432
+    user: ofm_reader
+    isDefault: true
+    editable: false
+    jsonData:
+      database: ofm
+      sslmode: disable
+      timescaledb: true
+      postgresVersion: 1600
+    secureJsonData:
+      password: ${OFM_READER_DB_PASSWORD}

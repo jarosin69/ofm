@@ -1,23 +1,37 @@
 # OFM Proof of Concept stack
-# Usage: copy .env.example to .env, edit passwords, then: docker compose up -d
+# Usage (from this folder; see README.md):
+#   docker run --rm -v "${PWD}:/work" -w /work alpine:3.22 sh make-env.sh
+#   docker compose up -d
+#
+# Image versions are pinned. An upgrade is a deliberate, committed change of a
+# version below, never a side effect of "docker compose pull".
+# Every port is bound to 127.0.0.1: services are reachable from this laptop
+# only. Containers still reach each other by service name, and Node-RED still
+# reaches PLCs (outbound connections are not affected).
 name: ofm
 
 services:
 
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.30.2-pg16
     container_name: ofm-timescaledb
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ofm
       TZ: Etc/UTC                  # ADR-0003: database thinks in UTC
+      # Read once by the init script to create the least-privilege roles:
+      OFM_RUNTIME_DB_PASSWORD: ${OFM_RUNTIME_DB_PASSWORD:?set OFM_RUNTIME_DB_PASSWORD in .env}
+      OFM_CONFIG_DB_PASSWORD: ${OFM_CONFIG_DB_PASSWORD:?set OFM_CONFIG_DB_PASSWORD in .env}
+      OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD:?set OFM_READER_DB_PASSWORD in .env}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - tsdb-data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d:ro   # runs only on first start (empty volume)
+      # Mounted as a single file so the image's own init scripts (TimescaleDB
+      # install and tuning) still run first. Runs only on an empty volume.
+      - ./db/init/001-init.sh:/docker-entrypoint-initdb.d/900-ofm-init.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ofm"]
       interval: 10s
@@ -25,26 +39,53 @@ services:
       retries: 5
 
   mosquitto:
-    image: eclipse-mosquitto:2
+    image: eclipse-mosquitto:2.1.2-alpine
     container_name: ofm-mosquitto
     restart: unless-stopped
+    environment:
+      OFM_MQTT_RUNTIME_PASSWORD: ${OFM_MQTT_RUNTIME_PASSWORD:?set OFM_MQTT_RUNTIME_PASSWORD in .env}
+      OFM_MQTT_READER_PASSWORD: ${OFM_MQTT_READER_PASSWORD:?set OFM_MQTT_READER_PASSWORD in .env}
+    # At every start, build the password file from .env and copy the ACL into a
+    # folder only the broker can read; then start the broker. .env stays the
+    # single source of every password. ($$ passes a literal $ to the container.)
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /mosquitto/secure
+        mosquitto_passwd -c -b /mosquitto/secure/passwd ofm_runtime "$$OFM_MQTT_RUNTIME_PASSWORD"
+        mosquitto_passwd -b /mosquitto/secure/passwd ofm_reader "$$OFM_MQTT_READER_PASSWORD"
+        cp /mosquitto/config/acl /mosquitto/secure/acl
+        chown -R mosquitto:mosquitto /mosquitto/secure
+        chmod 0700 /mosquitto/secure
+        chmod 0600 /mosquitto/secure/passwd /mosquitto/secure/acl
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
     ports:
-      - "1883:1883"                # plain MQTT for the PoC; TLS (8883) comes later
+      - "127.0.0.1:1883:1883"      # plain MQTT for the PoC; TLS (8883) in Phase 2
     volumes:
-      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/config:/mosquitto/config:ro
       - mosq-data:/mosquitto/data
       - mosq-log:/mosquitto/log
 
   nodered:
-    image: nodered/node-red:4.0
+    image: nodered/node-red:4.1.16-22
     container_name: ofm-nodered
     restart: unless-stopped
     environment:
       TZ: Australia/Melbourne      # log readability only; data path uses epoch ms UTC
+      NODERED_ADMIN_USER: ${NODERED_ADMIN_USER:?set NODERED_ADMIN_USER in .env}
+      NODERED_ADMIN_PASSWORD: ${NODERED_ADMIN_PASSWORD:?set NODERED_ADMIN_PASSWORD in .env}
+      NODE_RED_CREDENTIAL_SECRET: ${NODE_RED_CREDENTIAL_SECRET:?set NODE_RED_CREDENTIAL_SECRET in .env}
+      # Referenced in flows as ${OFM_RUNTIME_DB_PASSWORD} etc., so no password
+      # is ever stored in a flow:
+      OFM_RUNTIME_DB_PASSWORD: ${OFM_RUNTIME_DB_PASSWORD}
+      OFM_MQTT_RUNTIME_PASSWORD: ${OFM_MQTT_RUNTIME_PASSWORD:?set OFM_MQTT_RUNTIME_PASSWORD in .env}
     ports:
-      - "1880:1880"
+      - "127.0.0.1:1880:1880"
     volumes:
       - nodered-data:/data
+      - ./nodered/settings.js:/data/settings.js:ro
       - sf-queue:/sfqueue          # store-and-forward disk queue (ADR-0002)
     depends_on:
       timescaledb:
@@ -53,27 +94,32 @@ services:
         condition: service_started
 
   grafana:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana:13.2.4
     container_name: ofm-grafana
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:?set GRAFANA_USER in .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD}   # used by the provisioned datasource
       TZ: Australia/Melbourne      # display layer: local time lives here (ADR-0003)
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       timescaledb:
         condition: service_healthy
 
   nocodb:
-    image: nocodb/nocodb:latest
+    image: nocodb/nocodb:2026.09.1
     container_name: ofm-nocodb
     restart: unless-stopped
+    environment:
+      NC_DISABLE_TELE: "true"
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - nocodb-data:/usr/app/data
     depends_on:
