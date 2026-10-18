@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:value:1",
+  "title": "OFM live value",
+  "description": "Payload of every property topic {enterprise}/{site}/{area}/{line}/{machine}/{property} (and sub-asset properties one level deeper). Published retained. An empty (zero-byte) retained message is not a payload: it clears a retired or renamed topic (ADR-0004).",
+  "type": "object",
+  "properties": {
+    "v": {
+      "description": "Value after normalisation, in the engineering unit given in the property's _meta topic. Its JSON type follows the _meta datatype. Null only when there is no last known value and quality is bad.",
+      "type": ["number", "boolean", "string", "null"],
+      "maxLength": 1024
+    },
+    "ts": { "$ref": "urn:ofm:schema:common:1#/$defs/ts" },
+    "q": { "$ref": "urn:ofm:schema:common:1#/$defs/quality" },
+    "tss": { "$ref": "urn:ofm:schema:common:1#/$defs/tss" }
+  },
+  "required": ["v", "ts", "q", "tss"],
+  "additionalProperties": false,
+  "if": {
+    "properties": { "v": { "type": "null" } },
+    "required": ["v"]
+  },
+  "then": {
+    "properties": { "q": { "const": "bad" } }
+  }
+}

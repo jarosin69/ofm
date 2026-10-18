@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:meta:1",
+  "title": "OFM property metadata",
+  "description": "Payload of {property topic}/_meta. Published retained, republished only when the model changes (Architecture Overview §6.3). Cleared with an empty retained message when the property is renamed or retired (ADR-0004).",
+  "type": "object",
+  "properties": {
+    "propertyId": {
+      "$ref": "urn:ofm:schema:common:1#/$defs/id",
+      "description": "Immutable property ID; joins UNS data with historian rows (hist.measurement.property_id)."
+    },
+    "datatype": {
+      "description": "Datatype of v in the live payload.",
+      "enum": ["float", "int", "bool", "string"]
+    },
+    "unit": {
+      "description": "Engineering unit code from config.engineering_unit (e.g. degC, bar, rpm, pct). Required for float and int.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_%/.\\-]{1,32}$"
+    },
+    "displayName": { "$ref": "urn:ofm:schema:common:1#/$defs/text" },
+    "description": { "$ref": "urn:ofm:schema:common:1#/$defs/text" },
+    "low": { "description": "Lower limit of the engineering range.", "type": "number" },
+    "high": { "description": "Upper limit of the engineering range.", "type": "number" },
+    "alarmLow": { "type": "number" },
+    "alarmHigh": { "type": "number" },
+    "maxPublishIntervalMs": {
+      "description": "Longest time between publications (ADR-0007). A value older than twice this interval is stale.",
+      "type": "integer",
+      "minimum": 1000
+    }
+  },
+  "required": ["propertyId", "datatype", "displayName", "maxPublishIntervalMs"],
+  "additionalProperties": false,
+  "if": {
+    "properties": { "datatype": { "enum": ["float", "int"] } },
+    "required": ["datatype"]
+  },
+  "then": { "required": ["unit"] }
+}

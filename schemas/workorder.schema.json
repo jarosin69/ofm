@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:workorder:1",
+  "title": "OFM active work order",
+  "description": "Payload of {enterprise}/{site}/{area}/{line}/workorder: the work order currently active on the line, derived from work-order events (ADR-0010). Published retained on every work-order event.",
+  "type": "object",
+  "properties": {
+    "active": { "description": "True while an order is running on the line.", "type": "boolean" },
+    "ts": {
+      "$ref": "urn:ofm:schema:common:1#/$defs/ts",
+      "description": "Time of the work-order event that produced this message."
+    },
+    "workOrderId": { "$ref": "urn:ofm:schema:common:1#/$defs/id" },
+    "woNumber": { "$ref": "urn:ofm:schema:common:1#/$defs/text" },
+    "productId": { "$ref": "urn:ofm:schema:common:1#/$defs/id" },
+    "sku": {
+      "description": "Product code as text, so leading zeros are kept.",
+      "$ref": "urn:ofm:schema:common:1#/$defs/text"
+    },
+    "plannedQty": { "type": "integer", "minimum": 0 },
+    "ratePerHour": {
+      "description": "Rated speed in units per hour valid at ts for this product on this line (ADR-0010).",
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "startedTs": {
+      "$ref": "urn:ofm:schema:common:1#/$defs/ts",
+      "description": "Time the order was started (start of the changeover window)."
+    },
+    "changeover": {
+      "description": "True while the changeover window is open (ADR-0010 point 4).",
+      "type": "boolean"
+    }
+  },
+  "required": ["active", "ts"],
+  "additionalProperties": false,
+  "if": {
+    "properties": { "active": { "const": true } },
+    "required": ["active"]
+  },
+  "then": {
+    "required": ["workOrderId", "woNumber", "productId", "sku", "plannedQty", "ratePerHour", "startedTs", "changeover"]
+  },
+  "else": {
+    "maxProperties": 2
+  }
+}

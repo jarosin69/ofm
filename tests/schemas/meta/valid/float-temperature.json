@@ -1,0 +1,1 @@
+{"propertyId": 145, "datatype": "float", "unit": "degC", "displayName": "Chocolate temperature", "description": "Chocolate after temperer", "low": 18.0, "high": 35.0, "alarmLow": 20.0, "alarmHigh": 32.0, "maxPublishIntervalMs": 60000}

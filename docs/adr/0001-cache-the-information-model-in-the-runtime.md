@@ -94,3 +94,6 @@ completely different change rates and must not share a hot path.
   `PLCMapping` and `MachineID` read as `vw_runtime_model`, `machine_property`,
   `plc_mapping` and `machine_id`. Per ADR-0004, each cache reload also clears
   retained topics that no longer exist in the model.
+- 2026-10-18: **Cache status topic.** The status topic is per runtime instance,
+  `ofm/_system/cache/{runtime}`, because Architecture Overview §7.3 allows
+  several instances. Its payload is defined in `schemas/system-cache.schema.json`.

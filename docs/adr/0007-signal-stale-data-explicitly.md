@@ -74,3 +74,12 @@ of its own.
   Phase 2.
 - Related: ADR-0003 (gateway timestamps), ADR-0004 (retained-topic cleanup),
   ADR-0006 (`unknown` state).
+
+## Amendments
+
+- 2026-10-18: **Last Will payload has no timestamp.** The broker sends a Last
+  Will exactly as registered at connect time, so an `offline` message from the
+  Last Will cannot carry the time of the failure. `offline` on
+  `ofm/_system/runtime/{runtime}` therefore carries no `ts`; consumers use the
+  time they received it. `online` always carries `ts`. Payloads:
+  `schemas/system-runtime.schema.json` and `schemas/system-source.schema.json`.

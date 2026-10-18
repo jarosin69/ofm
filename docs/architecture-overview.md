@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.3 (2026-10-18) — manufacturing efficiency metrics and work orders (ADR-0008 to ADR-0010) |
+| **Version** | 0.3.1 (2026-10-18) — manufacturing efficiency metrics and work orders (ADR-0008 to ADR-0010); `_system` topics aligned with `schemas/` |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -151,7 +151,7 @@ acme/melbourne/chocolate/eggline01/depositor01/temperature
 
 Naming rules are enforced by the database (CHECK constraints on name columns), not by convention: lowercase, `a–z0–9_` only, no spaces, and never the MQTT-reserved characters `#`, `+`, `/` inside a segment. Because topics are generated, a malformed topic cannot reach the broker. Sub-asset properties extend the path by one segment (`.../depositor01/motor01/current`). The enterprise name `ofm` is reserved, so the platform branches below can never collide with the asset tree. Line-level topics (`.../{line}/workorder`, `.../{line}/kpi/{name}`, ADR-0010) make `workorder` and `kpi` reserved machine names. (`acme` is a placeholder enterprise used in all examples.)
 
-Three reserved first-level branches exist outside the asset hierarchy: `ofm/_system/...` for platform health (cache status, historian queue depth, source status `ofm/_system/sources/{source}` and runtime status `ofm/_system/runtime/{runtime}` per ADR-0007), `ofm/_unmapped/{source}/{address}` for quarantined values whose address is not in the model (ADR-0001; `/`, `+` and `#` in the address are replaced by `_`, and the original address travels in the payload), and `ofm/_cmd/...` for the deliberate, per-tag write-back paths, kept separate so that ACLs can treat commands differently from telemetry.
+Three reserved first-level branches exist outside the asset hierarchy: `ofm/_system/...` for platform health (cache status `ofm/_system/cache/{runtime}`, historian writer status `ofm/_system/historian/{runtime}`, source status `ofm/_system/sources/{source}` and runtime status `ofm/_system/runtime/{runtime}` per ADR-0007; per runtime, because section 7.3 allows several instances), `ofm/_unmapped/{source}/{address}` for quarantined values whose address is not in the model (ADR-0001; `/`, `+` and `#` in the address are replaced by `_`, and the original address travels in the payload), and `ofm/_cmd/...` for the deliberate, per-tag write-back paths, kept separate so that ACLs can treat commands differently from telemetry.
 
 ### 6.2 Live payload
 
@@ -170,7 +170,7 @@ Every telemetry topic carries one canonical JSON payload, defined normatively in
 
 ### 6.3 Metadata topics
 
-Each property additionally exposes `.../{property}/_meta`, retained, republished only when the model changes:
+Each property additionally exposes `.../{property}/_meta`, retained, republished only when the model changes, defined normatively in `schemas/meta.schema.json`:
 
 ```json
 {
@@ -242,7 +242,7 @@ One Node-RED instance per plant is the Phase 1 topology. The scaling unit is the
 
 ## 8. Historian architecture
 
-Per ADR-0002, history is written directly from the runtime to TimescaleDB, in parallel with — never through — the broker. Telemetry inserts are batched (1–2 s flush); MES-significant events (state events, reason assignments, work-order events, counts) are written transactionally per event. A local disk queue provides store-and-forward across database outages, with queue depth exposed on `ofm/_system/historian`.
+Per ADR-0002, history is written directly from the runtime to TimescaleDB, in parallel with — never through — the broker. Telemetry inserts are batched (1–2 s flush); MES-significant events (state events, reason assignments, work-order events, counts) are written transactionally per event. A local disk queue provides store-and-forward across database outages, with queue depth exposed on `ofm/_system/historian/{runtime}`.
 
 The historian schema is narrow and ID-keyed. `measurement (ts timestamptz, property_id int, value double precision, quality smallint, ts_source smallint)` is a hypertable partitioned on `ts`; text values and states go to sibling tables rather than overloading one table with nullable columns. Native TimescaleDB compression is applied after 7 days and continuous aggregates maintain 1-minute and 1-hour rollups per property, which serve most dashboard queries and the 5-year retention tier while raw data ages out at 90 days. Operational-Model instance tables (`machine_state_event`, `state_reason`, `work_order_event`, `production_count`, `event`, `runtime_heartbeat`) follow the same pattern: immutable IDs, `timestamptz`, no display names — and all are append-only: the runtime's database role can SELECT and INSERT in `hist` but never UPDATE or DELETE (ADR-0002 amendment, ADR-0006). Inserts are idempotent (`ON CONFLICT DO NOTHING`), so a store-and-forward queue replayed twice is harmless.
 
@@ -371,4 +371,4 @@ Where the details live, by concern: contested decisions and their alternatives �
 
 ---
 
-*End of Architecture Overview v0.3. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.3.1. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

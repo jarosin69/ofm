@@ -4,19 +4,26 @@
 
 ## Where we are
 
-**Process step:** end of step 3 (architecture and functional design), before the
-first Phase 1 build loop. No database migrations, schemas or flows exist yet.
+**Process step:** step 3 (architecture and functional design) complete,
+including the payload contracts. Next is the environment fix-up, then the first
+Phase 1 build loop. No database migrations or flows exist yet.
 
 **Roadmap phase:** pre-Phase-1 (see Architecture Overview §18).
 
 ## Done
 
-- Architecture Overview v0.3: aligned with all accepted ADRs; manufacturing
+- Architecture Overview v0.3.1: aligned with all accepted ADRs; manufacturing
   efficiency metrics (§10.3) and work orders with the operator whiteboard
   (§10.4) added; Phase 3 split into 3a and 3b.
 - ADR-0001 to ADR-0010 accepted. ADR-0001 to ADR-0003 and ADR-0006 carry dated
   amendments; the template defines the amendment rule.
 - `deploy/README.md` aligned with the overview.
+- Payload contracts in `schemas/` (JSON Schema 2020-12): live value, `_meta`,
+  unmapped, work order, and `ofm/_system` source, runtime, cache and historian
+  status. 33 example payloads in `tests/schemas/`, checked by
+  `tools/validate_schemas.py` (run through Docker; see `schemas/README.md`).
+- ADR-0001, ADR-0002 and ADR-0007 amended: per-runtime `_system/cache` and
+  `_system/historian` topics; the Last Will `offline` message has no `ts`.
 - The external metrics draft (PDF) is fully absorbed into Overview §10.3 and
   ADR-0008 to ADR-0010. It is not part of the repository.
 - Proof-of-concept Docker stack (`deploy/`) running on the Windows 11 laptop.
@@ -24,10 +31,7 @@ first Phase 1 build loop. No database migrations, schemas or flows exist yet.
 
 ## Next, in order
 
-1. **Contract specifications** (`schemas/`): JSON Schemas for the live value
-   payload, the `_meta` payload, and the `ofm/_system` status payloads
-   (sources, runtime).
-2. **Deploy kit fixes** (before any real data flows; the init script runs only
+1. **Deploy kit fixes** (before any real data flows; the init script runs only
    on a fresh database volume):
    - role passwords from `.env`, not committed in `001-init.sql`;
    - pin image versions;
@@ -35,7 +39,7 @@ first Phase 1 build loop. No database migrations, schemas or flows exist yet.
    - Node-RED `adminAuth` and `credentialSecret`;
    - Mosquitto ACL file;
    - `flows_cred.json` in `.gitignore`.
-3. **Phase 1 database design:** `db/migrations/001-…` covering
+2. **Phase 1 database design:** `db/migrations/001-…` covering
    - the Physical Model tables;
    - `source`, `machine_property`, `plc_mapping` and `engineering_unit`;
    - `vw_runtime_model`;
@@ -46,8 +50,9 @@ first Phase 1 build loop. No database migrations, schemas or flows exist yet.
      machine names `workorder` and `kpi` (ADR-0010).
 
    Plus a generated ERD (Mermaid) for review.
-4. **Phase 1 build:** generic ingest flow (cache loaded at startup, runtime
-   Last Will, source status topics), Grafana dashboard, first tests.
+3. **Phase 1 build:** generic ingest flow (cache loaded at startup, runtime
+   Last Will, source status topics), Grafana dashboard, first tests. The
+   runtime validates its outgoing payloads against `schemas/` in tests.
 
 ## Open questions
 
@@ -65,6 +70,7 @@ first Phase 1 build loop. No database migrations, schemas or flows exist yet.
 | 10 | Treatment of ramp-up after a changeover: inside the changeover window, or counted as speed loss (ADR-0010) | Phase 3a |
 | 11 | Defined capacity per line for CU: entered manually or taken from ERP/SAP | Phase 3b |
 | 12 | Verify OFM's KPI terminology against the ISO 22400-2 text (ADR-0008) | Before going public |
+| 13 | Schemas still to write: machine state (3a), line KPIs (3b), state health (3), `_cmd` write-back (when first needed) | Their phase |
 
 ## Known gaps
 

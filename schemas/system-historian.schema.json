@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:system-historian:1",
+  "title": "OFM historian writer status",
+  "description": "Payload of ofm/_system/historian/{runtime}: state of one runtime's historian writer and store-and-forward queue (ADR-0002). Published retained on every state change and at least every 60 s while buffering.",
+  "type": "object",
+  "properties": {
+    "ts": { "$ref": "urn:ofm:schema:common:1#/$defs/ts" },
+    "state": {
+      "description": "writing = inserts reach the database; buffering = inserts go to the local disk queue.",
+      "enum": ["writing", "buffering"]
+    },
+    "queueDepth": {
+      "description": "Rows waiting in the local disk queue.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "droppedRows": {
+      "description": "Rows discarded by the disk-full policy (oldest first) since the runtime started. Anything above zero is an alarm.",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": ["ts", "state", "queueDepth", "droppedRows"],
+  "additionalProperties": false
+}

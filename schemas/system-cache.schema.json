@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:system-cache:1",
+  "title": "OFM model cache status",
+  "description": "Payload of ofm/_system/cache/{runtime}: state of one runtime's model cache (ADR-0001). Published retained after every cache load and whenever the unmapped count changes.",
+  "type": "object",
+  "properties": {
+    "ts": {
+      "$ref": "urn:ofm:schema:common:1#/$defs/ts",
+      "description": "Time of the last successful cache load."
+    },
+    "trigger": {
+      "description": "What caused the last load: startup (Phase 1) or a model_changed notification (Phase 2).",
+      "enum": ["startup", "notify"]
+    },
+    "rows": {
+      "description": "Number of rows loaded from vw_runtime_model.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "unmapped": {
+      "description": "Number of distinct unmapped (source, address) pairs seen since the last load.",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": ["ts", "trigger", "rows", "unmapped"],
+  "additionalProperties": false
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:common:1",
+  "title": "OFM common definitions",
+  "description": "Building blocks shared by all OFM payload schemas. Not a payload on its own.",
+  "$defs": {
+    "ts": {
+      "description": "Epoch milliseconds, UTC (ADR-0003). The bounds (2020-01-01 to 2100-01-01) catch a value sent in seconds or microseconds by mistake.",
+      "type": "integer",
+      "minimum": 1577836800000,
+      "maximum": 4102444800000
+    },
+    "quality": {
+      "description": "Data quality: good, uncertain (e.g. out of range, clock skew) or bad (e.g. source offline).",
+      "enum": ["good", "uncertain", "bad"]
+    },
+    "tss": {
+      "description": "Timestamp provenance (ADR-0003): device = source timestamp from the device; gateway = stamped by the runtime on arrival.",
+      "enum": ["device", "gateway"]
+    },
+    "id": {
+      "description": "Immutable integer ID of a model entity (ADR-0004).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    }
+  }
+}

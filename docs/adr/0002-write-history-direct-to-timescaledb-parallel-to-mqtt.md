@@ -89,3 +89,7 @@ a database transaction is the correct tool for the second.
   ADR-0006, so the per-event transactional writes are always INSERTs.
 - 2026-10-09: **Naming.** Per ADR-0005, `Measurement` reads as `measurement`
   and `PropertyID` as `property_id`.
+- 2026-10-18: **Historian status topic.** Queue depth is published per runtime
+  instance on `ofm/_system/historian/{runtime}`, together with the writer state
+  and the count of rows dropped by the disk-full policy. Payload:
+  `schemas/system-historian.schema.json`.

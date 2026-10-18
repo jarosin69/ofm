@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:unmapped:1",
+  "title": "OFM unmapped (quarantined) value",
+  "description": "Payload of ofm/_unmapped/{source}/{address}: a value from an address that is not in the model (ADR-0001). Not retained. In the topic, '/', '+' and '#' in the address are replaced by '_'; the original address is in addr.",
+  "type": "object",
+  "properties": {
+    "v": {
+      "description": "Raw value as received; not normalised, because there is no model entry to normalise it with.",
+      "type": ["number", "boolean", "string", "null"],
+      "maxLength": 1024
+    },
+    "ts": { "$ref": "urn:ofm:schema:common:1#/$defs/ts" },
+    "tss": { "$ref": "urn:ofm:schema:common:1#/$defs/tss" },
+    "addr": {
+      "description": "Original, unaltered source address (e.g. DB20.Press or an OPC UA NodeId).",
+      "$ref": "urn:ofm:schema:common:1#/$defs/text"
+    }
+  },
+  "required": ["v", "ts", "tss", "addr"],
+  "additionalProperties": false
+}

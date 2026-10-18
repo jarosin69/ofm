@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:system-runtime:1",
+  "title": "OFM runtime status",
+  "description": "Payload of ofm/_system/runtime/{runtime}: state of one Node-RED runtime instance (ADR-0007). Published retained. 'online' is published by the runtime on connect and carries ts. 'offline' is normally the MQTT Last Will, which the broker sends with the payload fixed at connect time, so it carries no ts; consumers use the time they received it.",
+  "type": "object",
+  "properties": {
+    "state": { "enum": ["online", "offline"] },
+    "ts": { "$ref": "urn:ofm:schema:common:1#/$defs/ts" }
+  },
+  "required": ["state"],
+  "additionalProperties": false,
+  "if": {
+    "properties": { "state": { "const": "online" } },
+    "required": ["state"]
+  },
+  "then": { "required": ["ts"] }
+}
