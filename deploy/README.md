@@ -94,22 +94,31 @@ roles, the MQTT users and the Grafana datasource from `.env` by itself.
     ```
     Expect schemas `config` and `hist`, and roles `ofm_runtime`,
     `ofm_config`, `ofm_reader`.
-11. **MQTT access rules** — the commands read the passwords inside the broker
-    container, so nothing needs typing. In one PowerShell window, subscribe
-    as the reader:
+11. **MQTT access rules** — one allowed and two forbidden publishes. The
+    commands read the passwords inside the broker container, so nothing needs
+    typing. They use MQTT version 5 with QoS 1 (`-V mqttv5 -q 1`), so the
+    broker answers every publish and a refusal is reported explicitly. (With
+    the older MQTT 3.1.1, a refused message is dropped silently and the test
+    would rely on silence.) In one PowerShell window, subscribe as the reader:
     ```powershell
     docker exec -it ofm-mosquitto sh -c 'mosquitto_sub -u ofm_reader -P $OFM_MQTT_READER_PASSWORD -t test/# -t ofm/# -v'
     ```
-    In a second window, publish three messages:
+    In a second window, run the three publishes one at a time:
     ```powershell
-    docker exec ofm-mosquitto sh -c 'mosquitto_pub -u ofm_runtime -P $OFM_MQTT_RUNTIME_PASSWORD -t test/hello -m allowed'
-    docker exec ofm-mosquitto sh -c 'mosquitto_pub -u ofm_reader -P $OFM_MQTT_READER_PASSWORD -t test/hello -m reader-publish'
-    docker exec ofm-mosquitto sh -c 'mosquitto_pub -u ofm_runtime -P $OFM_MQTT_RUNTIME_PASSWORD -t ofm/_cmd/test -m cmd'
+    docker exec ofm-mosquitto sh -c 'mosquitto_pub -V mqttv5 -q 1 -u ofm_runtime -P $OFM_MQTT_RUNTIME_PASSWORD -t test/hello -m allowed'
+    docker exec ofm-mosquitto sh -c 'mosquitto_pub -V mqttv5 -q 1 -u ofm_reader -P $OFM_MQTT_READER_PASSWORD -t test/hello -m reader-publish'
+    docker exec ofm-mosquitto sh -c 'mosquitto_pub -V mqttv5 -q 1 -u ofm_runtime -P $OFM_MQTT_RUNTIME_PASSWORD -t ofm/_cmd/test -m cmd'
     ```
-    The subscriber must print **only** `test/hello allowed`: the reader may
-    not publish, and the runtime may not use the write-back branch
-    (`mosquitto/config/acl`). MQTT drops refused messages silently. Stop the
-    subscriber with Ctrl+C.
+    Expected result — **all three must match**:
+
+    | Publish | Second window prints | Subscriber prints |
+    |---|---|---|
+    | runtime → `test/hello` | nothing (accepted) | `test/hello allowed` |
+    | reader → `test/hello` | `Warning: Publish 1 failed: Not authorized.` | nothing |
+    | runtime → `ofm/_cmd/test` | `Warning: Publish 1 failed: Not authorized.` | nothing |
+
+    The reader may only subscribe, and the runtime may not use the write-back
+    branch (`mosquitto/config/acl`). Stop the subscriber with Ctrl+C.
 
 ## 4. First wiring (do once)
 
