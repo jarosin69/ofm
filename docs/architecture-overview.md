@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.4 (2026-10-21) — statistical process control (ADR-0011); OPC UA simulator as the Phase 1 data source |
+| **Version** | 0.4.1 (2026-10-21) — migrations runner (ADR-0012); first database migrations |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -136,7 +136,7 @@ The information model is deliberately split into three sub-models with different
 
 All database identifiers are lowercase snake_case (ADR-0005); names such as `MachineProperty` in older material refer to `machine_property`.
 
-Everything else in OFM derives from these three models. The MQTT topic for a property is a deterministic function of its Physical-Model ancestry plus its property name, computed in the `vw_runtime_model` view. The retained `_meta` payload is a projection of Information-Model columns. Historian tables key on Information-Model IDs. Grafana dashboards are (in later phases) templated from the model. A separate `asset_relationship (from_id, to_id, relation_type)` table is present from Phase 1 but unused until the semantic-graph work in section 19 — it is there so that the door stays open without committing to a vocabulary prematurely.
+Everything else in OFM derives from these three models. The MQTT topic for a property is a deterministic function of its Physical-Model ancestry plus its property name, computed in the `vw_runtime_model` view. The retained `_meta` payload is a projection of Information-Model columns. Historian tables key on Information-Model IDs. Grafana dashboards are (in later phases) templated from the model. A separate `asset_relationship (from_machine_id, to_machine_id, relation_type)` table is present from Phase 1 but unused until the semantic-graph work in section 19 — it is there so that the door stays open without committing to a vocabulary prematurely.
 
 ## 6. The Unified Namespace
 
@@ -308,7 +308,7 @@ Control limits are calculated from an approved baseline period and then **frozen
 
 ## 11. Configuration management
 
-The model is edited through three doors, all converging on the same PostgreSQL schema with the same constraints and audit trail. **NocoDB** (or Baserow) provides the human interface in early phases: relational grids with foreign-key dropdowns, validation, and change history over the configuration schema — deferring any custom UI until the schema has survived contact with reality. **SQL migrations** (numbered files under `db/migrations/`, applied by Flyway or plain psql discipline) are the only mechanism that changes schema *structure*; the migration history in Git is the schema documentation. **Direct SQL** remains available to engineers, because the model being an ordinary database is the point.
+The model is edited through three doors, all converging on the same PostgreSQL schema with the same constraints and audit trail. **NocoDB** (or Baserow) provides the human interface in early phases: relational grids with foreign-key dropdowns, validation, and change history over the configuration schema — deferring any custom UI until the schema has survived contact with reality. **SQL migrations** (numbered files under `db/migrations/`, applied in order by a small runner on every start of the stack and recorded with checksums in the database, ADR-0012) are the only mechanism that changes schema *structure*; the migration history in Git is the schema documentation, and `docs/generated/erd.md` is its diagram, regenerated from the live database. **Direct SQL** remains available to engineers, because the model being an ordinary database is the point.
 
 Every configuration table carries `created_at, created_by, updated_at, updated_by`, and an `audit_log` table records old/new row images via trigger. In a food plant, "who changed the alarm limit on that temperature and when" is a question with a compliance dimension; the platform must answer it without archaeology. One limitation is stated honestly: NocoDB connects with the single `ofm_config` role, so database triggers record the role, not the person. Per-person attribution for edits made in NocoDB comes from NocoDB's own audit log; the database trail records what changed and when. Model changes propagate to the runtime via NOTIFY (section 7.2) and to consumers via republished `_meta` topics — no restarts anywhere.
 
@@ -376,8 +376,8 @@ Three directions are anticipated by the architecture but deliberately unbuilt. *
 
 ## 20. Document map
 
-Where the details live, by concern: contested decisions and their alternatives → `docs/adr/` (ADR-0001 cache, ADR-0002 historian path, ADR-0003 timestamps, ADR-0004 immutable IDs, ADR-0005 naming, ADR-0006 append-only operational history, ADR-0007 stale-data signalling, ADR-0008 loss waterfall, ADR-0009 loss classification, ADR-0010 work orders, ADR-0011 SPC, and successors; accepted ADRs change only by dated amendment lines or by superseding ADRs); current phase, next steps and open questions → `docs/STATUS.md`; payload contracts — live value, `_meta`, and `ofm/_system` status payloads → `schemas/*.schema.json` (normative); database structure → `db/migrations/` (normative) with diagrams regenerated from the live schema; deployment → `deploy/docker-compose.yml` and its `.env.example`; generated references (topic tree, tag list, data dictionary) → `docs/generated/`, produced by `tools/gen_docs.py` from the model and never edited by hand. When this overview and a normative artefact disagree, the artefact wins and this document gets a correcting commit.
+Where the details live, by concern: contested decisions and their alternatives → `docs/adr/` (ADR-0001 cache, ADR-0002 historian path, ADR-0003 timestamps, ADR-0004 immutable IDs, ADR-0005 naming, ADR-0006 append-only operational history, ADR-0007 stale-data signalling, ADR-0008 loss waterfall, ADR-0009 loss classification, ADR-0010 work orders, ADR-0011 SPC, ADR-0012 migrations, and successors; accepted ADRs change only by dated amendment lines or by superseding ADRs); current phase, next steps and open questions → `docs/STATUS.md`; payload contracts — live value, `_meta`, and `ofm/_system` status payloads → `schemas/*.schema.json` (normative); database structure → `db/migrations/` (normative) with diagrams regenerated from the live schema; deployment → `deploy/docker-compose.yml` and its `.env.example`; generated references (topic tree, tag list, data dictionary) → `docs/generated/`, produced by `tools/gen_docs.py` from the model and never edited by hand. When this overview and a normative artefact disagree, the artefact wins and this document gets a correcting commit.
 
 ---
 
-*End of Architecture Overview v0.4. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.4.1. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

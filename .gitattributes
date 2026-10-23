@@ -7,3 +7,4 @@
 *.yaml text eol=lf
 *.js text eol=lf
 deploy/mosquitto/config/acl text eol=lf
+*.sql text eol=lf

@@ -11,6 +11,8 @@ The kit is hardened for a single laptop (Architecture Overview §13):
   laptop only;
 - all passwords live in one generated file, `.env` (never committed); the
   database roles, MQTT users and Grafana datasource are created from it;
+- the database structure is built and kept up to date automatically by
+  numbered migrations (`db/migrations/`, ADR-0012);
 - the Node-RED editor requires a login;
 - Mosquitto refuses anonymous clients and applies per-user topic rules
   (`mosquitto/config/acl`);
@@ -73,11 +75,22 @@ The kit is hardened for a single laptop (Architecture Overview §13):
    docker compose up -d
    docker compose ps
    ```
-   The first start downloads the images (a few minutes). All five services
-   should then be "running", TimescaleDB "healthy" after about 15 s.
+   The first start downloads the images (a few minutes). The five services
+   should then be "running", TimescaleDB "healthy" after about 15 s. A sixth
+   one, `migrate`, runs once at every start to apply database migrations and
+   then stops; `docker compose ps -a` shows it as "Exited (0)", which is
+   correct. If it shows another exit code, Node-RED does not start: see
+   `docker compose logs migrate`.
 
-That is the whole installation. On first start the stack creates the database
-roles, the MQTT users and the Grafana datasource from `.env` by itself.
+That is the whole installation. On every start the stack creates or updates
+the database structure, the MQTT users and the Grafana datasource by itself.
+
+*Optional:* load the example plant `acme` (five properties read from the OPC
+UA simulator), to have something to look at in NocoDB and, from Phase 1 step
+1.3, on the dashboards:
+```powershell
+docker compose run --rm migrate example
+```
 
 ## 3. Check it works
 
@@ -88,12 +101,13 @@ roles, the MQTT users and the Grafana datasource from `.env` by itself.
      **OFM historian** → **Test** must report success.
    - **NocoDB** — http://localhost:8080 (create the local account on first
      visit).
-10. **Database** — schemas and roles exist:
+10. **Database** — roles exist and every migration is applied:
     ```powershell
-    docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "\dn" -c "\du"
+    docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "\du"
+    docker compose run --rm migrate status
     ```
-    Expect schemas `config` and `hist`, and roles `ofm_runtime`,
-    `ofm_config`, `ofm_reader`.
+    Expect roles `ofm_runtime`, `ofm_config`, `ofm_reader`, and every
+    migration under "Applied" with "Pending: (none)".
 11. **MQTT access rules** — one allowed and two forbidden publishes. The
     commands read the passwords inside the broker container, so nothing needs
     typing. They use MQTT version 5 with QoS 1 (`-V mqttv5 -q 1`), so the
@@ -171,6 +185,10 @@ docker compose down                # stop all (volumes/data survive)
 docker compose down -v             # stop AND DELETE ALL DATA — careful
 ```
 
+**Upgrading OFM** (after `git pull`): back up the model first (below), then
+`docker compose up -d`. New migrations are applied automatically before
+Node-RED starts. There is no automatic rollback; the backup is the way back.
+
 **Upgrading an image** is a deliberate change: edit its version in
 `docker-compose.yml`, read the release notes (TimescaleDB upgrades also need
 `ALTER EXTENSION timescaledb UPDATE;`), commit, then run (two separate
@@ -214,8 +232,9 @@ Restoring is rehearsed as part of Phase 3b (Architecture Overview §16).
 ## Gotchas worth knowing
 
 - **The init script runs once.** `db/init/001-init.sh` executes only when the
-  `tsdb-data` volume is empty. From Phase 1, schema changes travel as
-  migrations in `db/migrations/`.
+  `tsdb-data` volume is empty and creates only the roles and schemas. All
+  structure after that is in `db/migrations/`, which must never be edited
+  once applied (the runner refuses; see `db/migrations/README.md`).
 - **Line endings.** `make-env.sh` and `db/init/001-init.sh` must keep Linux
   (LF) line endings or they fail inside a container. `.gitattributes` enforces this for Git; do not
   re-save it from an editor set to Windows line endings.

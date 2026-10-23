@@ -2,8 +2,8 @@
 
 *Updated: 2026-10-21. Update this file at the end of every working session.*
 
-**▶ We are here: Stage B, Phase 1, step 1.1 — Phase 1 database design.**
-Design and environment are complete; the first real build step is next.
+**▶ We are here: Stage B, Phase 1, step 1.1 — database design delivered,
+awaiting Jarek's review.** After the review, step 1.2 adds the OPC UA simulator.
 
 ## The strategy in one view
 
@@ -15,7 +15,7 @@ source, runs alongside and must be finished before the repository goes public.
 ```
 Stage A  Foundations ............................. ✅ done
 Stage B  Build in phases
-           Phase 1   Live data path .............. ▶ in progress (step 1.1)
+           Phase 1   Live data path .............. ▶ in progress (step 1.1 review)
            Phase 2   Robust and editable ......... ⬜
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  continued
@@ -43,7 +43,7 @@ Every build phase follows the same loop, like a small engineering project:
 | Step | Result | Where |
 |---|---|---|
 | A1 Vision, scope, requirements | ✅ Defined | Architecture Overview §1–3 |
-| A2 Architecture and decisions | ✅ Overview v0.4; ADR-0001 to ADR-0011 accepted, with dated amendments | `docs/` |
+| A2 Architecture and decisions | ✅ Overview v0.4.1; ADR-0001 to ADR-0012 accepted, with dated amendments | `docs/` |
 | A3 Payload contracts | ✅ 9 JSON Schemas, 33 example payloads, validation script | `schemas/`, `tests/schemas/`, `tools/` |
 | A4 Hardened environment | ✅ Two-command install; secrets generated into `.env`; pinned images; localhost-only ports; Node-RED login; MQTT ACL. Verified on the Windows 11 laptop on 2026-10-21 | `deploy/` |
 | A5 Way of working | ✅ GitHub repository (private), Claude Project instructions, this file | — |
@@ -62,7 +62,7 @@ dashboard, driven only by rows in the model.
 
 | Step | Content | Status |
 |---|---|---|
-| 1.1 Database design | Migration runner and its ADR-0012; first migrations: plant hierarchy, `engineering_unit`, `source`, `machine_property`, `plc_mapping`, `vw_runtime_model`, `hist.measurement` hypertable, audit columns, naming rules with reserved names (`ofm`; `workorder`, `kpi`, `spc`); small example plant `acme`; generated ERD for review | ▶ next |
+| 1.1 Database design | Migration runner `tools/migrate.sh` (ADR-0012, runs on every start); migrations 001–005: naming rules with reserved names, audit log, plant hierarchy, units, `source`, `machine_property`, `plc_mapping`, `vw_runtime_model`, `hist.measurement` hypertables; example plant `acme` (`db/examples/`); ERD `docs/generated/erd.md`. Tested on PostgreSQL 16 (36 checks; TimescaleDB-specific clause to be confirmed on the laptop) | ▶ delivered, awaiting review |
 | 1.2 OPC UA simulator | Microsoft OPC PLC simulator (MIT licence, `mcr.microsoft.com/iotedge/opc-plc`, pinned version) as an optional container; first `source` and `plc_mapping` rows point at it | ⬜ |
 | 1.3 Generic ingest flow | Node-RED: load cache at startup, map by (source, address), normalise, validate, publish `{v, ts, q, tss}`, insert into historian, quarantine unmapped values, runtime Last Will, source and cache status topics | ⬜ |
 | 1.4 Dashboard, tests, release | Grafana trend from the historian; schema tests; payloads checked against `schemas/`; exit check; tag `v0.1` | ⬜ |
@@ -119,17 +119,19 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Claude delivers the Phase 1 database package (step 1.1): ADR-0012
-   migration runner, migrations, example plant, ERD.
-2. Jarek reviews it table by table, applies it with the runner, and checks
-   the result in the database.
-3. Step 1.2: add the OPC UA simulator to the stack.
+1. Jarek applies the step 1.1 package (`docker compose up -d`), loads the
+   example plant, and reviews the tables in NocoDB and the ERD.
+2. Review comments become a new migration (006) — the applied ones are never
+   edited.
+3. Step 1.2: add the OPC UA simulator; confirm the example plant's NodeIds and
+   scaling against it.
 
 ## Open questions
 
+Numbers are stable; answered questions are removed rather than renumbered.
+
 | # | Question | Needed by |
 |---|---|---|
-| 1 | Migration runner: small script in the repository (recommended) or Flyway — decided in ADR-0012 | Phase 1.1 |
 | 2 | Docker Desktop licence vs. Docker Engine directly in WSL2 or on a Linux server | Plant pilot |
 | 3 | Employer policy on open-sourcing work developed for or at the site | Going public |
 | 4 | NocoDB current licence | Going public |
@@ -144,6 +146,8 @@ Must be complete before the repository is made public:
 | 13 | Schemas still to write: machine state (3a), line KPIs (3b), state health (3a), SPC state (3c), `_cmd` write-back (when first needed) | Their phase |
 | 14 | First SPC characteristics and their plans (pack weight, temper index?); how lab results arrive (manual entry or instrument interface) | Phase 3c |
 | 15 | Does the OPC PLC simulator set OPC UA `SourceTimestamp` on its values, as ADR-0003 relies on? Verify in step 1.3 | Phase 1.3 |
+| 16 | Example plant NodeIds (`ns=3;s=SpikeData` …) and scaling are provisional; confirm by browsing the simulator | Phase 1.2 |
+| 17 | Historian compression and retention (columnstore off in Phase 1) and the 1-min/1-h continuous aggregates | Phase 2 |
 
 ## Known gaps and notes
 

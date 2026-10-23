@@ -38,6 +38,25 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot: applies pending database migrations (ADR-0012), then exits.
+  # Runs on every "docker compose up"; Node-RED starts only if it succeeds.
+  # Other commands: docker compose run --rm migrate [status|example|erd]
+  migrate:
+    image: timescale/timescaledb:2.30.2-pg16
+    restart: "no"
+    entrypoint: ["sh", "/repo/tools/migrate.sh"]
+    command: ["up"]
+    environment:
+      PGHOST: timescaledb
+      PGDATABASE: ofm
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ..:/repo                   # the repository: db/migrations, tools, docs/generated
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
   mosquitto:
     image: eclipse-mosquitto:2.1.2-alpine
     container_name: ofm-mosquitto
@@ -90,6 +109,8 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       mosquitto:
         condition: service_started
 
