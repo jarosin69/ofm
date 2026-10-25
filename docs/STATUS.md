@@ -2,9 +2,9 @@
 
 *Updated: 2026-10-25. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 1, step 1.3 — OFM's own Node-RED image, delivered;
-Jarek builds it and runs the simulator check.** Next: step 1.4, the first
-ingest flow (simulator → UNS → historian).
+**▶ We are here: Phase 1, step 1.4 — the ingest flow is delivered; Jarek
+installs it and checks live data in the UNS and historian.** Next: step 1.5,
+the first Grafana dashboard.
 
 ## The plan in one view
 
@@ -15,7 +15,7 @@ publishing it as open source, runs alongside.
 
 ```
 Stage A  Foundations ............................. ✅ done
-Stage B  Phase 1   Live data path ................ ▶ step 1.3 of 6
+Stage B  Phase 1   Live data path ................ ▶ step 1.4 of 6
          Phase 2   Robust and editable ........... ⬜
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
@@ -40,7 +40,7 @@ current plan and may be refined when the phase starts.
 | Step | What | Status |
 |---|---|---|
 | A1 | Vision, scope, requirements (Overview §1–3) | ✅ |
-| A2 | Architecture and decisions: Overview v0.6, MES coverage map, ADR-0001 to ADR-0015 | ✅ |
+| A2 | Architecture and decisions: Overview v0.6.1, MES coverage map, ADR-0001 to ADR-0017 | ✅ |
 | A3 | Payload contracts: 9 JSON Schemas, 33 example payloads, validation script | ✅ |
 | A4 | Hardened environment: two-command install, secrets in `.env`, localhost-only ports, logins, MQTT access rules | ✅ |
 | A5 | Way of working: GitHub repository, Claude Project, this file | ✅ |
@@ -54,10 +54,10 @@ dashboard, driven only by rows in the model.
 |---|---|---|
 | 1.1 | **Database:** migration runner (ADR-0012); tables for the plant model and historian (migrations 001–005); example plant `acme`; ERD | ✅ 2026-10-21 |
 | 1.2 | **Simulator and model editor:** OPC UA simulator in the stack; Mathesar replaces NocoDB (ADR-0013, trial passed); personal logins; passwords from `.env` (migrations 006–007) | ✅ 2026-10-25 |
-| 1.3 | **OFM Node-RED image:** Node-RED with OPC UA, S7, PostgreSQL and dashboard nodes built in at pinned versions, so no internet is needed at a plant; check flow that reads the simulator | ▶ delivered, Jarek builds and checks |
-| 1.4 | **Ingest flow:** load the model from `vw_runtime_model` at startup; translate `nsu=` addresses to namespace numbers; subscribe; scale; validate; publish `{v, ts, q, tss}` to the UNS; insert into the historian; quarantine unmapped values; runtime, source and cache status topics | ⬜ next |
+| 1.3 | **OFM Node-RED image:** Node-RED with OPC UA, S7, PostgreSQL and dashboard nodes built in at pinned versions, so no internet is needed at a plant; check flow that reads the simulator | ✅ 2026-10-25: all five simulator nodes read; namespace 3; source timestamps present |
+| 1.4 | **Ingest flow:** load the model from `vw_runtime_model` at startup; translate `nsu=` addresses to namespace numbers; subscribe; scale; validate; publish `{v, ts, q, tss}` to the UNS; insert into the historian; quarantine unmapped values; runtime, source and cache status topics | ▶ delivered 2026-10-25; Jarek checks (README step 12b) |
 | 1.5 | **First dashboard:** Grafana trend of the example values from the historian | ⬜ |
-| 1.6 | **Tests and release:** schema tests; outgoing payloads checked against `schemas/`; exit check; tag `v0.1` | ⬜ |
+| 1.6 | **Tests and release:** schema tests; outgoing payloads checked against `schemas/`; flow unit tests (first: `tests/flows/normalise.test.js`, 14 cases); exit check; tag `v0.1` | ⬜ |
 
 ## Stage B — Phase 2: Robust and editable ⬜ (release v0.2)
 
@@ -161,10 +161,10 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek builds the OFM Node-RED image (`docker compose up -d --build`),
-   imports and deploys the simulator check flow (deploy README step 12a), and
-   reports what the Debug sidebar shows.
-2. Step 1.4: the ingest flow, using the namespace lookup proven in the check.
+1. Jarek installs step 1.4 (`docker compose up -d --build`), checks the UNS
+   and historian (deploy README step 12b), and reports the value ranges seen
+   for the five example properties, so their scaling can be confirmed.
+2. Step 1.5: the first Grafana dashboard.
 
 ## Open questions
 
@@ -184,8 +184,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 12 | Verify KPI terminology against ISO 22400-2 (ADR-0008) | Going public |
 | 13 | Schemas still to write: machine state (3a), line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
 | 14 | First SPC characteristics and their plans (pack weight, temper index?); how lab results arrive (manual entry or instrument interface) | Phase 3c |
-| 15 | Does the real OPC PLC simulator send `SourceTimestamp`? (A stand-in server with the same library did.) Answered by the step 1.3 check flow | Phase 1.3 |
-| 16 | Example plant node names and scaling: names confirmed when the check flow shows all five; scaling confirmed with values flowing in 1.4 | Phase 1.4 |
+| 16 | Example plant scaling: confirm the value ranges of the five properties with live data (names and namespace confirmed in 1.3) | Phase 1.4 |
 | 17 | Historian compression and retention (columnstore off in Phase 1) and the 1-min/1-h continuous aggregates | Phase 2 |
 | 19 | Offline install bundle: script that saves all pinned images and the repository for transfer to an isolated network | Phase 2 |
 | 20 | Phase 3a must build `config.material` (with `material_type`), not `product` (ADR-0014) | Phase 3a |
@@ -201,10 +200,21 @@ Numbers are stable; answered questions are removed rather than renumbered.
   `ofm/node-red:4.1.16-ofm.1` with node-red-contrib-opcua 0.2.355,
   node-red-contrib-postgresql 0.16.2, node-red-contrib-s7 3.1.3,
   @flowfuse/node-red-dashboard 1.33.0.
-- The OPC UA node accepts only `ns=<number>` addresses, not `nsu=<URI>`
-  (verified 2026-10-25). The model keeps the stable URI form; the runtime
-  translates it after reading the server's namespace table (proven in the
-  step 1.3 check flow).
+- The OPC UA palette node accepts only `ns=<number>` addresses and is built
+  around fixed per-connection configuration; OFM's acquisition therefore uses
+  the node-opcua library directly (ADR-0017), translating `nsu=` addresses
+  after reading the server's namespace table.
+- Step 1.4 was tested on a local replica (PostgreSQL 16, Mosquitto with OFM's
+  access rules, a stand-in OPC UA server): all published messages valid
+  against `schemas/`; drills passed for PLC loss and return (offline in ~1 s,
+  online and values resumed in ~3 s), runtime crash (Last Will `offline`),
+  and database unavailable at start (model loaded 6 s after it returned).
+- The official Node-RED image passes its `FLOWS` variable to Node-RED on the
+  command line, which overrides `flowFile` in `settings.js`; OFM therefore sets
+  `FLOWS` (found on Jarek's laptop 2026-10-25; the local test had started
+  Node-RED without it).
+- Phase 1 limitation: a model change reaches the runtime on restart of
+  Node-RED; immediate reload is step 2.1.
 - Mosquitto 2.1 deprecates `password_file`/`acl_file` in favour of plugins
   (removal planned for 3.0). Migrate before any upgrade to 3.x.
 - The installation has been run end-to-end on one machine only.

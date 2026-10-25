@@ -96,12 +96,17 @@ services:
     # OFM's own image: official Node-RED plus pinned protocol and database
     # nodes (nodered/Dockerfile). Built locally on first start; never pulled.
     build: ./nodered
-    image: ofm/node-red:4.1.16-ofm.1
+    image: ofm/node-red:4.1.16-ofm.2
     pull_policy: never
     container_name: ofm-nodered
     restart: unless-stopped
     environment:
       TZ: Australia/Melbourne      # log readability only; data path uses epoch ms UTC
+      OFM_RUNTIME_NAME: ofm_runtime_01                 # this instance; sources are assigned to it in the model
+      # Flows are code (ADR-0016). FLOWS is the official image's own setting: it
+      # is passed to Node-RED on the command line and overrides settings.js.
+      FLOWS: /ofm/flows/ofm-runtime.json
+      OFM_RUNTIME_DB_USER: ofm_runtime
       NODERED_ADMIN_USER: ${NODERED_ADMIN_USER:?set NODERED_ADMIN_USER in .env}
       NODERED_ADMIN_PASSWORD: ${NODERED_ADMIN_PASSWORD:?set NODERED_ADMIN_PASSWORD in .env}
       NODE_RED_CREDENTIAL_SECRET: ${NODE_RED_CREDENTIAL_SECRET:?set NODE_RED_CREDENTIAL_SECRET in .env}
@@ -114,6 +119,7 @@ services:
     volumes:
       - nodered-data:/data
       - ./nodered/settings.js:/data/settings.js:ro
+      - ../flows:/ofm/flows        # the repository's flows folder; Deploy writes here
       - sf-queue:/sfqueue          # store-and-forward disk queue (ADR-0002)
     depends_on:
       timescaledb:

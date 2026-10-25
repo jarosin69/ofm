@@ -107,7 +107,7 @@ docker compose run --rm migrate example
    - **Node-RED** — http://localhost:1880 must ask for a login.
    - **Grafana** — http://localhost:3000. Then Connections → Data sources →
      **OFM historian** → **Test** must report success.
-   - **Mathesar** — http://localhost:8080; the first visit is described in steps 15–16.
+   - **Mathesar** — http://localhost:8080; the first visit is described in steps 16–17.
 10. **Database** — roles exist and every migration is applied:
     ```powershell
     docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "\du"
@@ -156,16 +156,40 @@ docker compose run --rm migrate example
     The node *find namespace number* shows which namespace number the
     simulator uses. Delete the tab afterwards (double-click the tab →
     **Delete**, then **Deploy**); it is only a check.
+12b. **Live data from the model** — the Node-RED tab **OFM runtime** is OFM's
+    generic runtime flow (`flows/ofm-runtime.json`). About 5 seconds after
+    start, its node *build model cache* shows "5 properties, 1 source(s)" and
+    *OPC UA acquisition* shows "opcplc online". Watch the UNS (Ctrl+C to stop):
+    ```powershell
+    docker exec -it ofm-mosquitto sh -c 'mosquitto_sub -u ofm_reader -P $OFM_MQTT_READER_PASSWORD -t acme/# -t ofm/_system/# -v'
+    ```
+    Expect one line per second per property, e.g.
+    `acme/melbourne/chocolate/eggline01/depositor01/chocolate_temp {"v":29.4,"ts":1792927982001,"q":"good","tss":"device"}`,
+    plus the retained status of the runtime, the source and the model cache.
+    And the historian:
+    ```powershell
+    docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "SELECT topic, count(*) AS rows, max(ts) AS latest_utc FROM hist.vw_measurement GROUP BY topic"
+    ```
+    Row counts grow every second. (`ts` is UTC, ADR-0003; Grafana shows
+    Melbourne time.)
 
 ## 4. First wiring (do once)
 
-13. **Container-to-container addresses.** Inside flows and datasources, use
+13. **OFM's flows are code** (ADR-0016). Node-RED's flow file is
+    `C:\ofm\flows\ofm-runtime.json` in the repository: **Deploy** writes
+    there, `git diff` shows what changed, and a change is committed like any
+    other. Keep experiments on separate tabs and delete them before
+    committing. No passwords are ever stored in flows; they come from `.env`.
+    A model change (a new property, a new mapping) needs no flow change: in
+    Phase 1 it takes effect when Node-RED restarts
+    (`docker compose restart nodered`); from Phase 2 immediately.
+14. **Container-to-container addresses.** Inside flows and datasources, use
     Compose service names, never `localhost`:
     - MQTT broker host: `mosquitto`, port 1883
     - PostgreSQL host: `timescaledb`, port 5432, database `ofm`
 
     `localhost` works only from Windows itself (your browser, MQTT Explorer).
-14. **Node-RED nodes and passwords in flows.** OFM's Node-RED image comes with
+15. **Node-RED nodes and passwords in flows.** OFM's Node-RED image comes with
     the OPC UA, S7, PostgreSQL and dashboard nodes built in at pinned versions
     (`nodered/Dockerfile`), so nothing is installed from the internet. Do not
     install or update these through *Manage palette*: a palette copy would
@@ -174,11 +198,11 @@ docker compose run --rm migrate example
     `OFM_MQTT_RUNTIME_PASSWORD` as environment variables, so flows refer to
     them as `${OFM_RUNTIME_DB_PASSWORD}` instead of storing the password.
     The exact use is set up with the first Phase 1 flow.
-15. **Mathesar, first visit** (the model editor, ADR-0013). Open
+16. **Mathesar, first visit** (the model editor, ADR-0013). Open
     http://localhost:8080. Mathesar asks once for an administrator account:
     enter `MATHESAR_ADMIN_USER` and `MATHESAR_ADMIN_PASSWORD` from `.env`. This
     account is local to Mathesar on this machine; nothing is sent anywhere.
-16. **Connect Mathesar to the model.** In Mathesar, connect an existing
+17. **Connect Mathesar to the model.** In Mathesar, connect an existing
     database with:
     - host `timescaledb`, port `5432`, database `ofm`
     - role `ofm_mathesar`, password `OFM_MATHESAR_DB_PASSWORD` from `.env`
@@ -187,7 +211,7 @@ docker compose run --rm migrate example
     `mathesar_types`) to the database; that is expected. Then open the
     `config` schema: these are the model tables shown in
     `docs/generated/erd.md`. `vw_runtime_model` shows every topic.
-17. **A personal login for each person who edits the model** (recommended):
+18. **A personal login for each person who edits the model** (recommended):
     ```powershell
     docker compose run --rm migrate adduser jarek
     ```
@@ -306,6 +330,10 @@ pilot (`docs/STATUS.md`, Stage C).
   re-save it from an editor set to Windows line endings.
 - **Operator dashboards are not covered by the editor login.** Node-RED
   Dashboard pages are protected separately when they are built (Phase 3a).
+- **Flows folder permissions on Linux.** Node-RED runs as user 1000 and
+  writes `flows/` on Deploy; on a Linux host that folder must be writable by
+  uid 1000 (`chown -R 1000:1000 flows`). Docker Desktop on Windows needs
+  nothing.
 - **Access from other devices** is deliberately impossible while ports are
   bound to `127.0.0.1`. Opening a service to the network is a security
   decision (Architecture Overview §13), not a configuration tweak.

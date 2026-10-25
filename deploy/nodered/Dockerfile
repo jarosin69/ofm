@@ -10,8 +10,11 @@ FROM nodered/node-red:4.1.16-22
 
 # Installed next to Node-RED itself (not in /data), so the /data volume with
 # flows and settings never hides or overrides them.
+# node-opcua: the OPC UA library used by OFM's acquisition flow (ADR-0017);
+# same version as node-red-contrib-opcua uses, so only one copy is installed.
 WORKDIR /usr/src/node-red
 RUN npm install --omit=dev --no-fund --no-audit --no-update-notifier \
+      node-opcua@2.160.0 \
       node-red-contrib-opcua@0.2.355 \
       node-red-contrib-postgresql@0.16.2 \
       node-red-contrib-s7@3.1.3 \

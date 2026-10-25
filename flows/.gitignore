@@ -1,0 +1,3 @@
+# Written by Node-RED next to the flow file; never committed (ADR-0016).
+*_cred.json
+.*.backup

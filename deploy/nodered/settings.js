@@ -14,6 +14,17 @@ const credentialSecret = process.env.NODE_RED_CREDENTIAL_SECRET;
 if (!adminPassword) throw new Error("NODERED_ADMIN_PASSWORD is not set in deploy/.env");
 if (!credentialSecret) throw new Error("NODE_RED_CREDENTIAL_SECRET is not set in deploy/.env");
 
+// Loads a library that is built into the OFM Node-RED image (nodered/Dockerfile)
+// so function nodes can use it. Returns undefined if it is missing.
+function builtIn(name) {
+    try {
+        return require(require.resolve(name, { paths: [process.cwd(), "/usr/src/node-red/node_modules"] }));
+    } catch (e) {
+        console.warn("[ofm] library not available to function nodes: " + name);
+        return undefined;
+    }
+}
+
 // Compares two strings in constant time, so response timing reveals nothing.
 function sameText(a, b) {
     const hash = (s) => crypto.createHash("sha256").update(String(s)).digest();
@@ -24,8 +35,13 @@ const admin = { username: adminUser, permissions: "*" };
 
 module.exports = {
     uiPort: process.env.PORT || 1880,
-    flowFile: "flows.json",
-    flowFilePretty: true,            // readable diffs when flows are exported to flows/
+
+    // OFM's flows are code (ADR-0016): the flow file lives in the repository
+    // (flows/ofm-runtime.json, mounted at /ofm/flows) and Deploy writes there.
+    // Set by FLOWS in docker-compose.yml; the official image passes FLOWS to
+    // Node-RED on the command line, which takes precedence over this line.
+    flowFile: process.env.FLOWS || "flows.json",
+    flowFilePretty: true,            // one property per line: readable Git diffs
 
     // Encrypts credentials in flows_cred.json. Never change once set.
     credentialSecret: credentialSecret,
@@ -40,9 +56,12 @@ module.exports = {
             Promise.resolve(username === adminUser && sameText(password, adminPassword) ? admin : null)
     },
 
-    // Function nodes may not install npm modules on their own; dependencies are
-    // added deliberately through the palette.
+    // Function nodes may not install npm modules on their own; libraries are
+    // built into the image and handed over here, at pinned versions.
     functionExternalModules: false,
+    functionGlobalContext: {
+        opcua: builtIn("node-opcua")   // OPC UA acquisition (ADR-0017)
+    },
 
     editorTheme: {
         projects: { enabled: false }

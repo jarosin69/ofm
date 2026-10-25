@@ -1,0 +1,469 @@
+[
+    {
+        "id": "ofm_rt_tab",
+        "type": "tab",
+        "label": "OFM runtime",
+        "disabled": false,
+        "info": "OFM's generic runtime flow (Phase 1). It contains no plant-specific detail: everything comes from the model in the database.\n\nThis tab is code (ADR-0016): it is stored in the repository as flows/ofm-runtime.json. Change it deliberately, then commit. Put experiments on other tabs and delete them before committing."
+    },
+    {
+        "id": "ofm_rt_broker",
+        "type": "mqtt-broker",
+        "name": "UNS (Mosquitto)",
+        "broker": "mosquitto",
+        "port": "1883",
+        "clientid": "",
+        "autoConnect": false,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "ofm_rt_pg",
+        "type": "postgreSQLConfig",
+        "name": "OFM database (ofm_runtime)",
+        "host": "timescaledb",
+        "hostFieldType": "str",
+        "port": "5432",
+        "portFieldType": "num",
+        "database": "ofm",
+        "databaseFieldType": "str",
+        "ssl": "false",
+        "sslFieldType": "bool",
+        "applicationName": "ofm-runtime",
+        "applicationNameType": "str",
+        "max": "10",
+        "maxFieldType": "num",
+        "idle": "1000",
+        "idleFieldType": "num",
+        "connectionTimeout": "10000",
+        "connectionTimeoutFieldType": "num",
+        "user": "",
+        "userFieldType": "env",
+        "userEnv": "OFM_RUNTIME_DB_USER",
+        "password": "",
+        "passwordFieldType": "env",
+        "passwordEnv": "OFM_RUNTIME_DB_PASSWORD"
+    },
+    {
+        "id": "ofm_rt_c1",
+        "type": "comment",
+        "z": "ofm_rt_tab",
+        "name": "1  Start-up: connect to the UNS, load the model from the database",
+        "info": "",
+        "x": 290,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "ofm_rt_start",
+        "type": "inject",
+        "z": "ofm_rt_tab",
+        "name": "start-up",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "2",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 110,
+        "y": 100,
+        "wires": [
+            [
+                "ofm_rt_mqconn",
+                "ofm_rt_loadprep"
+            ]
+        ]
+    },
+    {
+        "id": "ofm_rt_mqconn",
+        "type": "function",
+        "z": "ofm_rt_tab",
+        "name": "connect to UNS",
+        "func": "// Connect to the broker with the password from deploy/.env. Nothing secret is\n// stored in the flow file, so the flow can live in Git (ADR-0016).\n// The Last Will marks this runtime offline if it disappears (ADR-0007).\nconst runtime = env.get(\"OFM_RUNTIME_NAME\");\nmsg.action = \"connect\";\nmsg.broker = {\n    broker: \"mosquitto\",\n    port: 1883,\n    clientid: \"ofm-\" + runtime,\n    username: \"ofm_runtime\",\n    password: env.get(\"OFM_MQTT_RUNTIME_PASSWORD\"),\n    will: {\n        topic: \"ofm/_system/runtime/\" + runtime,\n        payload: JSON.stringify({ state: \"offline\" }),\n        qos: 1,\n        retain: true\n    }\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 310,
+        "y": 100,
+        "wires": [
+            [
+                "ofm_rt_out_sys"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "ofm_rt_loadprep",
+        "type": "function",
+        "z": "ofm_rt_tab",
+        "name": "load model",
+        "func": "// Ask the database for every property this runtime acquires (ADR-0001).\nmsg.params = [env.get(\"OFM_RUNTIME_NAME\")];\nnode.status({ fill: \"blue\", shape: \"dot\", text: \"loading model\" });\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 300,
+        "y": 160,
+        "wires": [
+            [
+                "ofm_rt_loadq"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "ofm_rt_loadq",
+        "type": "postgresql",
+        "z": "ofm_rt_tab",
+        "name": "vw_runtime_model",
+        "query": "SELECT property_id, topic, datatype, unit, low, high, is_historised,\n       source_name, protocol, endpoint, source_settings,\n       address, scale_factor, scale_offset, cache_key\nFROM config.vw_runtime_model\nWHERE runtime_name = $1\nORDER BY property_id;",
+        "postgreSQLConfig": "ofm_rt_pg",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 500,
+        "y": 160,
+        "wires": [
+            [
+                "ofm_rt_cache"
+            ]
+        ]
+    },
+    {
+        "id": "ofm_rt_cache",
+        "type": "function",
+        "z": "ofm_rt_tab",
+        "name": "build model cache",
+        "func": "// Build the in-memory model (ADR-0001) and swap it in as one object, so the\n// value path never sees a half-built model and never queries the database.\nconst runtime = env.get(\"OFM_RUNTIME_NAME\");\nconst rows = Array.isArray(msg.payload) ? msg.payload : [];\nconst byKey = {}, byProperty = {}, byTopic = {}, sources = {};\n\nfor (const r of rows) {\n    const p = {\n        propertyId: r.property_id,\n        topic: r.topic,\n        datatype: r.datatype,\n        unit: r.unit,\n        low: r.low,\n        high: r.high,\n        historised: r.is_historised,\n        factor: r.scale_factor === null ? 1 : Number(r.scale_factor),\n        offset: r.scale_offset === null ? 0 : Number(r.scale_offset)\n    };\n    byProperty[p.propertyId] = p;\n    byTopic[p.topic] = p;\n    if (r.cache_key) {\n        byKey[r.cache_key] = p;     // \"source|address\", e.g. \"opcplc|nsu=...;s=SpikeData\"\n        if (!sources[r.source_name]) {\n            sources[r.source_name] = {\n                name: r.source_name, protocol: r.protocol, endpoint: r.endpoint,\n                settings: r.source_settings || {}, items: []\n            };\n        }\n        sources[r.source_name].items.push({ address: r.address, datatype: r.datatype });\n    }\n}\n\nglobal.set(\"ofm_model\", { loadedAt: Date.now(), byKey, byProperty, byTopic });\nglobal.set(\"ofm_unmapped\", {});\nconst sourceList = Object.values(sources);\nnode.status({ fill: \"green\", shape: \"dot\", text: rows.length + \" properties, \" + sourceList.length + \" source(s)\" });\n\nconst status = {\n    topic: \"ofm/_system/cache/\" + runtime,\n    payload: { ts: Date.now(), trigger: \"startup\", rows: rows.length, unmapped: 0 },\n    retain: true, qos: 1\n};\nreturn [status, { payload: sourceList }];",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 720,
+        "y": 160,
+        "wires": [
+            [
+                "ofm_rt_out_sys"
+            ],
+            [
+                "ofm_rt_acq"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "ofm_rt_loadcatch",
+        "type": "catch",
+        "z": "ofm_rt_tab",
+        "name": "database not ready",
+        "scope": [
+            "ofm_rt_loadq"
+        ],
+        "uncaught": false,
+        "x": 130,
+        "y": 220,
+        "wires": [
+            [
+                "ofm_rt_retry"
+            ]
+        ]
+    },
+    {
+        "id": "ofm_rt_retry",
+        "type": "delay",
+        "z": "ofm_rt_tab",
+        "name": "retry in 10 s",
+        "pauseType": "delay",
+        "timeout": "10",
+        "timeoutUnits": "seconds",
+        "rate": "1",
+        "nbRateUnits": "1",
+        "rateUnits": "second",
+        "randomFirst": "1",
+        "randomLast": "5",
+        "randomUnits": "seconds",
+        "drop": false,
+        "allowrate": false,
+        "outputs": 1,
+        "x": 320,
+        "y": 220,
+        "wires": [
+            [
+                "ofm_rt_loadprep"
+            ]
+        ]
+    },
+    {
+        "id": "ofm_rt_c2",
+        "type": "comment",
+        "z": "ofm_rt_tab",
+        "name": "2  Acquisition: one OPC UA connection per source in the model (ADR-0017)",
+        "info": "",
+        "x": 310,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "ofm_rt_acq",
+        "type": "function",
+        "z": "ofm_rt_tab",
+        "name": "OPC UA acquisition",
+        "func": "// OPC UA acquisition (ADR-0017): one client per OPC UA source in the model.\n// Input: the list of sources from \"build model cache\". Output 1: one message\n// per value change. Output 2: one message per source connection change.\nconst opcua = global.get(\"opcua\");\nif (!opcua) {\n    node.error(\"node-opcua is not available (see nodered/settings.js)\");\n    return null;\n}\n\n// A new model replaces all connections.\nconst old = context.get(\"clients\") || {};\nfor (const s of Object.values(old)) {\n    try { await s.client.disconnect(); } catch (e) { /* already closed */ }\n}\nconst clients = {};\ncontext.set(\"clients\", clients);\n\n// OPC UA guarantees the namespace URI, not its number, so the model stores\n// \"nsu=<uri>;s=Name\" and it is translated here to \"ns=<number>;s=Name\".\nfunction translate(address, namespaces) {\n    const m = /^nsu=([^;]+);(.+)$/.exec(address);\n    if (!m) return address;\n    const index = namespaces.indexOf(m[1]);\n    if (index < 0) throw new Error(\"namespace \" + m[1] + \" is not on this server\");\n    return \"ns=\" + index + \";\" + m[2];\n}\n\nfunction report(src, state, online, error) {\n    if (state.online === online) return;          // only changes\n    state.online = online;\n    node.send([null, { payload: { source: src.name, online, error } }]);\n    node.status(online ? { fill: \"green\", shape: \"dot\", text: src.name + \" online\" }\n                       : { fill: \"red\", shape: \"ring\", text: src.name + \" offline\" });\n}\n\nasync function start(src) {\n    const settings = src.settings || {};\n    const state = { client: null, online: null };\n    clients[src.name] = state;\n    const client = opcua.OPCUAClient.create({\n        applicationName: \"OFM \" + env.get(\"OFM_RUNTIME_NAME\"),\n        endpointMustExist: false,\n        securityMode: opcua.MessageSecurityMode[settings.securityMode || \"None\"],\n        securityPolicy: opcua.SecurityPolicy[settings.securityPolicy || \"None\"],\n        connectionStrategy: { initialDelay: 1000, maxDelay: 10000, maxRetry: -1 },   // retry forever\n        keepSessionAlive: true\n    });\n    state.client = client;\n    client.on(\"connection_lost\", () => report(src, state, false, \"connection lost\"));\n    client.on(\"connection_reestablished\", () => report(src, state, true));\n    client.on(\"backoff\", () => report(src, state, false, \"cannot reach \" + src.endpoint));\n\n    try {\n        await client.connect(src.endpoint);\n        const session = await client.createSession();\n        const namespaces = await session.readNamespaceArray();\n        const subscription = opcua.ClientSubscription.create(session, {\n            requestedPublishingInterval: settings.publishingIntervalMs || 1000,\n            requestedLifetimeCount: 60,\n            requestedMaxKeepAliveCount: 20,\n            publishingEnabled: true\n        });\n        for (const item of src.items) {\n            let nodeId;\n            try {\n                nodeId = translate(item.address, namespaces);\n            } catch (e) {\n                node.warn(src.name + \": \" + item.address + \": \" + e.message);\n                continue;\n            }\n            const monitored = opcua.ClientMonitoredItem.create(subscription,\n                { nodeId, attributeId: opcua.AttributeIds.Value },\n                { samplingInterval: settings.samplingIntervalMs || 500, discardOldest: true, queueSize: 10 },\n                opcua.TimestampsToReturn.Both);\n            monitored.on(\"changed\", (dv) => node.send([{\n                payload: {\n                    source: src.name,\n                    address: item.address,                       // as stored in the model\n                    value: dv.value ? dv.value.value : null,\n                    status: dv.statusCode ? dv.statusCode.name : \"Bad\",\n                    sourceTimestamp: dv.sourceTimestamp ? dv.sourceTimestamp.getTime() : null,\n                    receivedAt: Date.now()\n                }\n            }, null]));\n            monitored.on(\"err\", (e) => node.warn(src.name + \": \" + item.address + \": \" + e));\n        }\n        report(src, state, true);\n    } catch (e) {\n        report(src, state, false, e.message);\n        node.error(src.name + \": \" + e.message);\n    }\n}\n\nfor (const src of (msg.payload || [])) {\n    if (src.protocol === \"opcua\") {\n        start(src);                                       // runs in the background\n    } else {\n        node.warn(\"source \" + src.name + \": protocol \" + src.protocol + \" is not supported yet\");\n    }\n}\nreturn null;",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "// Close every OPC UA connection when the flow is stopped or redeployed.\nconst clients = context.get(\"clients\") || {};\nfor (const s of Object.values(clients)) {\n    s.client.disconnect().catch(() => { /* already closed */ });   // \"On Stop\" code cannot wait\n}\ncontext.set(\"clients\", {});",
+        "libs": [],
+        "x": 150,
+        "y": 360,
+        "wires": [
+            [
+                "ofm_rt_norm"
+            ],
+            [
+                "ofm_rt_srcstat"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "ofm_rt_c3",
+        "type": "comment",
+        "z": "ofm_rt_tab",
+        "name": "3  Value path: scale, validate, timestamp, then UNS and historian in parallel (ADR-0002)",
+        "info": "",
+        "x": 380,
+        "y": 440,
+        "wires": []
+    },
+    {
+        "id": "ofm_rt_norm",
+        "type": "function",
+        "z": "ofm_rt_tab",
+        "name": "normalise and validate",
+        "func": "// One value change in, the canonical OFM messages out (Overview \u00a77.1).\n// Output 1: live value to the UNS. Output 2: historian row (numbers, booleans).\n// Output 3: historian row (text). Output 4: quarantine and cache status.\nconst SKEW_MS = 5 * 60 * 1000;                      // ADR-0003: future-skew limit\nconst OLDEST = Date.UTC(2020, 0, 1);                 // older device time = clock not set\nconst v = msg.payload;\nconst model = global.get(\"ofm_model\");\nconst key = v.source + \"|\" + v.address;\nconst p = model && model.byKey[key];\n\n// --- timestamp and provenance (ADR-0003) -----------------------------------\nlet ts = v.sourceTimestamp, tss = \"device\", q = qualityOf(v.status);\nif (!Number.isFinite(ts) || ts < OLDEST) {\n    if (Number.isFinite(ts)) q = worst(q, \"uncertain\");   // device clock not set\n    ts = v.receivedAt; tss = \"gateway\";\n} else if (ts > v.receivedAt + SKEW_MS) {\n    ts = v.receivedAt; tss = \"gateway\"; q = worst(q, \"uncertain\");\n}\nts = Math.round(ts);\n\n// --- not in the model: quarantine (ADR-0001) --------------------------------\nif (!p) {\n    const unmapped = global.get(\"ofm_unmapped\") || {};\n    const isNew = !unmapped[key];\n    unmapped[key] = true;\n    global.set(\"ofm_unmapped\", unmapped);\n    const out = [{\n        topic: \"ofm/_unmapped/\" + v.source + \"/\" + v.address.replace(/[\\/+#]/g, \"_\"),\n        payload: { v: plain(v.value), ts, tss, addr: v.address }, retain: false, qos: 0\n    }];\n    if (isNew) out.push({\n        topic: \"ofm/_system/cache/\" + env.get(\"OFM_RUNTIME_NAME\"),\n        payload: { ts: model ? model.loadedAt : Date.now(), trigger: \"startup\",\n                   rows: model ? Object.keys(model.byProperty).length : 0,\n                   unmapped: Object.keys(unmapped).length },\n        retain: true, qos: 1\n    });\n    return [null, null, null, out];\n}\n\n// --- value: scale and type ---------------------------------------------------\nlet value = convert(v.value, p);\nif (value === null) q = \"bad\";\nelse if (typeof value === \"number\" &&\n         ((p.low !== null && p.low !== undefined && value < p.low) ||\n          (p.high !== null && p.high !== undefined && value > p.high))) {\n    q = worst(q, \"uncertain\");                       // outside the engineering range\n}\n\n// Backwards device time for the same property is a clock problem (ADR-0003).\nconst last = context.get(\"lastTs\") || {};\nif (last[p.propertyId] !== undefined && ts < last[p.propertyId]) q = worst(q, \"uncertain\");\nlast[p.propertyId] = Math.max(ts, last[p.propertyId] || 0);\ncontext.set(\"lastTs\", last);\n\nconst live = { topic: p.topic, payload: { v: value, ts, q, tss }, retain: true, qos: 1 };\n\nlet numeric = null, text = null;\nif (p.historised && value !== null) {\n    const row = [ts, p.propertyId, null, [\"good\", \"uncertain\", \"bad\"].indexOf(q), tss === \"device\" ? 0 : 1];\n    if (p.datatype === \"string\") { row[2] = value; text = { params: row }; }\n    else { row[2] = typeof value === \"boolean\" ? (value ? 1 : 0) : value; numeric = { params: row }; }\n}\nreturn [live, numeric, text, null];\n\n// --- helpers ------------------------------------------------------------------\nfunction qualityOf(status) {\n    const s = String(status || \"Bad\");\n    return s.startsWith(\"Good\") ? \"good\" : s.startsWith(\"Uncertain\") ? \"uncertain\" : \"bad\";\n}\nfunction worst(a, b) {\n    const order = [\"good\", \"uncertain\", \"bad\"];\n    return order[Math.max(order.indexOf(a), order.indexOf(b))];\n}\nfunction plain(raw) {\n    if (raw === null || raw === undefined) return null;\n    if (typeof raw === \"number\" || typeof raw === \"boolean\") return raw;\n    return String(raw).slice(0, 1024);\n}\nfunction convert(raw, p) {\n    if (raw === null || raw === undefined) return null;\n    if (p.datatype === \"bool\") {\n        if (typeof raw === \"boolean\") return raw;\n        if (typeof raw === \"number\") return raw !== 0;\n        return null;\n    }\n    if (p.datatype === \"string\") return String(raw).slice(0, 1024);\n    let n;\n    if (Array.isArray(raw) && raw.length === 2) n = raw[0] * 4294967296 + raw[1];   // 64-bit as [high, low]\n    else if (typeof raw === \"boolean\") n = raw ? 1 : 0;\n    else n = Number(raw);\n    if (!Number.isFinite(n)) return null;\n    n = n * p.factor + p.offset;\n    return p.datatype === \"int\" ? Math.round(n) : n;\n}",
+        "outputs": 4,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 390,
+        "y": 360,
+        "wires": [
+            [
+                "ofm_rt_out_uns"
+            ],
+            [
+                "ofm_rt_insnum"
+            ],
+            [
+                "ofm_rt_instxt"
+            ],
+            [
+                "ofm_rt_out_sys"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "ofm_rt_out_uns",
+        "type": "mqtt out",
+        "z": "ofm_rt_tab",
+        "name": "UNS: live values",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "ofm_rt_broker",
+        "x": 680,
+        "y": 340,
+        "wires": []
+    },
+    {
+        "id": "ofm_rt_insnum",
+        "type": "postgresql",
+        "z": "ofm_rt_tab",
+        "name": "historian: numbers",
+        "query": "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source)\nVALUES (to_timestamp($1::double precision / 1000), $2, $3, $4, $5)\nON CONFLICT (property_id, ts) DO NOTHING;",
+        "postgreSQLConfig": "ofm_rt_pg",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 670,
+        "y": 380,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "ofm_rt_instxt",
+        "type": "postgresql",
+        "z": "ofm_rt_tab",
+        "name": "historian: text",
+        "query": "INSERT INTO hist.measurement_text (ts, property_id, value, quality, ts_source)\nVALUES (to_timestamp($1::double precision / 1000), $2, $3, $4, $5)\nON CONFLICT (property_id, ts) DO NOTHING;",
+        "postgreSQLConfig": "ofm_rt_pg",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 660,
+        "y": 420,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "ofm_rt_c4",
+        "type": "comment",
+        "z": "ofm_rt_tab",
+        "name": "4  Platform status: runtime, sources, cache, quarantine (ofm/_system, ofm/_unmapped)",
+        "info": "",
+        "x": 380,
+        "y": 520,
+        "wires": []
+    },
+    {
+        "id": "ofm_rt_srcstat",
+        "type": "function",
+        "z": "ofm_rt_tab",
+        "name": "source status",
+        "func": "// Source connection state, retained, for every consumer (ADR-0007).\nconst s = msg.payload;\nmsg.topic = \"ofm/_system/sources/\" + s.source;\nmsg.payload = { state: s.online ? \"online\" : \"offline\", ts: Date.now() };\nif (!s.online && s.error) msg.payload.error = String(s.error).slice(0, 1024);\nmsg.retain = true;\nmsg.qos = 1;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 390,
+        "y": 580,
+        "wires": [
+            [
+                "ofm_rt_out_sys"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "ofm_rt_mqstatus",
+        "type": "status",
+        "z": "ofm_rt_tab",
+        "name": "UNS connection",
+        "scope": [
+            "ofm_rt_out_sys"
+        ],
+        "x": 140,
+        "y": 640,
+        "wires": [
+            [
+                "ofm_rt_online"
+            ]
+        ]
+    },
+    {
+        "id": "ofm_rt_online",
+        "type": "function",
+        "z": "ofm_rt_tab",
+        "name": "runtime online",
+        "func": "// When the broker connection comes up (also after a broker restart), announce\n// this runtime as online. Its Last Will announces \"offline\" if it disappears.\nconst connected = msg.status && msg.status.fill === \"green\";\nif (connected === context.get(\"connected\")) return null;\ncontext.set(\"connected\", connected);\nif (!connected) return null;\nmsg.topic = \"ofm/_system/runtime/\" + env.get(\"OFM_RUNTIME_NAME\");\nmsg.payload = { state: \"online\", ts: Date.now() };\nmsg.retain = true;\nmsg.qos = 1;\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 390,
+        "y": 640,
+        "wires": [
+            [
+                "ofm_rt_out_sys"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "ofm_rt_out_sys",
+        "type": "mqtt out",
+        "z": "ofm_rt_tab",
+        "name": "UNS: platform topics",
+        "topic": "",
+        "qos": "",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "ofm_rt_broker",
+        "x": 960,
+        "y": 600,
+        "wires": []
+    },
+    {
+        "id": "ofm_rt_catch",
+        "type": "catch",
+        "z": "ofm_rt_tab",
+        "name": "all errors",
+        "scope": null,
+        "uncaught": false,
+        "x": 120,
+        "y": 720,
+        "wires": [
+            [
+                "ofm_rt_errlog"
+            ]
+        ]
+    },
+    {
+        "id": "ofm_rt_errlog",
+        "type": "debug",
+        "z": "ofm_rt_tab",
+        "name": "errors",
+        "active": true,
+        "tosidebar": true,
+        "console": true,
+        "tostatus": false,
+        "complete": "error",
+        "targetType": "msg",
+        "x": 290,
+        "y": 720,
+        "wires": []
+    }
+]
