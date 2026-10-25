@@ -20,6 +20,8 @@ migration disagree, the migration wins.
   call `CALL audit.fn_enable('config.<table>');`.
 - **History tables** in `hist` are append-only: the runtime role gets SELECT
   and INSERT only (automatic, from the default privileges).
+- **No secrets.** A migration may create a role, never set its password:
+  passwords come from `deploy/.env` and are set by the runner.
 - **Reference data** every installation needs (e.g. engineering units) goes in
   a migration. **Example or site data** does not: see `db/examples/`.
 
@@ -28,8 +30,9 @@ migration disagree, the migration wins.
 ```powershell
 docker compose run --rm migrate status    # what is applied, what is pending
 docker compose run --rm migrate           # apply pending (also runs on every "docker compose up")
-docker compose run --rm migrate example   # load the example plant "acme"
+docker compose run --rm migrate example   # load or refresh the example plant "acme"
 docker compose run --rm migrate erd       # regenerate docs/generated/erd.md
+docker compose run --rm migrate adduser jarek   # personal model-editing login
 ```
 
 ## Contents
@@ -41,3 +44,5 @@ docker compose run --rm migrate erd       # regenerate docs/generated/erd.md
 | `003-information-model.sql` | `engineering_unit` (with units), `source`, `machine_property`, `plc_mapping`, `asset_relationship` |
 | `004-runtime-model-view.sql` | `vw_runtime_model` (the runtime cache), `vw_property_path` |
 | `005-historian.sql` | `hist.measurement`, `hist.measurement_text` (hypertables), `hist.vw_measurement` |
+| `006-model-editor-support.sql` | Single-column key `machine_property` → `sub_asset` (for pick-lists); login `ofm_mathesar` for the model editor (ADR-0013) |
+| `007-reserve-foodsafety-topic.sql` | Machine name `foodsafety` reserved for food safety check topics (ADR-0015) |

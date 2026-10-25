@@ -136,4 +136,5 @@ erDiagram
   site ||--o{ area : "site_id"
   source ||--o{ plc_mapping : "source_id"
   sub_asset |o--o{ machine_property : "machine_id, sub_asset_id"
+  sub_asset |o--o{ machine_property : "sub_asset_id"
 ```

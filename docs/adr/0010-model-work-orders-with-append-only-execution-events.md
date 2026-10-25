@@ -84,3 +84,12 @@ performance figure.
   `changeover_end` event can be placed after ramp-up, or ramp-up can count as
   speed loss.
 - Related: ADR-0006, ADR-0008, ADR-0009.
+
+## Amendments
+
+- 2026-10-25: **Products are materials.** Per ADR-0014, `config.product` is
+  built as `config.material` with a `material_type`; a product is a material
+  of type `finished` or `semi_finished`. `product_line_rate` and
+  `work_order` reference `material_id` instead of `product_id`. The
+  `workorder` payload keeps its field names (`productId`, `sku`) for
+  readability; they carry the material's ID and code.

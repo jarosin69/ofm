@@ -79,3 +79,16 @@ Overview §2) favours the smallest tool that does this safely.
 
 - `db/migrations/README.md` holds the conventions for writing migrations.
 - Related: ADR-0004 (immutable IDs), ADR-0005 (naming), Architecture Overview §11.
+
+## Amendments
+
+- 2026-10-23: **Role passwords from `.env`.** After applying migrations, `up`
+  sets the passwords of the platform roles (`ofm_runtime`, `ofm_config`,
+  `ofm_reader`, `ofm_mathesar`) to their values in `deploy/.env`, so a
+  password is changed by editing `.env` and restarting, as for MQTT. Roles
+  themselves are still created by the init script or by migrations, never by
+  the password step.
+- 2026-10-23: **Two more commands.** `adduser NAME` creates a personal
+  model-editing login (member of `ofm_config`) and prints its password once
+  (ADR-0013). `example` is now re-runnable: it adds what is missing and
+  refreshes the example mappings.

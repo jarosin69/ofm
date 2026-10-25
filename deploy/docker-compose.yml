@@ -51,6 +51,11 @@ services:
       PGDATABASE: ofm
       PGUSER: ${POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD}
+      # Role passwords, set from .env after every migration run (ADR-0012):
+      OFM_RUNTIME_DB_PASSWORD: ${OFM_RUNTIME_DB_PASSWORD}
+      OFM_CONFIG_DB_PASSWORD: ${OFM_CONFIG_DB_PASSWORD}
+      OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD}
+      OFM_MATHESAR_DB_PASSWORD: ${OFM_MATHESAR_DB_PASSWORD:?run make-env.sh to add OFM_MATHESAR_DB_PASSWORD to .env}
     volumes:
       - ..:/repo                   # the repository: db/migrations, tools, docs/generated
     depends_on:
@@ -133,19 +138,70 @@ services:
       timescaledb:
         condition: service_healthy
 
-  nocodb:
-    image: nocodb/nocodb:2026.09.1
-    container_name: ofm-nocodb
+  # Model editor (ADR-0013, proposed): a spreadsheet-style web interface on
+  # the config tables. Connects to the database as ofm_mathesar or personal
+  # logins; its own users and settings live in mathesar-db.
+  mathesar:
+    image: mathesar/mathesar:0.12.0
+    container_name: ofm-mathesar
     restart: unless-stopped
     environment:
-      NC_DISABLE_TELE: "true"
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DEBUG: "false"
+      SECRET_KEY: ${MATHESAR_SECRET_KEY:?run make-env.sh to add MATHESAR_SECRET_KEY to .env}
+      DOMAIN_NAME: http://localhost:8080
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      POSTGRES_HOST: mathesar-db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mathesar_django
+      POSTGRES_USER: mathesar
+      POSTGRES_PASSWORD: ${MATHESAR_DB_PASSWORD:?run make-env.sh to add MATHESAR_DB_PASSWORD to .env}
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8080:8000"
     volumes:
-      - nocodb-data:/usr/app/data
+      - mathesar-static:/code/static
+      - mathesar-media:/code/.media
     depends_on:
-      timescaledb:
+      mathesar-db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Mathesar's own settings database (its users and saved views; no plant
+  # data). Same image as the main database, so nothing extra to download.
+  mathesar-db:
+    image: timescale/timescaledb:2.30.2-pg16
+    container_name: ofm-mathesar-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mathesar_django
+      POSTGRES_USER: mathesar
+      POSTGRES_PASSWORD: ${MATHESAR_DB_PASSWORD}
+      TZ: Etc/UTC
+    volumes:
+      - mathesar-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mathesar -d mathesar_django"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # OPC UA simulator: the Phase 1 data source (Microsoft OPC PLC, MIT licence).
+  # Runs only when COMPOSE_PROFILES in .env contains "simulator".
+  # Inside the stack it is opc.tcp://opcplc:50000; from this laptop (e.g. with
+  # a desktop OPC UA client) opc.tcp://localhost:50000.
+  opcplc:
+    image: mcr.microsoft.com/iotedge/opc-plc:2.15.11
+    container_name: ofm-opcplc
+    hostname: opcplc
+    restart: unless-stopped
+    profiles: ["simulator"]
+    command:
+      - --pn=50000          # OPC UA port
+      - --autoaccept        # trust client certificates (simulator only)
+      - --ut                # allow unencrypted connections (simulator only)
+    ports:
+      - "127.0.0.1:50000:50000"
 
 volumes:
   tsdb-data:
@@ -153,5 +209,7 @@ volumes:
   mosq-log:
   nodered-data:
   grafana-data:
-  nocodb-data:
+  mathesar-static:
+  mathesar-media:
+  mathesar-pgdata:
   sf-queue:

@@ -1,16 +1,18 @@
 # OFM Proof of Concept — Windows 11 setup
 
-This folder is the complete PoC environment: TimescaleDB, Mosquitto,
-Node-RED, Grafana and NocoDB as separate containers under Docker Compose.
-The same file, with different `.env` values, is the plant deployment
-(Architecture Overview §14).
+This folder is the complete PoC environment as containers under Docker
+Compose: TimescaleDB (model and historian), Mosquitto (UNS broker), Node-RED
+(runtime), Grafana (dashboards), Mathesar (model editor) and, for development,
+an OPC UA simulator as the data source. The same file, with different `.env`
+values, is the plant deployment (Architecture Overview §14).
 
 The kit is hardened for a single laptop (Architecture Overview §13):
 
 - every service port is bound to `127.0.0.1`, so it is reachable from this
   laptop only;
 - all passwords live in one generated file, `.env` (never committed); the
-  database roles, MQTT users and Grafana datasource are created from it;
+  database role passwords, MQTT users and Grafana datasource are set from it
+  at every start;
 - the database structure is built and kept up to date automatically by
   numbered migrations (`db/migrations/`, ADR-0012);
 - the Node-RED editor requires a login;
@@ -61,33 +63,37 @@ The kit is hardened for a single laptop (Architecture Overview §13):
    cd C:\ofm\deploy
    ```
 7. **Generate the secrets.** This creates `.env` with a random password for
-   every service and prints the two logins you need. It runs inside a small
-   throw-away container, so nothing needs installing, and the same command
-   works in a Linux shell:
+   every service and prints the three logins you need (Node-RED, Grafana,
+   Mathesar). It runs inside a small throw-away container, so nothing needs
+   installing, and the same command works in a Linux shell:
    ```powershell
    docker run --rm -v "${PWD}:/work" -w /work alpine:3.22 sh make-env.sh
    ```
    Save a copy of `.env` in a password manager: it is the only place these
-   passwords exist, and it is never committed to Git. The script refuses to
-   overwrite an existing `.env`.
+   passwords exist, and it is never committed to Git. Running the script again
+   is always safe: on an existing `.env` it only adds settings that are
+   missing (e.g. after an upgrade) and never changes an existing value.
 8. **Start the stack:**
    ```powershell
    docker compose up -d
    docker compose ps
    ```
-   The first start downloads the images (a few minutes). The five services
-   should then be "running", TimescaleDB "healthy" after about 15 s. A sixth
-   one, `migrate`, runs once at every start to apply database migrations and
-   then stops; `docker compose ps -a` shows it as "Exited (0)", which is
-   correct. If it shows another exit code, Node-RED does not start: see
-   `docker compose logs migrate`.
+   The first start downloads the images (several minutes). Seven services
+   should then be "running": `timescaledb`, `mosquitto`, `nodered`, `grafana`,
+   `mathesar`, `mathesar-db` and `opcplc` (the simulator; it runs because
+   `.env` contains `COMPOSE_PROFILES=simulator` — leave that empty at a plant).
+   One more, `migrate`, runs once at every start to apply database migrations
+   and set the database passwords, then stops: `docker compose ps -a` shows
+   it as "Exited (0)", which is correct. With any other exit code, Node-RED
+   and Mathesar do not start: see `docker compose logs migrate`.
 
 That is the whole installation. On every start the stack creates or updates
-the database structure, the MQTT users and the Grafana datasource by itself.
+the database structure, the passwords, the MQTT users and the Grafana
+datasource by itself.
 
 *Optional:* load the example plant `acme` (five properties read from the OPC
-UA simulator), to have something to look at in NocoDB and, from Phase 1 step
-1.3, on the dashboards:
+UA simulator), to have something to look at in Mathesar and, from Phase 1
+step 1.3, on the dashboards. Running it again later refreshes the example:
 ```powershell
 docker compose run --rm migrate example
 ```
@@ -99,15 +105,14 @@ docker compose run --rm migrate example
    - **Node-RED** — http://localhost:1880 must ask for a login.
    - **Grafana** — http://localhost:3000. Then Connections → Data sources →
      **OFM historian** → **Test** must report success.
-   - **NocoDB** — http://localhost:8080 (create the local account on first
-     visit).
+   - **Mathesar** — http://localhost:8080; the first visit is described in steps 15–16.
 10. **Database** — roles exist and every migration is applied:
     ```powershell
     docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "\du"
     docker compose run --rm migrate status
     ```
-    Expect roles `ofm_runtime`, `ofm_config`, `ofm_reader`, and every
-    migration under "Applied" with "Pending: (none)".
+    Expect roles `ofm_runtime`, `ofm_config`, `ofm_reader`, `ofm_mathesar`,
+    and every migration under "Applied" with "Pending: (none)".
 11. **MQTT access rules** — one allowed and two forbidden publishes. The
     commands read the passwords inside the broker container, so nothing needs
     typing. They use MQTT version 5 with QoS 1 (`-V mqttv5 -q 1`), so the
@@ -133,29 +138,59 @@ docker compose run --rm migrate example
 
     The reader may only subscribe, and the runtime may not use the write-back
     branch (`mosquitto/config/acl`). Stop the subscriber with Ctrl+C.
+12. **OPC UA simulator** — running and serving:
+    ```powershell
+    docker compose logs opcplc
+    ```
+    The log shows the server starting with its endpoint `opc.tcp://opcplc:50000`.
+    To browse its nodes yourself, any desktop OPC UA client on this laptop can
+    connect to `opc.tcp://localhost:50000` (security: None).
 
 ## 4. First wiring (do once)
 
-12. **Node-RED palettes.** Menu → Manage palette → Install:
-    `node-red-contrib-opcua`, `node-red-contrib-s7`, `node-red-contrib-modbus`,
-    `node-red-contrib-postgresql`, `@flowfuse/node-red-dashboard`.
-    (The OPC UA package compiles native modules — allow several minutes.)
 13. **Container-to-container addresses.** Inside flows and datasources, use
     Compose service names, never `localhost`:
     - MQTT broker host: `mosquitto`, port 1883
     - PostgreSQL host: `timescaledb`, port 5432, database `ofm`
 
     `localhost` works only from Windows itself (your browser, MQTT Explorer).
-14. **Passwords in flows.** Node-RED receives `OFM_RUNTIME_DB_PASSWORD` and
+14. **Node-RED nodes and passwords in flows.** From Phase 1 step 1.3, OFM's
+    Node-RED image comes with the OPC UA, S7, Modbus, PostgreSQL and dashboard
+    nodes built in at pinned versions, so nothing is installed from the
+    internet. **Passwords:** Node-RED receives `OFM_RUNTIME_DB_PASSWORD` and
     `OFM_MQTT_RUNTIME_PASSWORD` as environment variables, so flows refer to
     them as `${OFM_RUNTIME_DB_PASSWORD}` instead of storing the password.
     The exact use is set up with the first Phase 1 flow.
-15. **NocoDB connection.** Create a Base → external PostgreSQL:
-    host `timescaledb`, port 5432, database `ofm`, user `ofm_config`,
-    password `OFM_CONFIG_DB_PASSWORD` from `.env`, schema `config`. (Empty
-    until the Phase 1 migrations land.) NocoDB connects with this one role for
-    every user, so per-person change history comes from NocoDB's own audit log
-    (Architecture Overview §11).
+15. **Mathesar, first visit** (the model editor, ADR-0013). Open
+    http://localhost:8080. Mathesar asks once for an administrator account:
+    enter `MATHESAR_ADMIN_USER` and `MATHESAR_ADMIN_PASSWORD` from `.env`. This
+    account is local to Mathesar on this machine; nothing is sent anywhere.
+16. **Connect Mathesar to the model.** In Mathesar, connect an existing
+    database with:
+    - host `timescaledb`, port `5432`, database `ofm`
+    - role `ofm_mathesar`, password `OFM_MATHESAR_DB_PASSWORD` from `.env`
+
+    On this first connection Mathesar adds its own helper schemas (`msar`,
+    `mathesar_types`) to the database; that is expected. Then open the
+    `config` schema: these are the model tables shown in
+    `docs/generated/erd.md`. `vw_runtime_model` shows every topic.
+17. **A personal login for each person who edits the model** (recommended):
+    ```powershell
+    docker compose run --rm migrate adduser jarek
+    ```
+    This prints a password for the new database login `jarek`, which has
+    exactly the editing rights of `ofm_config`. In Mathesar, add the person as
+    a collaborator on the database with that role. Every change they make is
+    then recorded in the audit log under their own name.
+
+### Tools for engineers (optional)
+
+**DBeaver Community** (free desktop database tool for Windows, Apache 2.0)
+is useful for SQL queries, browsing history and checking views. It needs
+nothing added to the stack: connect to `localhost`, port `5432`, database
+`ofm`. Use the read-only login `ofm_reader` (password `OFM_READER_DB_PASSWORD`)
+for everyday browsing, so nothing can be changed by accident. Structure is
+never changed by hand: that is what migrations are for.
 
 ## 5. Reaching a real PLC later
 
@@ -172,9 +207,9 @@ properties and disable optimised block access on the data blocks to be read.
 S7 polling provides no device timestamp, so S7 values are always stamped
 `tss: "gateway"` (ADR-0003). OPC UA subscriptions provide device time.
 
-Until then, develop against simulation: an `inject` node producing raw
-values, or a local OPC UA test server, exercises the entire pipeline
-identically.
+Until then, develop against the OPC UA simulator in the stack: it exercises
+the entire pipeline identically, and the real PLC is simply a second `source`
+row in the model.
 
 ## 6. Daily operations
 
@@ -186,8 +221,13 @@ docker compose down -v             # stop AND DELETE ALL DATA — careful
 ```
 
 **Upgrading OFM** (after `git pull`): back up the model first (below), then
-`docker compose up -d`. New migrations are applied automatically before
-Node-RED starts. There is no automatic rollback; the backup is the way back.
+add any new settings to `.env` and restart:
+```powershell
+docker run --rm -v "${PWD}:/work" -w /work alpine:3.22 sh make-env.sh
+docker compose up -d
+```
+New migrations are applied automatically before Node-RED starts. There is no
+automatic rollback; the backup is the way back.
 
 **Upgrading an image** is a deliberate change: edit its version in
 `docker-compose.yml`, read the release notes (TimescaleDB upgrades also need
@@ -213,14 +253,13 @@ docker cp ofm-timescaledb:/tmp/config-backup.sql "C:\ofm-backups\config-$(Get-Da
 Restoring is rehearsed as part of Phase 3b (Architecture Overview §16).
 
 **Changing a password** after the first start:
-- *MQTT and Node-RED:* edit `.env`, then `docker compose up -d` (the broker
-  rebuilds its password file at every start; Node-RED reads its login at
-  start).
-- *Database roles:* the init script does not run again, so change the role
-  in the database as well as in `.env`, then `docker compose up -d`:
-  ```powershell
-  docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "ALTER ROLE ofm_reader PASSWORD 'NewPassword'"
-  ```
+- *MQTT, Node-RED and the database roles* (`ofm_runtime`, `ofm_config`,
+  `ofm_reader`, `ofm_mathesar`): edit `.env`, then `docker compose up -d`.
+  Each start rebuilds the broker's password file and sets the role
+  passwords from `.env`. After changing `OFM_MATHESAR_DB_PASSWORD`, update
+  the stored password in Mathesar's database settings too.
+- *`POSTGRES_PASSWORD`* (the superuser): only applies to a brand-new database
+  volume; change it in the database and in `.env` together.
 - *Grafana administrator:* `GRAFANA_PASSWORD` only applies to a brand-new
   Grafana volume. To make an existing Grafana match `.env`:
   ```powershell
@@ -228,6 +267,15 @@ Restoring is rehearsed as part of Phase 3b (Architecture Overview §16).
   ```
 - *`NODE_RED_CREDENTIAL_SECRET`:* never change it; stored Node-RED
   credentials would become unreadable.
+
+## Installing without internet (plant LAN)
+
+Most plant installations have no internet access. Once its images are on the
+machine, OFM needs none: every service runs offline. Only the installation
+needs the images brought in — saved with `docker save` on a PC that has
+internet, carried over, and loaded with `docker load` (or pulled from an
+internal registry). A packaged offline bundle is prepared before the plant
+pilot (`docs/STATUS.md`, Stage C).
 
 ## Gotchas worth knowing
 

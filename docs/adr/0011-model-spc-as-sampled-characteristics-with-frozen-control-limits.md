@@ -109,3 +109,9 @@ designed it. SPC data differs from telemetry in three ways:
 - Related: ADR-0006 (append-only history), ADR-0008 (quality loss in the
   efficiency waterfall is count-based and separate from SPC), ADR-0010
   (products, work orders, effective-dated master data).
+
+## Amendments
+
+- 2026-10-25: Per ADR-0014, `config.product_spec` references `material_id`
+  (any material, so raw materials can also have specifications, e.g. for
+  incoming inspection) instead of `product_id`.

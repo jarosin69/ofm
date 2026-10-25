@@ -23,7 +23,9 @@ provenance, IDs) and is referenced by the others; it is not a payload.
 
 Not yet specified, deliberately: machine state (`…/{machine}/state`, Phase 3a),
 line KPIs (`…/{line}/kpi/{name}`, Phase 3b), state health
-(`ofm/_system/state_health`, Phase 3) and write-back commands (`ofm/_cmd/…`).
+(`ofm/_system/state_health`, Phase 3), SPC state (`…/{line}/spc/{characteristic}`,
+Phase 3c), food safety check state (`…/{line}/foodsafety/{check}`, Phase 3d)
+and write-back commands (`ofm/_cmd/…`).
 Each gets its schema in the phase that builds it.
 
 ## Rules every payload follows
