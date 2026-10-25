@@ -75,10 +75,12 @@ The kit is hardened for a single laptop (Architecture Overview §13):
    missing (e.g. after an upgrade) and never changes an existing value.
 8. **Start the stack:**
    ```powershell
-   docker compose up -d
+   docker compose up -d --build
    docker compose ps
    ```
-   The first start downloads the images (several minutes). Seven services
+   The first start downloads the images and builds OFM's Node-RED image
+   (`nodered/Dockerfile`: Node-RED plus its OPC UA, S7, PostgreSQL and
+   dashboard nodes) — several minutes, and the only time internet is needed. Seven services
    should then be "running": `timescaledb`, `mosquitto`, `nodered`, `grafana`,
    `mathesar`, `mathesar-db` and `opcplc` (the simulator; it runs because
    `.env` contains `COMPOSE_PROFILES=simulator` — leave that empty at a plant).
@@ -145,6 +147,15 @@ docker compose run --rm migrate example
     The log shows the server starting with its endpoint `opc.tcp://opcplc:50000`.
     To browse its nodes yourself, any desktop OPC UA client on this laptop can
     connect to `opc.tcp://localhost:50000` (security: None).
+12a. **Node-RED reads the simulator** — log in to Node-RED, then Menu (☰) →
+    **Import** → *select a file to import* → `C:\ofm\flows\checks\opcua-simulator-check.json`
+    → **Import**, then **Deploy**. Open the **Debug** sidebar (bug icon, top
+    right). After about 3 seconds, a line appears every second for each of
+    five simulator nodes, e.g.
+    `{node: "ns=3;s=SpikeData", value: 12.3, quality: "Good", sourceTimestamp: "…"}`.
+    The node *find namespace number* shows which namespace number the
+    simulator uses. Delete the tab afterwards (double-click the tab →
+    **Delete**, then **Deploy**); it is only a check.
 
 ## 4. First wiring (do once)
 
@@ -154,10 +165,12 @@ docker compose run --rm migrate example
     - PostgreSQL host: `timescaledb`, port 5432, database `ofm`
 
     `localhost` works only from Windows itself (your browser, MQTT Explorer).
-14. **Node-RED nodes and passwords in flows.** From Phase 1 step 1.3, OFM's
-    Node-RED image comes with the OPC UA, S7, Modbus, PostgreSQL and dashboard
-    nodes built in at pinned versions, so nothing is installed from the
-    internet. **Passwords:** Node-RED receives `OFM_RUNTIME_DB_PASSWORD` and
+14. **Node-RED nodes and passwords in flows.** OFM's Node-RED image comes with
+    the OPC UA, S7, PostgreSQL and dashboard nodes built in at pinned versions
+    (`nodered/Dockerfile`), so nothing is installed from the internet. Do not
+    install or update these through *Manage palette*: a palette copy would
+    compete with the built-in one. A Modbus node is added when the first
+    Modbus device needs it. **Passwords:** Node-RED receives `OFM_RUNTIME_DB_PASSWORD` and
     `OFM_MQTT_RUNTIME_PASSWORD` as environment variables, so flows refer to
     them as `${OFM_RUNTIME_DB_PASSWORD}` instead of storing the password.
     The exact use is set up with the first Phase 1 flow.
@@ -224,10 +237,15 @@ docker compose down -v             # stop AND DELETE ALL DATA — careful
 add any new settings to `.env` and restart:
 ```powershell
 docker run --rm -v "${PWD}:/work" -w /work alpine:3.22 sh make-env.sh
-docker compose up -d
+docker compose up -d --build
 ```
-New migrations are applied automatically before Node-RED starts. There is no
+`--build` rebuilds OFM's Node-RED image if its Dockerfile changed (otherwise
+it takes a second). New migrations are applied automatically before Node-RED starts. There is no
 automatic rollback; the backup is the way back.
+
+**Upgrading Node-RED or its nodes:** edit the versions in
+`nodered/Dockerfile`, raise the `ofm/node-red` tag in `docker-compose.yml`,
+then `docker compose up -d --build`.
 
 **Upgrading an image** is a deliberate change: edit its version in
 `docker-compose.yml`, read the release notes (TimescaleDB upgrades also need

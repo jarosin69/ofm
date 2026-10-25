@@ -1,0 +1,183 @@
+[
+ {
+  "id": "ofmchk_tab",
+  "type": "tab",
+  "label": "OFM check: OPC UA simulator",
+  "info": "Phase 1 step 1.3 check. Reads the simulator's namespace table, finds the OpcPlc namespace number, and subscribes to the five nodes the example plant uses. Open the Debug sidebar to see the values. Safe to delete after the check."
+ },
+ {
+  "id": "ofmchk_ep",
+  "type": "OpcUa-Endpoint",
+  "endpoint": "opc.tcp://opcplc:50000",
+  "secpol": "None",
+  "secmode": "None",
+  "none": true,
+  "login": false,
+  "usercert": false,
+  "usercertificate": "",
+  "userprivatekey": "",
+  "name": "OPC PLC simulator"
+ },
+ {
+  "id": "ofmchk_cmt",
+  "type": "comment",
+  "z": "ofmchk_tab",
+  "name": "Runs 3 s after deploy. Results in the Debug sidebar (bug icon, right).",
+  "info": "",
+  "x": 250,
+  "y": 40,
+  "wires": []
+ },
+ {
+  "id": "ofmchk_inj",
+  "type": "inject",
+  "z": "ofmchk_tab",
+  "name": "start (3 s after deploy)",
+  "props": [
+   {
+    "p": "payload"
+   }
+  ],
+  "repeat": "",
+  "once": true,
+  "onceDelay": "3",
+  "payload": "",
+  "payloadType": "date",
+  "x": 170,
+  "y": 100,
+  "wires": [
+   [
+    "ofmchk_item"
+   ]
+  ]
+ },
+ {
+  "id": "ofmchk_item",
+  "type": "OpcUa-Item",
+  "z": "ofmchk_tab",
+  "item": "ns=0;i=2255",
+  "datatype": "String Array",
+  "value": "",
+  "name": "Server namespace table",
+  "x": 410,
+  "y": 100,
+  "wires": [
+   [
+    "ofmchk_read"
+   ]
+  ]
+ },
+ {
+  "id": "ofmchk_read",
+  "type": "OpcUa-Client",
+  "z": "ofmchk_tab",
+  "endpoint": "ofmchk_ep",
+  "action": "read",
+  "time": 10,
+  "name": "read",
+  "x": 610,
+  "y": 100,
+  "wires": [
+   [
+    "ofmchk_resolve"
+   ],
+   [],
+   []
+  ],
+  "deadbandtype": "a",
+  "deadbandvalue": 1,
+  "timeUnit": "s",
+  "certificate": "n",
+  "localfile": "",
+  "localkeyfile": "",
+  "securitymode": "None",
+  "securitypolicy": "None",
+  "useTransport": false,
+  "maxChunkCount": 1,
+  "maxMessageSize": 8192,
+  "receiveBufferSize": 8192,
+  "sendBufferSize": 8192,
+  "setstatusandtime": false,
+  "keepsessionalive": false
+ },
+ {
+  "id": "ofmchk_resolve",
+  "type": "function",
+  "z": "ofmchk_tab",
+  "name": "find namespace number",
+  "func": "// Find the simulator's namespace number from its URI. OPC UA guarantees the\n// URI, not the number, so OFM stores addresses as nsu=... and translates\n// them here (Architecture Overview \u00a75). Step 1.4 does the same for all mappings.\nconst uri = \"http://microsoft.com/Opc/OpcPlc/\";\nconst ns = Array.isArray(msg.payload) ? msg.payload.indexOf(uri) : -1;\nif (ns < 0) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"namespace not found\" });\n    node.error(\"Namespace \" + uri + \" not found. Server namespaces: \" + JSON.stringify(msg.payload));\n    return null;\n}\nnode.status({ fill: \"green\", shape: \"dot\", text: \"OpcPlc namespace is ns=\" + ns });\n// The five simulator nodes used by the example plant \"acme\".\nconst nodes = [\n    [\"SpikeData\", \"Double\"], [\"PositiveTrendData\", \"Double\"], [\"DipData\", \"Double\"],\n    [\"AlternatingBoolean\", \"Boolean\"], [\"SlowUInt1\", \"UInt32\"]\n];\nreturn [nodes.map(([id, type]) => ({ topic: \"ns=\" + ns + \";s=\" + id, datatype: type }))];",
+  "outputs": 1,
+  "x": 180,
+  "y": 180,
+  "wires": [
+   [
+    "ofmchk_sub"
+   ]
+  ]
+ },
+ {
+  "id": "ofmchk_sub",
+  "type": "OpcUa-Client",
+  "z": "ofmchk_tab",
+  "endpoint": "ofmchk_ep",
+  "action": "subscribe",
+  "time": 1,
+  "name": "subscribe (1 s)",
+  "x": 410,
+  "y": 180,
+  "wires": [
+   [
+    "ofmchk_fmt"
+   ],
+   [],
+   []
+  ],
+  "deadbandtype": "a",
+  "deadbandvalue": 1,
+  "timeUnit": "s",
+  "certificate": "n",
+  "localfile": "",
+  "localkeyfile": "",
+  "securitymode": "None",
+  "securitypolicy": "None",
+  "useTransport": false,
+  "maxChunkCount": 1,
+  "maxMessageSize": 8192,
+  "receiveBufferSize": 8192,
+  "sendBufferSize": 8192,
+  "setstatusandtime": false,
+  "keepsessionalive": false
+ },
+ {
+  "id": "ofmchk_fmt",
+  "type": "function",
+  "z": "ofmchk_tab",
+  "name": "format",
+  "func": "// One readable line per value: what the ingest flow will receive.\nif (msg.topic === \"subscriptionId\") return null;\nconst sc = msg.statusCode;\nmsg.payload = {\n    node: msg.topic,\n    value: msg.payload,\n    quality: sc && (sc.name || String(sc)),\n    sourceTimestamp: msg.sourceTimestamp,\n    serverTimestamp: msg.serverTimestamp\n};\nreturn msg;",
+  "outputs": 1,
+  "x": 590,
+  "y": 180,
+  "wires": [
+   [
+    "ofmchk_dbg"
+   ]
+  ]
+ },
+ {
+  "id": "ofmchk_dbg",
+  "type": "debug",
+  "z": "ofmchk_tab",
+  "name": "simulator values",
+  "active": true,
+  "tosidebar": true,
+  "console": false,
+  "tostatus": true,
+  "complete": "payload",
+  "targetType": "msg",
+  "statusVal": "payload.node",
+  "statusType": "auto",
+  "x": 770,
+  "y": 180,
+  "wires": []
+ }
+]

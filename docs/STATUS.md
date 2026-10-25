@@ -1,129 +1,152 @@
-# OFM — Status and development strategy
+# OFM — Status and development plan
 
 *Updated: 2026-10-25. Update this file at the end of every working session.*
 
-**▶ We are here: Stage B, Phase 1, step 1.3 — the first Node-RED ingest flow
-(simulator → UNS → historian) is next.** Steps 1.1 and 1.2 are done; the
-Mathesar trial passed.
+**▶ We are here: Phase 1, step 1.3 — OFM's own Node-RED image, delivered;
+Jarek builds it and runs the simulator check.** Next: step 1.4, the first
+ingest flow (simulator → UNS → historian).
 
-## The strategy in one view
+## The plan in one view
 
-OFM is built in four stages. Stage A lays the foundations once. Stage B builds
-the system in phases; each phase is useful on its own and ends with a tested,
-tagged release. Stage C takes it into the plant. Stage D, publishing it as open
-source, runs alongside and must be finished before the repository goes public.
+OFM is built in four stages. **Stage A** lays the foundations once. **Stage
+B** builds the system in phases; each phase is useful on its own and ends with
+a tested, tagged release. **Stage C** takes it into a plant. **Stage D**,
+publishing it as open source, runs alongside.
 
 ```
 Stage A  Foundations ............................. ✅ done
-Stage B  Build in phases
-           Phase 1   Live data path .............. ▶ in progress (step 1.3 next)
-           Phase 2   Robust and editable ......... ⬜
+Stage B  Phase 1   Live data path ................ ▶ step 1.3 of 6
+         Phase 2   Robust and editable ........... ⬜
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
-Stage B  continued
-           Phase 3a  Production context .......... ⬜
-           Phase 3b  OEE and efficiency KPIs ..... ⬜
-           Phase 3c  SPC ......................... ⬜  (OEE first, by decision)
-           Phase 3d  Food safety checks .......... ⬜
-           Phase 3e  Traceability and inventory .. ⬜
-           Phase 4   Scale and analytics ......... ⬜
-           Phase 5   Ergonomics and AI ........... ⬜
+Stage B  Phase 3a  Production context ............ ⬜
+         Phase 3b  OEE and efficiency KPIs ....... ⬜
+         Phase 3c  SPC ........................... ⬜
+         Phase 3d  Food safety checks ............ ⬜
+         Phase 3e  Traceability and inventory .... ⬜
+         Phase 4   Scale and analytics ........... ⬜
+         Phase 5   Ergonomics and AI ............. ⬜
 Stage D  Going public (parallel track) ........... ⬜
 ```
 
-Every build phase follows the same loop, like a small engineering project:
+Every phase follows the same loop: **detailed design** (reviewed by Jarek) →
+**build** in small committed steps → **test** (automated tests and failure
+drills, Overview §17) → **exit check** (Overview §18) → **release** (Git tag).
 
-1. **Detailed design** — the SQL migrations, flows or screens for the phase,
-   reviewed before building (the way an I/O list is checked before panel build).
-2. **Build** — in small steps, each committed to Git.
-3. **Test** — automated tests plus the phase's failure drills (Architecture
-   Overview §17).
-4. **Exit check** — the phase's exit criterion (Overview §18) is demonstrated.
-5. **Release** — a Git tag (`v0.1` for Phase 1, `v0.2` for Phase 2, …),
-   this file updated.
+Legend: ✅ done · ▶ current · ⬜ to do. Step numbers in later phases are the
+current plan and may be refined when the phase starts.
 
 ## Stage A — Foundations ✅
 
-| Step | Result | Where |
+| Step | What | Status |
 |---|---|---|
-| A1 Vision, scope, requirements | ✅ Defined | Architecture Overview §1–3 |
-| A2 Architecture and decisions | ✅ Overview v0.6 with MES coverage map; ADR-0001 to ADR-0015 accepted, with dated amendments | `docs/` |
-| A3 Payload contracts | ✅ 9 JSON Schemas, 33 example payloads, validation script | `schemas/`, `tests/schemas/`, `tools/` |
-| A4 Hardened environment | ✅ Two-command install; secrets generated into `.env`; pinned images; localhost-only ports; Node-RED login; MQTT ACL. Verified on the Windows 11 laptop on 2026-10-21 | `deploy/` |
-| A5 Way of working | ✅ GitHub repository (private), Claude Project instructions, this file | — |
+| A1 | Vision, scope, requirements (Overview §1–3) | ✅ |
+| A2 | Architecture and decisions: Overview v0.6, MES coverage map, ADR-0001 to ADR-0015 | ✅ |
+| A3 | Payload contracts: 9 JSON Schemas, 33 example payloads, validation script | ✅ |
+| A4 | Hardened environment: two-command install, secrets in `.env`, localhost-only ports, logins, MQTT access rules | ✅ |
+| A5 | Way of working: GitHub repository, Claude Project, this file | ✅ |
 
-Design topics covered: information model and UNS (ADR-0001, 0004, 0005);
-historian path and timestamps (ADR-0002, 0003); append-only operational
-history (ADR-0006); stale-data signalling (ADR-0007); efficiency waterfall,
-loss classification and work orders (ADR-0008 to 0010); SPC (ADR-0011).
-
-## Stage B — Build in phases
-
-### Phase 1 — Live data path ▶ (release v0.1)
+## Stage B — Phase 1: Live data path ▶ (release v0.1)
 
 Goal: one simulated line's values flow simulator → UNS → historian →
 dashboard, driven only by rows in the model.
 
-| Step | Content | Status |
+| Step | What | Status |
 |---|---|---|
-| 1.1 Database design | Migration runner `tools/migrate.sh` (ADR-0012, runs on every start); migrations 001–005: naming rules with reserved names, audit log, plant hierarchy, units, `source`, `machine_property`, `plc_mapping`, `vw_runtime_model`, `hist.measurement` hypertables; example plant `acme` (`db/examples/`); ERD `docs/generated/erd.md`. Tested on PostgreSQL 16 (36 checks; TimescaleDB-specific clause to be confirmed on the laptop) | ✅ applied on the laptop 2026-10-21 |
-| 1.2 Simulator and model editor | OPC PLC simulator 2.15.11 in the stack (Compose profile `simulator`); Mathesar 0.12.0 replaces NocoDB (ADR-0013, proposed; licence change and offline use); migration 006 (pick-list key, `ofm_mathesar` login); runner sets role passwords from `.env` and creates personal logins (`adduser`); `make-env.sh` completes an existing `.env`; example plant addressed by namespace URI and re-runnable | ✅ done; Mathesar trial passed 2026-10-23 (ADR-0013 accepted) |
-| 1.3 Generic ingest flow | OFM Node-RED image with protocol nodes built in (offline); Node-RED: load cache at startup, map by (source, address), normalise, validate, publish `{v, ts, q, tss}`, insert into historian, quarantine unmapped values, runtime Last Will, source and cache status topics; OPC UA namespace URI resolved at connect | ⬜ |
-| 1.4 Dashboard, tests, release | Grafana trend from the historian; schema tests; payloads checked against `schemas/`; exit check; tag `v0.1` | ⬜ |
+| 1.1 | **Database:** migration runner (ADR-0012); tables for the plant model and historian (migrations 001–005); example plant `acme`; ERD | ✅ 2026-10-21 |
+| 1.2 | **Simulator and model editor:** OPC UA simulator in the stack; Mathesar replaces NocoDB (ADR-0013, trial passed); personal logins; passwords from `.env` (migrations 006–007) | ✅ 2026-10-25 |
+| 1.3 | **OFM Node-RED image:** Node-RED with OPC UA, S7, PostgreSQL and dashboard nodes built in at pinned versions, so no internet is needed at a plant; check flow that reads the simulator | ▶ delivered, Jarek builds and checks |
+| 1.4 | **Ingest flow:** load the model from `vw_runtime_model` at startup; translate `nsu=` addresses to namespace numbers; subscribe; scale; validate; publish `{v, ts, q, tss}` to the UNS; insert into the historian; quarantine unmapped values; runtime, source and cache status topics | ⬜ next |
+| 1.5 | **First dashboard:** Grafana trend of the example values from the historian | ⬜ |
+| 1.6 | **Tests and release:** schema tests; outgoing payloads checked against `schemas/`; exit check; tag `v0.1` | ⬜ |
 
-### Phase 2 — Robust and editable ⬜ (release v0.2)
+## Stage B — Phase 2: Robust and editable ⬜ (release v0.2)
 
-Cache reload on model change (LISTEN/NOTIFY); `_meta` topics and retained-topic
-cleanup; deadband and maximum publish interval; `bad` quality on source loss;
-batched historian writer with store-and-forward; model editor accepted (ADR-0013); offline install bundle; broker
-TLS; load test (2,000 msg/s); broker-kill and PLC-disconnect drills.
+| Step | What |
+|---|---|
+| 2.1 | Model edits reach the runtime within a second, without restart (LISTEN/NOTIFY); old retained topics cleared on rename |
+| 2.2 | `_meta` topics: each value's unit, limits and description published next to it |
+| 2.3 | Deadband and maximum publish interval; `bad` quality and source status on connection loss (ADR-0007) |
+| 2.4 | Batched historian writer with store-and-forward disk queue (ADR-0002) |
+| 2.5 | Historian housekeeping: compression, retention, 1-minute and 1-hour aggregates |
+| 2.6 | Broker encryption (TLS) |
+| 2.7 | Offline install bundle: all images and the repository for a network without internet |
+| 2.8 | Load test (2,000 values/s) and failure drills; release `v0.2` |
 
-### Stage C — Plant pilot ⬜ (after Phase 2)
+## Stage C — Plant pilot ⬜ (after Phase 2)
 
-The stack on a plant server on the automation LAN without internet, installed
-from the offline bundle, reading one real line (S7 or OPC UA), with IT/OT
-network approval and the Docker licensing decision made. Runs alongside the
-existing plant tools; nothing is replaced yet.
+| Step | What |
+|---|---|
+| C1 | Plant server, IT/OT network approval, Docker licensing decision |
+| C2 | Install from the offline bundle |
+| C3 | Connect one real line (S7 or OPC UA) and model its tags in Mathesar |
+| C4 | Run alongside the existing plant tools for an agreed period; review |
 
-### Phase 3a — Production context ⬜ (release v0.3)
+## Stage B — Phase 3a: Production context ⬜ (release v0.3)
 
-Machine states (append-only) and `unknown` handling; runtime heartbeat and
-startup reconciliation; good and reject counts; material master (ADR-0014) and rated speeds;
-shift calendar; work orders; reason catalogue; operator whiteboard.
-Exit: one line's whiteboard matches the plant's existing tool hour by hour.
+| Step | What |
+|---|---|
+| 3a.1 | Material master (ADR-0014), rated speeds, shift calendar and schedule |
+| 3a.2 | Machine states, append-only, with `unknown`, heartbeat and startup reconciliation (ADR-0006) |
+| 3a.3 | Good and reject counts |
+| 3a.4 | Work orders and changeovers (ADR-0010) |
+| 3a.5 | Reason catalogue mapped to the loss waterfall (ADR-0009) |
+| 3a.6 | Operator whiteboard with per-person sign-in |
+| 3a.7 | Exit check against the plant's existing whiteboard tool; release `v0.3` |
 
-### Phase 3b — OEE and efficiency KPIs ⬜ (release v0.4)
+## Stage B — Phase 3b: OEE and efficiency KPIs ⬜ (release v0.4)
 
-Time ledger; GE, OEE with A·P·Q, Downtime, MTBF, MTTR, CU, LU, TEEP; KPIs on
-the UNS; Grafana operations and management dashboards; disaster-recovery
-rehearsal.
+| Step | What |
+|---|---|
+| 3b.1 | Time ledger: every minute classified into the loss waterfall (ADR-0008, ADR-0009) |
+| 3b.2 | KPI views: GE, OEE with A·P·Q, Downtime, MTBF, MTTR, CU, LU, TEEP |
+| 3b.3 | Live KPIs published to the UNS |
+| 3b.4 | Grafana operations dashboards |
+| 3b.5 | Grafana management dashboards (week, month, year) |
+| 3b.6 | Disaster-recovery rehearsal; release `v0.4` |
 
-### Phase 3c — SPC ⬜ (release v0.5)
+## Stage B — Phase 3c: SPC ⬜ (release v0.5)
 
-Characteristics, specifications, sampling plans, sample-entry screen, inline
-subgrouping, frozen control limits, rule evaluation, control charts and
-capability. Depends only on 3a; OEE (3b) comes first by decision of
-2026-10-21.
+| Step | What |
+|---|---|
+| 3c.1 | Characteristics, specifications and sampling plans (ADR-0011) |
+| 3c.2 | Sample-entry screen and overdue alerts (shared later by food safety checks) |
+| 3c.3 | Samples formed automatically from inline properties (checkweigher) |
+| 3c.4 | Frozen control limits, rule evaluation, SPC state on the UNS |
+| 3c.5 | Control charts and capability in Grafana; release `v0.5` |
 
-### Phase 3d — Food safety checks ⬜ (release v0.6)
+## Stage B — Phase 3d: Food safety checks ⬜ (release v0.6)
 
-Check definitions (CCPs and prerequisite programmes), append-only check
-records, mandatory corrective actions, second-person verification,
-instrument-monitored CCP deviations, overdue alerts. Reuses the SPC entry and
-overdue machinery (ADR-0015).
+| Step | What |
+|---|---|
+| 3d.1 | Check definitions: CCPs and prerequisite programmes (ADR-0015) |
+| 3d.2 | Check entry, corrective actions, second-person verification |
+| 3d.3 | Automatic deviations from instrument-monitored CCPs |
+| 3d.4 | Overdue and open checks on the UNS and dashboards |
+| 3d.5 | Parallel run with paper records; release `v0.6` |
 
-### Phase 3e — Traceability and inventory ⬜ (release v0.7)
+## Stage B — Phase 3e: Traceability and inventory ⬜ (release v0.7)
 
-Material lots, append-only movements, storage equipment, scanning screens,
-stock views, genealogy, recall and mass-balance queries, mixing rules
-(ADR-0014). Exit: a mock recall from OFM data, with mass balance, in under
-an hour.
+| Step | What |
+|---|---|
+| 3e.1 | ADR on mixing rules for continuous processes |
+| 3e.2 | Material lots, movements and storage equipment (ADR-0014) |
+| 3e.3 | Scanning and entry screens on the floor |
+| 3e.4 | Movements from PLC totals (flow meters, scales) |
+| 3e.5 | Stock, genealogy, recall-scope and mass-balance views |
+| 3e.6 | Mock recall from OFM data; release `v0.7` |
 
-### Phases 4 and 5 — later ⬜
+## Stage B — Phases 4 and 5 ⬜ (later)
 
-Phase 4: dashboards generated from the model, alarm and event history,
-energy KPIs, Python analytics framework,
-semantic relationships. Phase 5: custom Node-RED nodes, REST API, AI assistant
-over the model and historian.
+| Step | What |
+|---|---|
+| 4.1 | Dashboards generated from the model |
+| 4.2 | Alarm and event history |
+| 4.3 | Energy KPIs |
+| 4.4 | Python analytics framework |
+| 4.5 | Semantic relationships between machines |
+| 5.1 | Custom Node-RED nodes with model-driven dropdowns |
+| 5.2 | REST API over the model |
+| 5.3 | AI assistant over the model and historian |
 
 ## Stage D — Going public ⬜ (parallel track)
 
@@ -138,11 +161,10 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek applies the step 1.2 package, sets up Mathesar (README steps 15–17),
-   and reviews the `acme` model in it against the ADR-0013 trial criteria.
-2. Review comments become a new migration (007) — applied ones are never edited.
-3. Step 1.3: OFM Node-RED image and the first ingest flow, simulator → UNS →
-   historian; confirm the example scaling with real simulator values.
+1. Jarek builds the OFM Node-RED image (`docker compose up -d --build`),
+   imports and deploys the simulator check flow (deploy README step 12a), and
+   reports what the Debug sidebar shows.
+2. Step 1.4: the ingest flow, using the namespace lookup proven in the check.
 
 ## Open questions
 
@@ -162,23 +184,27 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 12 | Verify KPI terminology against ISO 22400-2 (ADR-0008) | Going public |
 | 13 | Schemas still to write: machine state (3a), line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
 | 14 | First SPC characteristics and their plans (pack weight, temper index?); how lab results arrive (manual entry or instrument interface) | Phase 3c |
-| 15 | Does the OPC PLC simulator set OPC UA `SourceTimestamp` on its values, as ADR-0003 relies on? Verify in step 1.3 | Phase 1.3 |
-| 16 | Example plant node names and scaling: names checked against published examples (`SpikeData`, `PositiveTrendData`, …), stored by namespace URI; confirm with values flowing | Phase 1.3 |
-| 19 | Offline install bundle: script that saves all pinned images and the repository for transfer to an isolated network | Phase 2 |
-| 20 | Phase 3a must build `config.material` (with `material_type`), not `product` (ADR-0014; amendments to ADR-0010 and ADR-0011) | Phase 3a |
-| 21 | Food safety: which checks first (metal detector, CCP temperatures, allergen changeover?); who verifies; whether electronic records replace or accompany paper under the site's certification scheme | Phase 3d |
-| 22 | Traceability: how lots are identified on the floor (barcodes, labels), where bags and totes are tipped, mass-balance tolerance, and the mixing-attribution rules (own ADR) | Phase 3e |
+| 15 | Does the real OPC PLC simulator send `SourceTimestamp`? (A stand-in server with the same library did.) Answered by the step 1.3 check flow | Phase 1.3 |
+| 16 | Example plant node names and scaling: names confirmed when the check flow shows all five; scaling confirmed with values flowing in 1.4 | Phase 1.4 |
 | 17 | Historian compression and retention (columnstore off in Phase 1) and the 1-min/1-h continuous aggregates | Phase 2 |
+| 19 | Offline install bundle: script that saves all pinned images and the repository for transfer to an isolated network | Phase 2 |
+| 20 | Phase 3a must build `config.material` (with `material_type`), not `product` (ADR-0014) | Phase 3a |
+| 21 | Food safety: which checks first; who verifies; electronic records replacing or accompanying paper under the site's certification scheme | Phase 3d |
+| 22 | Traceability: lot identification on the floor, tipping points, mass-balance tolerance, mixing-attribution rules (own ADR) | Phase 3e |
+| 23 | Modbus driver: every current `node-red-contrib-modbus` release downloads part of its code from a third-party package server; choose a driver when the first Modbus device needs it | First Modbus device |
 
 ## Known gaps and notes
 
-- Pinned versions (2026-10-18): TimescaleDB 2.30.2-pg16, Mosquitto
-  2.1.2-alpine, Node-RED 4.1.16 (Node 22), Grafana 13.2.4 (image
-  `grafana/grafana`; `grafana/grafana-oss` is no longer updated). Added
-  2026-10-23: Mathesar 0.12.0, OPC PLC simulator 2.15.11.
-- Untested before delivery (no Docker in Claude's environment): the Mathesar
-  and simulator containers themselves. The migrations, runner and `.env`
-  generator were tested on PostgreSQL 16 and a POSIX shell.
+- Pinned versions: TimescaleDB 2.30.2-pg16, Mosquitto 2.1.2-alpine, Grafana
+  13.2.4 (`grafana/grafana`; `grafana-oss` is no longer updated), Mathesar
+  0.12.0, OPC PLC simulator 2.15.11, Node-RED 4.1.16 (Node 22) built as
+  `ofm/node-red:4.1.16-ofm.1` with node-red-contrib-opcua 0.2.355,
+  node-red-contrib-postgresql 0.16.2, node-red-contrib-s7 3.1.3,
+  @flowfuse/node-red-dashboard 1.33.0.
+- The OPC UA node accepts only `ns=<number>` addresses, not `nsu=<URI>`
+  (verified 2026-10-25). The model keeps the stable URI form; the runtime
+  translates it after reading the server's namespace table (proven in the
+  step 1.3 check flow).
 - Mosquitto 2.1 deprecates `password_file`/`acl_file` in favour of plugins
   (removal planned for 3.0). Migrate before any upgrade to 3.x.
 - The installation has been run end-to-end on one machine only.
