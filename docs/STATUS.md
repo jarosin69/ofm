@@ -2,9 +2,8 @@
 
 *Updated: 2026-10-27. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 1, step 1.6 — all tests run with one command and the
-exit check is written; Jarek runs it, does the drills and tags `v0.1`.**
-Next: Phase 2 detailed design.
+**▶ We are here: Phase 1 is complete — exit check passed and `v0.1` tagged
+on 2026-10-27.** Next: Phase 2 detailed design, for Jarek's review.
 
 ## The plan in one view
 
@@ -15,7 +14,7 @@ publishing it as open source, runs alongside.
 
 ```
 Stage A  Foundations ............................. ✅ done
-Stage B  Phase 1   Live data path ................ ▶ step 1.6 of 6
+Stage B  Phase 1   Live data path ................ ✅ v0.1 (2026-10-27)
          Phase 2   Robust and editable ........... ⬜
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
@@ -45,7 +44,7 @@ current plan and may be refined when the phase starts.
 | A4 | Hardened environment: two-command install, secrets in `.env`, localhost-only ports, logins, MQTT access rules | ✅ |
 | A5 | Way of working: GitHub repository, Claude Project, this file | ✅ |
 
-## Stage B — Phase 1: Live data path ▶ (release v0.1)
+## Stage B — Phase 1: Live data path ✅ (release v0.1)
 
 Goal: one simulated line's values flow simulator → UNS → historian →
 dashboard, driven only by rows in the model.
@@ -57,7 +56,7 @@ dashboard, driven only by rows in the model.
 | 1.3 | **OFM Node-RED image:** Node-RED with OPC UA, S7, PostgreSQL and dashboard nodes built in at pinned versions, so no internet is needed at a plant; check flow that reads the simulator | ✅ 2026-10-25: all five simulator nodes read; namespace 3; source timestamps present |
 | 1.4 | **Ingest flow:** load the model from `vw_runtime_model` at startup; translate `nsu=` addresses to namespace numbers; subscribe; scale; validate; publish `{v, ts, q, tss}` to the UNS; insert into the historian; quarantine unmapped values; runtime, source and cache status topics | ✅ 2026-10-25: live on the laptop; values, status topics and historian verified |
 | 1.5 | **First dashboard:** `OFM · Live data`, model-driven (properties, units, alarm limits from the model), provisioned from `deploy/grafana/dashboards/` | ✅ 2026-10-26: on the laptop; alarm-limit test passed (line moved within one refresh, no restart) |
-| 1.6 | **Tests and release:** `docker compose run --rm test` runs four suites (schemas, flow, database, live) in OFM's Node-RED image, offline; exit check with drills D1–D4 (`tests/README.md`); tag `v0.1` | ▶ delivered 2026-10-27; Jarek runs the exit check |
+| 1.6 | **Tests and release:** `docker compose run --rm test` runs four suites (schemas, flow, database, live) in OFM's Node-RED image, offline; exit check with drills D1–D4 (`tests/README.md`); tag `v0.1` | ✅ 2026-10-27: exit check passed; `v0.1` tagged |
 
 ### Phase 1 exit check
 
@@ -66,11 +65,11 @@ Criterion (Overview §18): one simulated line's values flowing OPC UA simulator
 
 | Check | Result |
 |---|---|
-| Automated: `docker compose run --rm test` | ⬜ |
-| D1 PLC lost and back | ⬜ |
-| D2 Runtime crash (Last Will) | ⬜ |
-| D3 Database lost and back (UNS keeps flowing) | ⬜ |
-| D4 Property added in Mathesar only, appears end to end | ⬜ |
+| Automated: `docker compose run --rm test` | ✅ 2026-10-27 |
+| D1 PLC lost and back | ✅ 2026-10-27 |
+| D2 Runtime crash (Last Will) | ✅ 2026-10-27 |
+| D3 Database lost and back (UNS keeps flowing) | ✅ 2026-10-27 |
+| D4 Property added in Mathesar only, appears end to end | ✅ 2026-10-27 |
 
 ## Stage B — Phase 2: Robust and editable ⬜ (release v0.2)
 
@@ -174,11 +173,7 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek installs step 1.6 and runs `docker compose run --rm test`
-   (deploy README step 12d); reports the result.
-2. Drills D1–D4 (`tests/README.md`); results into the exit check table above.
-3. Commit, tag `v0.1`, push the tag. Phase 1 is done.
-4. Phase 2 detailed design, starting with step 2.1 (model changes reach the
+1. Phase 2 detailed design, starting with step 2.1 (model changes reach the
    runtime without restart), for Jarek's review.
 
 ## Open questions
@@ -240,7 +235,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
   pass; database suite passes except the two checks the replica cannot meet
   (no TimescaleDB; migration 005 adapted for it). Drill D3 confirmed there:
   UNS kept flowing with the database stopped; historian resumed on restart.
-  Not yet run on Docker, nor against real Grafana and Mathesar.
+  On Jarek's laptop (2026-10-27) all suites and drills D1–D4 passed.
 - No automatic test run on GitHub (CI) yet; the runner's exit code is ready
   for it. Candidate for Stage D.
 - Phase 1 limitation: a model change reaches the runtime on restart of
