@@ -173,6 +173,26 @@ docker compose run --rm migrate example
     Row counts grow every second. (`ts` is UTC, ADR-0003; Grafana shows
     Melbourne time.)
 
+12c. **First dashboard** — open Grafana (http://localhost:3000). The home page
+    is now **OFM · Live data**: properties reporting, values per minute,
+    values not good, a table of the latest value of every property, and one
+    chart per property. Times are Melbourne time. Orange points mark values
+    that are not `good` (`hopper_level` shows this permanently, because the
+    simulator's trend signal climbs past its 0–100 % range); red dashed lines
+    are the alarm limits from the model. Try it: in Mathesar change
+    `alarm_high` of `chocolate_temp`, and within one refresh the red line in
+    Grafana moves — no dashboard edit, no restart. The dashboard file is
+    `deploy/grafana/dashboards/ofm-live-data.json`; it cannot be overwritten
+    from Grafana (use **Save as** for your own variants).
+12d. **Run the tests** — every automated test in one command (details in
+    `tests/README.md`):
+    ```powershell
+    docker compose run --rm test
+    ```
+    It takes about 20 seconds (15 of them listening to the UNS) and ends with
+    `ALL CHECKS PASSED`. Run it after any change and before every commit
+    that touches flows, schemas, migrations or dashboards.
+
 ## 4. First wiring (do once)
 
 13. **OFM's flows are code** (ADR-0016). Node-RED's flow file is
@@ -211,6 +231,13 @@ docker compose run --rm migrate example
     `mathesar_types`) to the database; that is expected. Then open the
     `config` schema: these are the model tables shown in
     `docs/generated/erd.md`. `vw_runtime_model` shows every topic.
+    Mathesar also lists the `hist` (historian) and `audit` schemas but
+    reports "Your role does not have the privileges to view this table",
+    even for its administrator: that is by design. The Mathesar
+    administrator manages Mathesar; what anyone can see in the database is
+    decided by the database login behind them, and the model editor has no
+    access to history (ADR-0013). Look at history in Grafana, or with DBeaver
+    as `ofm_reader` (below).
 18. **A personal login for each person who edits the model** (recommended):
     ```powershell
     docker compose run --rm migrate adduser jarek
@@ -226,8 +253,10 @@ docker compose run --rm migrate example
 is useful for SQL queries, browsing history and checking views. It needs
 nothing added to the stack: connect to `localhost`, port `5432`, database
 `ofm`. Use the read-only login `ofm_reader` (password `OFM_READER_DB_PASSWORD`)
-for everyday browsing, so nothing can be changed by accident. Structure is
-never changed by hand: that is what migrations are for.
+for everyday browsing, so nothing can be changed by accident; it is also the
+only login that can read the audit log (`audit.audit_log`). Do not browse as
+`ofm_runtime`: it may write to the historian. Structure is never changed by
+hand: that is what migrations are for.
 
 ## 5. Reaching a real PLC later
 

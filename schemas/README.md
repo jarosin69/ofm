@@ -59,13 +59,13 @@ Each gets its schema in the phase that builds it.
 ## Testing
 
 Every schema has example payloads in `tests/schemas/<schema>/valid/` (must pass)
-and `tests/schemas/<schema>/invalid/` (must fail). Run the check from `C:\ofm`;
-it needs no local Python, only Docker:
+and `tests/schemas/<schema>/invalid/` (must fail). The test runner also checks
+every payload the runtime flow can produce, and every message on the live UNS,
+against these schemas. From `C:\ofm\deploy`:
 
 ```powershell
-docker run --rm -v ${PWD}:/repo -w /repo python:3.12-slim `
-  sh -c "pip install -q jsonschema && python tools/validate_schemas.py"
+docker compose run --rm test offline
 ```
 
-The last line must read `… examples checked, 0 failure(s).` Run it after every
-schema change, and add an example for every rule you add.
+`offline` needs no running stack. Run it after every schema change, and add an
+example for every rule you add. See `tests/README.md` for all test suites.

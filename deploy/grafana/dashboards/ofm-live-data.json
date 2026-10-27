@@ -1,0 +1,468 @@
+{
+  "uid": "ofm-live-data",
+  "title": "OFM · Live data",
+  "tags": [
+    "ofm"
+  ],
+  "timezone": "Australia/Melbourne",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "property",
+        "label": "Property",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "ofm-historian"
+        },
+        "query": "SELECT p.display_name || COALESCE(' [' || u.symbol || ']', '') || ' · ' || substring(p.topic from '([^/]+/[^/]+)$') AS __text,\n       p.property_id AS __value\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nWHERE NOT p.is_retired\nORDER BY p.topic",
+        "definition": "SELECT p.display_name || COALESCE(' [' || u.symbol || ']', '') || ' · ' || substring(p.topic from '([^/]+/[^/]+)$') AS __text,\n       p.property_id AS __value\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nWHERE NOT p.is_retired\nORDER BY p.topic",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 0,
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Everything on this dashboard comes from the model.** Properties, names, units and alarm limits are read from the database, so a property added in Mathesar appears here without editing the dashboard. Times are shown in Melbourne time; they are stored in UTC (ADR-0003). Orange points mark values that are *uncertain* or *bad*; red dashed lines are the alarm limits from the model."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Properties reporting (last 5 min)",
+      "description": "Properties that stored at least one value in the last 5 minutes.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "ofm-historian"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "ofm-historian"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT count(DISTINCT property_id) FROM hist.measurement WHERE ts > now() - interval '5 minutes'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Values stored per minute (last 5 min)",
+      "description": "Rows written to the historian, averaged over the last 5 minutes.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "ofm-historian"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "ofm-historian"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT count(*) / 5.0 FROM hist.measurement WHERE ts > now() - interval '5 minutes'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Values not good (last 5 min)",
+      "description": "Values stored as uncertain or bad: out of range, clock problems, or a bad status from the PLC.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "ofm-historian"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "ofm-historian"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT count(*) FROM hist.measurement WHERE ts > now() - interval '5 minutes' AND quality > 0"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Latest values",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "ofm-historian"
+      },
+      "description": "The most recent stored value of every property in the model. 'Age' grows when values stop arriving.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "ofm-historian"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "SELECT p.display_name AS \"Property\",\n       substring(p.topic from '([^/]+/[^/]+)$') AS \"Machine / property\",\n       m.value AS \"Value\",\n       u.symbol AS \"Unit\",\n       (ARRAY['good', 'uncertain', 'bad'])[m.quality + 1] AS \"Quality\",\n       m.ts AS \"Time\",\n       extract(epoch FROM now() - m.ts)::int AS \"Age (s)\",\n       (ARRAY['device', 'gateway'])[m.ts_source + 1] AS \"Time source\"\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nJOIN LATERAL (SELECT * FROM hist.measurement h\n              WHERE h.property_id = p.property_id\n              ORDER BY h.ts DESC LIMIT 1) m ON true\nWHERE NOT p.is_retired\nORDER BY p.topic"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Quality"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "good": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "uncertain": {
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "bad": {
+                        "color": "red",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Age (s)"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "$property",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "ofm-historian"
+      },
+      "interval": "1s",
+      "repeat": "property",
+      "repeatDirection": "h",
+      "maxPerRow": 2,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "ofm-historian"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "time_series",
+          "rawSql": "-- One chart per property. 'not good' marks uncertain or bad values (ADR-0003);\n-- the alarm lines come from the model, so they follow any change made in Mathesar.\nSELECT $__timeGroupAlias(m.ts, $__interval),\n       avg(m.value) AS \"value\",\n       CASE WHEN max(m.quality) > 0 THEN avg(m.value) END AS \"not good\",\n       min(p.alarm_low) AS \"alarm low\",\n       min(p.alarm_high) AS \"alarm high\"\nFROM hist.measurement m\nJOIN config.machine_property p ON p.id = m.property_id\nWHERE m.property_id = $property AND $__timeFilter(m.ts)\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "value"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "not good"
+            },
+            "properties": [
+              {
+                "id": "custom.drawStyle",
+                "value": "points"
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 7
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "alarm (low|high)"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    }
+  ]
+}

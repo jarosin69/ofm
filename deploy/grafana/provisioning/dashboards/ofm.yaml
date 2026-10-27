@@ -1,0 +1,15 @@
+# OFM dashboards are code (like flows, ADR-0016): the JSON files in
+# deploy/grafana/dashboards/ are loaded at start-up into the folder "OFM".
+# They cannot be overwritten from the Grafana UI; use "Save as" to experiment
+# with a copy, and change the file in the repository to change the original.
+apiVersion: 1
+
+providers:
+  - name: OFM
+    folder: OFM
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /ofm/dashboards

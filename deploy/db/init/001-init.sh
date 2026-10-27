@@ -29,7 +29,7 @@ CREATE ROLE ofm_config  LOGIN PASSWORD :'config_pw';
 CREATE ROLE ofm_reader  LOGIN PASSWORD :'reader_pw';
 
 -- Least privilege: runtime reads the model and appends history (never UPDATE
--- or DELETE, ADR-0006); config edits the model (NocoDB); reader sees
+-- or DELETE, ADR-0006); config edits the model (Mathesar); reader sees
 -- everything and changes nothing (Grafana, analytics).
 GRANT USAGE ON SCHEMA config TO ofm_runtime, ofm_config, ofm_reader;
 GRANT USAGE ON SCHEMA hist   TO ofm_runtime, ofm_reader;

@@ -64,3 +64,13 @@ through Git.
 
 - Related: ADR-0012 (migrations follow the same "code in Git" rule),
   ADR-0017 (the acquisition code inside the flow).
+
+## Amendments
+
+- 2026-10-26: **Dashboards follow the same rule.** OFM's Grafana dashboards
+  are JSON files in `deploy/grafana/dashboards/`, provisioned read-only into
+  the Grafana folder "OFM" at start-up. Users experiment with copies
+  ("Save as"); a change to an OFM dashboard is a change to its file, committed.
+- 2026-10-26: **`FLOWS`, not `flowFile`.** The official Node-RED image passes
+  its `FLOWS` environment variable on the command line, which overrides
+  `flowFile` in `settings.js`; OFM therefore sets `FLOWS`.

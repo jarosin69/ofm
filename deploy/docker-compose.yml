@@ -138,17 +138,19 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD}   # used by the provisioned datasource
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /ofm/dashboards/ofm-live-data.json
       TZ: Australia/Melbourne      # display layer: local time lives here (ADR-0003)
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/ofm/dashboards:ro    # dashboards are code, like flows
     depends_on:
       timescaledb:
         condition: service_healthy
 
-  # Model editor (ADR-0013, proposed): a spreadsheet-style web interface on
+  # Model editor (ADR-0013): a spreadsheet-style web interface on
   # the config tables. Connects to the database as ofm_mathesar or personal
   # logins; its own users and settings live in mathesar-db.
   mathesar:
@@ -160,7 +162,7 @@ services:
       DEBUG: "false"
       SECRET_KEY: ${MATHESAR_SECRET_KEY:?run make-env.sh to add MATHESAR_SECRET_KEY to .env}
       DOMAIN_NAME: http://localhost:8080
-      ALLOWED_HOSTS: localhost,127.0.0.1
+      ALLOWED_HOSTS: localhost,127.0.0.1,mathesar   # mathesar: for the test runner
       POSTGRES_HOST: mathesar-db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: mathesar_django
@@ -212,6 +214,35 @@ services:
       - --ut                # allow unencrypted connections (simulator only)
     ports:
       - "127.0.0.1:50000:50000"
+
+  # Automated tests (tests/README.md). Never started by "up"; run with
+  #   docker compose run --rm test              all suites
+  #   docker compose run --rm test offline      no running stack needed
+  # Uses OFM's own Node-RED image and the libraries in it, so it needs no
+  # internet. The repository is mounted read-only: tests change nothing.
+  test:
+    image: ofm/node-red:4.1.16-ofm.2
+    pull_policy: never
+    profiles: ["test"]
+    restart: "no"
+    entrypoint: ["node", "/repo/tests/run.js"]
+    command: ["all"]
+    working_dir: /repo
+    environment:
+      OFM_RUNTIME_NAME: ofm_runtime_01
+      # Database tests act as each role from the administrator login; every
+      # test runs in a transaction that is rolled back.
+      PGHOST: timescaledb
+      PGDATABASE: ofm
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      # The live check uses the read-only logins, like any consumer:
+      OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD}
+      OFM_MQTT_READER_PASSWORD: ${OFM_MQTT_READER_PASSWORD}
+      GRAFANA_USER: ${GRAFANA_USER}
+      GRAFANA_PASSWORD: ${GRAFANA_PASSWORD}
+    volumes:
+      - ..:/repo:ro
 
 volumes:
   tsdb-data:

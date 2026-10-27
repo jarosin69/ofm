@@ -1,10 +1,10 @@
 # OFM — Status and development plan
 
-*Updated: 2026-10-25. Update this file at the end of every working session.*
+*Updated: 2026-10-27. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 1, step 1.4 — the ingest flow is delivered; Jarek
-installs it and checks live data in the UNS and historian.** Next: step 1.5,
-the first Grafana dashboard.
+**▶ We are here: Phase 1, step 1.6 — all tests run with one command and the
+exit check is written; Jarek runs it, does the drills and tags `v0.1`.**
+Next: Phase 2 detailed design.
 
 ## The plan in one view
 
@@ -15,7 +15,7 @@ publishing it as open source, runs alongside.
 
 ```
 Stage A  Foundations ............................. ✅ done
-Stage B  Phase 1   Live data path ................ ▶ step 1.4 of 6
+Stage B  Phase 1   Live data path ................ ▶ step 1.6 of 6
          Phase 2   Robust and editable ........... ⬜
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
@@ -55,9 +55,22 @@ dashboard, driven only by rows in the model.
 | 1.1 | **Database:** migration runner (ADR-0012); tables for the plant model and historian (migrations 001–005); example plant `acme`; ERD | ✅ 2026-10-21 |
 | 1.2 | **Simulator and model editor:** OPC UA simulator in the stack; Mathesar replaces NocoDB (ADR-0013, trial passed); personal logins; passwords from `.env` (migrations 006–007) | ✅ 2026-10-25 |
 | 1.3 | **OFM Node-RED image:** Node-RED with OPC UA, S7, PostgreSQL and dashboard nodes built in at pinned versions, so no internet is needed at a plant; check flow that reads the simulator | ✅ 2026-10-25: all five simulator nodes read; namespace 3; source timestamps present |
-| 1.4 | **Ingest flow:** load the model from `vw_runtime_model` at startup; translate `nsu=` addresses to namespace numbers; subscribe; scale; validate; publish `{v, ts, q, tss}` to the UNS; insert into the historian; quarantine unmapped values; runtime, source and cache status topics | ▶ delivered 2026-10-25; Jarek checks (README step 12b) |
-| 1.5 | **First dashboard:** Grafana trend of the example values from the historian | ⬜ |
-| 1.6 | **Tests and release:** schema tests; outgoing payloads checked against `schemas/`; flow unit tests (first: `tests/flows/normalise.test.js`, 14 cases); exit check; tag `v0.1` | ⬜ |
+| 1.4 | **Ingest flow:** load the model from `vw_runtime_model` at startup; translate `nsu=` addresses to namespace numbers; subscribe; scale; validate; publish `{v, ts, q, tss}` to the UNS; insert into the historian; quarantine unmapped values; runtime, source and cache status topics | ✅ 2026-10-25: live on the laptop; values, status topics and historian verified |
+| 1.5 | **First dashboard:** `OFM · Live data`, model-driven (properties, units, alarm limits from the model), provisioned from `deploy/grafana/dashboards/` | ✅ 2026-10-26: on the laptop; alarm-limit test passed (line moved within one refresh, no restart) |
+| 1.6 | **Tests and release:** `docker compose run --rm test` runs four suites (schemas, flow, database, live) in OFM's Node-RED image, offline; exit check with drills D1–D4 (`tests/README.md`); tag `v0.1` | ▶ delivered 2026-10-27; Jarek runs the exit check |
+
+### Phase 1 exit check
+
+Criterion (Overview §18): one simulated line's values flowing OPC UA simulator
+→ UNS → historian → dashboard from model configuration only.
+
+| Check | Result |
+|---|---|
+| Automated: `docker compose run --rm test` | ⬜ |
+| D1 PLC lost and back | ⬜ |
+| D2 Runtime crash (Last Will) | ⬜ |
+| D3 Database lost and back (UNS keeps flowing) | ⬜ |
+| D4 Property added in Mathesar only, appears end to end | ⬜ |
 
 ## Stage B — Phase 2: Robust and editable ⬜ (release v0.2)
 
@@ -161,10 +174,12 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek installs step 1.4 (`docker compose up -d --build`), checks the UNS
-   and historian (deploy README step 12b), and reports the value ranges seen
-   for the five example properties, so their scaling can be confirmed.
-2. Step 1.5: the first Grafana dashboard.
+1. Jarek installs step 1.6 and runs `docker compose run --rm test`
+   (deploy README step 12d); reports the result.
+2. Drills D1–D4 (`tests/README.md`); results into the exit check table above.
+3. Commit, tag `v0.1`, push the tag. Phase 1 is done.
+4. Phase 2 detailed design, starting with step 2.1 (model changes reach the
+   runtime without restart), for Jarek's review.
 
 ## Open questions
 
@@ -184,7 +199,6 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 12 | Verify KPI terminology against ISO 22400-2 (ADR-0008) | Going public |
 | 13 | Schemas still to write: machine state (3a), line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
 | 14 | First SPC characteristics and their plans (pack weight, temper index?); how lab results arrive (manual entry or instrument interface) | Phase 3c |
-| 16 | Example plant scaling: confirm the value ranges of the five properties with live data (names and namespace confirmed in 1.3) | Phase 1.4 |
 | 17 | Historian compression and retention (columnstore off in Phase 1) and the 1-min/1-h continuous aggregates | Phase 2 |
 | 19 | Offline install bundle: script that saves all pinned images and the repository for transfer to an isolated network | Phase 2 |
 | 20 | Phase 3a must build `config.material` (with `material_type`), not `product` (ADR-0014) | Phase 3a |
@@ -197,7 +211,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
 - Pinned versions: TimescaleDB 2.30.2-pg16, Mosquitto 2.1.2-alpine, Grafana
   13.2.4 (`grafana/grafana`; `grafana-oss` is no longer updated), Mathesar
   0.12.0, OPC PLC simulator 2.15.11, Node-RED 4.1.16 (Node 22) built as
-  `ofm/node-red:4.1.16-ofm.1` with node-red-contrib-opcua 0.2.355,
+  `ofm/node-red:4.1.16-ofm.2` with node-red-contrib-opcua 0.2.355,
   node-red-contrib-postgresql 0.16.2, node-red-contrib-s7 3.1.3,
   @flowfuse/node-red-dashboard 1.33.0.
 - The OPC UA palette node accepts only `ns=<number>` addresses and is built
@@ -213,6 +227,22 @@ Numbers are stable; answered questions are removed rather than renumbered.
   command line, which overrides `flowFile` in `settings.js`; OFM therefore sets
   `FLOWS` (found on Jarek's laptop 2026-10-25; the local test had started
   Node-RED without it).
+- Example plant on the real simulator (2026-10-25): chocolate_temp 30.7–32.5 °C,
+  air_temp 10.7–12.0 °C, running alternating, cycle_count rising — all
+  realistic. hopper_level is mapped to `PositiveTrendData`, which climbs
+  forever, so it is permanently `uncertain` (out of its 0–100 % range); kept
+  deliberately as a live demonstration of validation.
+- The test runner uses libraries already in the Node-RED image (ajv for JSON
+  Schema, mqtt, pg), so it needs no internet; after any change to
+  `deploy/nodered/Dockerfile`, run the tests. It replaced the Python schema
+  check (`tools/validate_schemas.py`), which needed pip and the internet.
+- Step 1.6 was tested on the local replica: schemas, flow and live suites
+  pass; database suite passes except the two checks the replica cannot meet
+  (no TimescaleDB; migration 005 adapted for it). Drill D3 confirmed there:
+  UNS kept flowing with the database stopped; historian resumed on restart.
+  Not yet run on Docker, nor against real Grafana and Mathesar.
+- No automatic test run on GitHub (CI) yet; the runner's exit code is ready
+  for it. Candidate for Stage D.
 - Phase 1 limitation: a model change reaches the runtime on restart of
   Node-RED; immediate reload is step 2.1.
 - Mosquitto 2.1 deprecates `password_file`/`acl_file` in favour of plugins
