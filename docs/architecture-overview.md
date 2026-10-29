@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.6.2 (2026-10-27) — all automated tests behind one command (§17); dashboards as code (§20) |
+| **Version** | 0.6.3 (2026-10-28) — S7 and EtherNet/IP acquisition by model-driven polling (ADR-0018) |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -51,7 +51,7 @@ Seven principles govern every design decision. Where a principle was contested o
 
 ### 3.1 Functional scope
 
-OFM version 1 covers: acquisition of data from industrial controllers (OPC UA as the preferred protocol; Siemens S7, Modbus TCP and MQTT-native devices as required); normalisation to engineering units and a canonical payload; contextualisation against the information model; publication to the UNS with retained metadata; durable storage of measurements, events, machine states, and production counts in TimescaleDB; operator capture of downtime reason codes and comments; manual entry of work orders; efficiency KPIs (GE, OEE with its availability, performance and quality factors, Downtime, MTBF, MTTR, CU, LU, TEEP) from a time-based loss waterfall at machine and line level; an operator whiteboard; statistical process control (SPC) of sampled product characteristics such as pack weight and temper index; food safety check records (HACCP critical control points and prerequisite programmes); traceability of finished lots to raw-material lots, with inventory derived from material movements; and visualisation through Grafana.
+OFM version 1 covers: acquisition of data from industrial controllers (OPC UA as the preferred protocol; Siemens S7, Rockwell EtherNet/IP (Logix controllers), Modbus TCP and MQTT-native devices as required); normalisation to engineering units and a canonical payload; contextualisation against the information model; publication to the UNS with retained metadata; durable storage of measurements, events, machine states, and production counts in TimescaleDB; operator capture of downtime reason codes and comments; manual entry of work orders; efficiency KPIs (GE, OEE with its availability, performance and quality factors, Downtime, MTBF, MTTR, CU, LU, TEEP) from a time-based loss waterfall at machine and line level; an operator whiteboard; statistical process control (SPC) of sampled product characteristics such as pack weight and temper index; food safety check records (HACCP critical control points and prerequisite programmes); traceability of finished lots to raw-material lots, with inventory derived from material movements; and visualisation through Grafana.
 
 Explicitly out of scope for version 1: closed-loop control through the platform (PLCs remain the control authority; OFM writes setpoints only where a deliberate, per-tag decision is recorded), recipe management beyond identification of the active product, ERP/SAP integration (work orders are entered manually in v1), the HACCP plan itself (OFM records checks against it), multi-site federation, and safety functions of any kind. Safety circuits and E-stops remain entirely on dedicated safety PLCs and are invisible to OFM.
 
@@ -96,7 +96,7 @@ The layering rule that matters most in practice: **PLC addresses exist only in L
 ```mermaid
 flowchart TB
   subgraph L1["Layer 1 · Plant"]
-    PLC["PLCs and sensors<br/>S7 · Modbus · OPC UA"]
+    PLC["PLCs and sensors<br/>OPC UA · S7 · EtherNet/IP · Modbus"]
   end
   subgraph L3["Layer 3 · Runtime — Node-RED"]
     PIPE["Generic pipeline<br/>normalise · validate · deadband"]
@@ -167,7 +167,7 @@ Every telemetry topic carries one canonical JSON payload, defined normatively in
 }
 ```
 
-`v` is the value after normalisation (engineering units, correct datatype); `ts` is epoch milliseconds UTC; `q` is quality (`good` | `uncertain` | `bad`); `tss` is timestamp provenance (`device` | `gateway`) per ADR-0003. Keys are terse deliberately — this payload is published thousands of times per second and parsed by everything. Values are published retained, so any newly connected subscriber immediately receives current plant state. A value is published when it changes beyond its deadband, and in any case at least once per `max_publish_interval_ms` (default 60 s), so a consumer can treat a value older than twice its interval as stale. When a source loses communication, the runtime republishes all its properties with their last value and `q: "bad"` (ADR-0007). Values read by S7 polling carry no device time and are always `tss: "gateway"` (ADR-0003 amendment).
+`v` is the value after normalisation (engineering units, correct datatype); `ts` is epoch milliseconds UTC; `q` is quality (`good` | `uncertain` | `bad`); `tss` is timestamp provenance (`device` | `gateway`) per ADR-0003. Keys are terse deliberately — this payload is published thousands of times per second and parsed by everything. Values are published retained, so any newly connected subscriber immediately receives current plant state. A value is published when it changes beyond its deadband, and in any case at least once per `max_publish_interval_ms` (default 60 s), so a consumer can treat a value older than twice its interval as stale. When a source loses communication, the runtime republishes all its properties with their last value and `q: "bad"` (ADR-0007). Values read by S7 or EtherNet/IP polling carry no device time and are always `tss: "gateway"` (ADR-0003 amendment).
 
 ### 6.3 Metadata topics
 
@@ -199,7 +199,7 @@ The UNS carries current state, not history and not guaranteed delivery. Consumer
 Node-RED runs a small number of *generic* flows; none contains machine-specific logic. The ingest pipeline for every value is:
 
 ```
-acquire (OPC UA subscribe / S7 poll / Modbus poll)
+acquire (OPC UA subscribe / S7 and EtherNet/IP poll / Modbus poll)
   → cache lookup ((source, address) → property context)  [O(1), no SQL]
   → normalise (scale, cast, unit)
   → validate (range, datatype, timestamp sanity)
@@ -208,7 +208,7 @@ acquire (OPC UA subscribe / S7 poll / Modbus poll)
   → historian write (batched, parallel path)
 ```
 
-The acquisition step is generic: one component opens a connection per source listed in the model, resolves OPC UA namespace URIs to the server's current numbers, and subscribes to every mapped address, so a new PLC or tag is a model change only (ADR-0017). The flows themselves are code, kept in the repository and free of secrets (ADR-0016). Unmapped addresses divert to quarantine after the lookup step. Separately from the per-value path, the runtime watches each source connection: on loss it publishes the source status, republishes the affected properties as `bad`, and records `unknown` for the affected machines (ADR-0007, ADR-0006). Write-back (`_cmd`) flows run the pipeline in reverse with explicit per-tag enablement in the model.
+The acquisition step is generic: one component opens a connection per source listed in the model, resolves OPC UA namespace URIs to the server's current numbers, and subscribes to every mapped address, so a new PLC or tag is a model change only (ADR-0017). Controllers without OPC UA — Siemens S7 and Rockwell Logix — are read the same way by a polling component that sends a value only when it changes or is due again (ADR-0018). The flows themselves are code, kept in the repository and free of secrets (ADR-0016). Unmapped addresses divert to quarantine after the lookup step. Separately from the per-value path, the runtime watches each source connection: on loss it publishes the source status, republishes the affected properties as `bad`, and records `unknown` for the affected machines (ADR-0007, ADR-0006). Write-back (`_cmd`) flows run the pipeline in reverse with explicit per-tag enablement in the model.
 
 *Figure 2 — Runtime data flow. The model-change path (top) and the per-value path (bottom) never intersect: configuration edits reach the runtime through cache reload, and the hot path issues no SQL for model resolution.*
 
@@ -331,6 +331,7 @@ Every configuration table carries `created_at, created_by, updated_at, updated_b
 | Visualisation | Grafana | AGPL 3.0 | First-class TimescaleDB and MQTT support; the de facto standard |
 | Analytics | Python | PSF | OEE jobs, SPC, future AI; talks natively to both PostgreSQL and MQTT |
 | Config UI (interim) | Mathesar | GPL-3.0 | Spreadsheet-style editing directly on the live schema, using PostgreSQL roles, with zero custom code |
+| PLC drivers (in the runtime image) | node-opcua; @st-one-io/nodes7; st-ethernet-ip | MIT; GPL-3.0; MIT | Used directly by the model-driven acquisition components (ADR-0017, ADR-0018); pinned |
 | Development data source | OPC PLC simulator (Microsoft) | MIT | Realistic OPC UA test server; lets anyone run the full pipeline without hardware |
 | Deployment | Docker Compose | Apache 2.0 | Whole platform as one reviewable file; sufficient below Kubernetes scale |
 
@@ -338,7 +339,7 @@ Substitution points are deliberate: EMQX can replace Mosquitto if clustering is 
 
 ## 13. Security architecture
 
-OFM assumes a segmented OT network and adds application-layer controls on top; it never substitutes for network segmentation. The runtime host sits in the OT/IT DMZ pattern: plant protocols (S7, Modbus, OPC UA) terminate at the runtime and are never routed north; only MQTT-over-TLS and PostgreSQL-over-TLS cross upward. Modbus and S7 have no native security, so their segments are isolated at the network layer; OPC UA connections use signed-and-encrypted mode with certificates where the controller supports it.
+OFM assumes a segmented OT network and adds application-layer controls on top; it never substitutes for network segmentation. The runtime host sits in the OT/IT DMZ pattern: plant protocols (S7, EtherNet/IP, Modbus, OPC UA) terminate at the runtime and are never routed north; only MQTT-over-TLS and PostgreSQL-over-TLS cross upward. Modbus, S7 and EtherNet/IP have no native security (S7 additionally needs PUT/GET access enabled on S7-1200/1500), so their segments are isolated at the network layer; OPC UA connections use signed-and-encrypted mode with certificates where the controller supports it.
 
 Mosquitto runs with TLS, no anonymous access, and per-role ACLs: acquisition credentials may publish telemetry but not `_cmd`; applications may subscribe broadly but publish nothing; only the command flow's credential may publish `_cmd`, and only operator-facing services may trigger it. PostgreSQL follows the same least-privilege split — `ofm_runtime` (SELECT on model; SELECT and INSERT on historian, never UPDATE or DELETE), `ofm_config` (DML on configuration schema; held by the model editor's role `ofm_mathesar` and by personal editing logins), `ofm_reader` (Grafana/analytics, read-only) — so a compromised dashboard cannot alter the model and a compromised runtime cannot rewrite history. Secrets — including database role passwords — live in the deployment environment (Compose env files with restricted permissions in v1), never in flows or the repository. The Node-RED editor is protected by `adminAuth`, because anyone who can reach an unprotected editor can deploy code that runs next to the PLCs. In the single-laptop proof of concept, all service ports are bound to the loopback interface. Every component runs offline, with no dependency on external services at run time; most plant installations sit on automation networks without internet access.
 
@@ -410,8 +411,8 @@ Three directions are anticipated by the architecture but deliberately unbuilt. *
 
 ## 20. Document map
 
-Where the details live, by concern: contested decisions and their alternatives → `docs/adr/` (ADR-0001 cache, ADR-0002 historian path, ADR-0003 timestamps, ADR-0004 immutable IDs, ADR-0005 naming, ADR-0006 append-only operational history, ADR-0007 stale-data signalling, ADR-0008 loss waterfall, ADR-0009 loss classification, ADR-0010 work orders, ADR-0011 SPC, ADR-0012 migrations, ADR-0013 model editor, ADR-0014 traceability, ADR-0015 food safety checks, ADR-0016 flows as code, ADR-0017 OPC UA acquisition, and successors; accepted ADRs change only by dated amendment lines or by superseding ADRs); current phase, next steps and open questions → `docs/STATUS.md`; payload contracts — live value, `_meta`, and `ofm/_system` status payloads → `schemas/*.schema.json` (normative); database structure → `db/migrations/` (normative) with diagrams regenerated from the live schema; deployment → `deploy/docker-compose.yml` and its `.env.example`; runtime flows and Grafana dashboards → `flows/` and `deploy/grafana/dashboards/`, kept as code (ADR-0016); tests and exit checks → `tests/` (`tests/README.md`); generated references (topic tree, tag list, data dictionary) → `docs/generated/`, produced by `tools/gen_docs.py` from the model and never edited by hand. When this overview and a normative artefact disagree, the artefact wins and this document gets a correcting commit.
+Where the details live, by concern: contested decisions and their alternatives → `docs/adr/` (ADR-0001 cache, ADR-0002 historian path, ADR-0003 timestamps, ADR-0004 immutable IDs, ADR-0005 naming, ADR-0006 append-only operational history, ADR-0007 stale-data signalling, ADR-0008 loss waterfall, ADR-0009 loss classification, ADR-0010 work orders, ADR-0011 SPC, ADR-0012 migrations, ADR-0013 model editor, ADR-0014 traceability, ADR-0015 food safety checks, ADR-0016 flows as code, ADR-0017 OPC UA acquisition, ADR-0018 S7 and EtherNet/IP acquisition, and successors; accepted ADRs change only by dated amendment lines or by superseding ADRs); current phase, next steps and open questions → `docs/STATUS.md`; payload contracts — live value, `_meta`, and `ofm/_system` status payloads → `schemas/*.schema.json` (normative); database structure → `db/migrations/` (normative) with diagrams regenerated from the live schema; deployment → `deploy/docker-compose.yml` and its `.env.example`; runtime flows and Grafana dashboards → `flows/` and `deploy/grafana/dashboards/`, kept as code (ADR-0016); tests and exit checks → `tests/` (`tests/README.md`); generated references (topic tree, tag list, data dictionary) → `docs/generated/`, produced by `tools/gen_docs.py` from the model and never edited by hand. When this overview and a normative artefact disagree, the artefact wins and this document gets a correcting commit.
 
 ---
 
-*End of Architecture Overview v0.6.2. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.6.3. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

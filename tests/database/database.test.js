@@ -62,6 +62,18 @@ const CASES = [
     { as: "ofm_config", sql: "UPDATE config.machine_property SET retired_at = now() WHERE id = $speed" },
     { as: "ofm_config", sql: "INSERT INTO config.machine_property (machine_id, name, display_name, datatype) VALUES ($machine, 'speed', 'x', 'bool')" }] },
 
+  // --- sources and their protocol settings (ADR-0018) ---------------------------------------
+  { name: "unknown protocol is refused", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.source (name, display_name, protocol, endpoint) VALUES ('zz_x', 'x', 'profinet', '10.0.0.1')", expect: REFUSED_BY_RULE }] },
+  { name: "EtherNet/IP source is accepted", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.source (name, display_name, protocol, endpoint, settings) VALUES ('zz_clx', 'x', 'ethernetip', '10.0.0.2', '{\"slot\": 0}')" }] },
+  { name: "S7 source must state rack and slot", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.source (name, display_name, protocol, endpoint, settings) VALUES ('zz_s7', 'x', 's7', '10.0.0.3', '{\"rack\": 0}')", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "INSERT INTO config.source (name, display_name, protocol, endpoint, settings) VALUES ('zz_s7', 'x', 's7', '10.0.0.3', '{\"rack\": 0, \"slot\": 1}')" }] },
+  { name: "poll interval below 100 ms or not a number is refused", steps: [
+    { as: "ofm_config", sql: "UPDATE config.source SET settings = '{\"pollIntervalMs\": 50}' WHERE id = $source", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "UPDATE config.source SET settings = '{\"pollIntervalMs\": \"fast\"}' WHERE id = $source", expect: REFUSED_BY_RULE }] },
+
   // --- the runtime view (what Node-RED loads) ------------------------------------------
   { name: "runtime view: topic, address key and scaling for a mapped property", steps: [
     { as: "ofm_runtime", sql: "SELECT topic, cache_key, scale_factor, datatype, unit FROM config.vw_runtime_model WHERE runtime_name = 'zz_runtime'",

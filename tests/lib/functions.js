@@ -21,17 +21,21 @@ function loadFunction(flow, id, { env = {}, global = {} } = {}) {
   const node = {
     status: s => statuses.push(s),
     send: m => sent.push(m),
-    warn: () => {}, error: () => {}, log: () => {}
+    warnings: [],
+    warn: w => node.warnings.push(String(w)), error: () => {}, log: () => {}
   };
   const ctx = store => ({ get: k => store[k], set: (k, v) => { store[k] = v; } });
   const fn = new AsyncFunction("msg", "global", "context", "env", "node", def.func);
+  const stop = new AsyncFunction("global", "context", "env", "node", def.finalize || "");
   return {
     name: def.name,
     run: msg => fn(msg, ctx(globalStore), ctx(contextStore), { get: k => env[k] }, node),
+    stop: () => stop(ctx(globalStore), ctx(contextStore), { get: k => env[k] }, node),   // the "On Stop" code
     global: globalStore,
     context: contextStore,
     sent,
-    statuses
+    statuses,
+    warnings: node.warnings
   };
 }
 

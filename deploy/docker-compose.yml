@@ -96,7 +96,7 @@ services:
     # OFM's own image: official Node-RED plus pinned protocol and database
     # nodes (nodered/Dockerfile). Built locally on first start; never pulled.
     build: ./nodered
-    image: ofm/node-red:4.1.16-ofm.2
+    image: ofm/node-red:4.1.16-ofm.3
     pull_policy: never
     container_name: ofm-nodered
     restart: unless-stopped
@@ -221,7 +221,7 @@ services:
   # Uses OFM's own Node-RED image and the libraries in it, so it needs no
   # internet. The repository is mounted read-only: tests change nothing.
   test:
-    image: ofm/node-red:4.1.16-ofm.2
+    image: ofm/node-red:4.1.16-ofm.3
     pull_policy: never
     profiles: ["test"]
     restart: "no"

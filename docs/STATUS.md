@@ -1,9 +1,11 @@
 # OFM — Status and development plan
 
-*Updated: 2026-10-27. Update this file at the end of every working session.*
+*Updated: 2026-10-30. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 1 is complete — exit check passed and `v0.1` tagged
-on 2026-10-27.** Next: Phase 2 detailed design, for Jarek's review.
+**▶ We are here: Phase 1 is complete (`v0.1`, 2026-10-27). Step 1.7 — real
+PLCs: all three bench PLCs read end to end and recover from a network
+disconnection; the full test run remains.** Next: release `v0.1.1`, then
+Phase 2 detailed design.
 
 ## The plan in one view
 
@@ -70,6 +72,20 @@ Criterion (Overview §18): one simulated line's values flowing OPC UA simulator
 | D2 Runtime crash (Last Will) | ✅ 2026-10-27 |
 | D3 Database lost and back (UNS keeps flowing) | ✅ 2026-10-27 |
 | D4 Property added in Mathesar only, appears end to end | ✅ 2026-10-27 |
+
+### Step 1.7 — Real PLCs on the bench (release v0.1.1)
+
+Added after the `v0.1` release, before Phase 2: Siemens S7 and Rockwell
+EtherNet/IP acquisition by model-driven polling (ADR-0018, migration 008,
+image `ofm/node-red:4.1.16-ofm.3`), so OFM can read controllers without
+OPC UA. Guide: deploy README section 5.
+
+| Check | Result |
+|---|---|
+| S7-1200 CPU 1212C (`s7`, rack 0 slot 1): tags read end to end, unplug drill | ✅ 2026-10-30 |
+| S7-300 family, IM151-8 PN/DP CPU (`s7`, rack 0 slot 2): tags read end to end, unplug drill | ✅ 2026-10-30 |
+| CompactLogix 1769-L16ER (`ethernetip`, slot 0): tags read end to end, unplug drill | ✅ 2026-10-30 |
+| `docker compose run --rm test` with all three PLCs in the model | ⬜ |
 
 ## Stage B — Phase 2: Robust and editable ⬜ (release v0.2)
 
@@ -173,8 +189,12 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Phase 2 detailed design, starting with step 2.1 (model changes reach the
-   runtime without restart), for Jarek's review.
+1. Jarek runs `docker compose run --rm test` with the three PLCs in the
+   model and ticks the last row of the step 1.7 table.
+2. Commit, tag `v0.1.1`.
+3. Phase 2 detailed design, starting with step 2.1 (model changes reach the
+   runtime without restart; also: Grafana's Property list re-reads the model
+   on refresh), for Jarek's review.
 
 ## Open questions
 
@@ -200,13 +220,15 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 21 | Food safety: which checks first; who verifies; electronic records replacing or accompanying paper under the site's certification scheme | Phase 3d |
 | 22 | Traceability: lot identification on the floor, tipping points, mass-balance tolerance, mixing-attribution rules (own ADR) | Phase 3e |
 | 23 | Modbus driver: every current `node-red-contrib-modbus` release downloads part of its code from a third-party package server; choose a driver when the first Modbus device needs it | First Modbus device |
+| 24 | S7 at the plant: is PUT/GET access acceptable to the PLC owners, or must S7-1200/1500 CPUs be read through their OPC UA server (S7-1200 from firmware 4.4, with runtime licence)? | Plant pilot |
 
 ## Known gaps and notes
 
 - Pinned versions: TimescaleDB 2.30.2-pg16, Mosquitto 2.1.2-alpine, Grafana
   13.2.4 (`grafana/grafana`; `grafana-oss` is no longer updated), Mathesar
   0.12.0, OPC PLC simulator 2.15.11, Node-RED 4.1.16 (Node 22) built as
-  `ofm/node-red:4.1.16-ofm.2` with node-red-contrib-opcua 0.2.355,
+  `ofm/node-red:4.1.16-ofm.3` with node-opcua 2.160.0, @st-one-io/nodes7
+  1.1.2, st-ethernet-ip 2.7.5, node-red-contrib-opcua 0.2.355,
   node-red-contrib-postgresql 0.16.2, node-red-contrib-s7 3.1.3,
   @flowfuse/node-red-dashboard 1.33.0.
 - The OPC UA palette node accepts only `ns=<number>` addresses and is built
@@ -236,6 +258,18 @@ Numbers are stable; answered questions are removed rather than renumbered.
   (no TimescaleDB; migration 005 adapted for it). Drill D3 confirmed there:
   UNS kept flowing with the database stopped; historian resumed on restart.
   On Jarek's laptop (2026-10-27) all suites and drills D1–D4 passed.
+- Step 1.7 was tested on the local replica against stand-in controllers
+  (snap7 server for S7, cpppo for EtherNet/IP): all address types in the
+  README table that the stand-ins offer, report by exception, wrong
+  addresses skipped with a warning, controller loss and recovery (offline
+  within 3 s, online again after the back-off). On Jarek's bench
+  (2026-10-29/30) all three PLCs were programmed from deploy README section 5
+  and read end to end; with the OFM laptop disconnected from the network,
+  data stopped and resumed a few seconds after reconnecting. Corrections from
+  the bench run: area and line added to the table order (README 5.1); the
+  CompactLogix rungs given in the rung editor's text format (README 5.3).
+- Polled sources: when a PLC is lost, its values keep their last quality
+  until Phase 2 step 2.3, as for OPC UA.
 - No automatic test run on GitHub (CI) yet; the runner's exit code is ready
   for it. Candidate for Stage D.
 - Phase 1 limitation: a model change reaches the runtime on restart of

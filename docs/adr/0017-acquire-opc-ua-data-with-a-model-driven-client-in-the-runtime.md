@@ -75,3 +75,10 @@ dependency of the palette node and offers everything needed directly.
   check flow against the OPC PLC simulator: namespace translation, source
   timestamps, connection loss and recovery.
 - Related: ADR-0001, ADR-0003, ADR-0007, ADR-0016.
+
+## Amendments
+
+- 2026-10-28: Siemens S7 and Rockwell EtherNet/IP follow the same pattern
+  with a polling component (ADR-0018). This component now ignores sources of
+  other protocols; protocols no component supports are reported by the model
+  cache.

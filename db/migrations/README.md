@@ -46,3 +46,4 @@ docker compose run --rm migrate adduser jarek   # personal model-editing login
 | `005-historian.sql` | `hist.measurement`, `hist.measurement_text` (hypertables), `hist.vw_measurement` |
 | `006-model-editor-support.sql` | Single-column key `machine_property` → `sub_asset` (for pick-lists); login `ofm_mathesar` for the model editor (ADR-0013) |
 | `007-reserve-foodsafety-topic.sql` | Machine name `foodsafety` reserved for food safety check topics (ADR-0015) |
+| `008-polled-plc-sources.sql` | Protocol `ethernetip`; S7 sources must state rack and slot; poll interval at least 100 ms (ADR-0018) |

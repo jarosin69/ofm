@@ -60,7 +60,9 @@ module.exports = {
     // built into the image and handed over here, at pinned versions.
     functionExternalModules: false,
     functionGlobalContext: {
-        opcua: builtIn("node-opcua")   // OPC UA acquisition (ADR-0017)
+        opcua: builtIn("node-opcua"),               // OPC UA acquisition (ADR-0017)
+        s7: builtIn("@st-one-io/nodes7"),           // Siemens S7 acquisition (ADR-0018)
+        ethernetip: builtIn("st-ethernet-ip")       // Rockwell EtherNet/IP acquisition (ADR-0018)
     },
 
     editorTheme: {

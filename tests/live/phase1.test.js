@@ -108,7 +108,7 @@ module.exports.run = async function (t) {
       const e = topics.get(p.topic);
       const limit = STALE_FACTOR * p.max_publish_interval_ms;
       let err = null;
-      if (!v) err = "no value on the UNS";
+      if (!v) err = "no value on the UNS - wrong address? See the runtime's warnings: docker compose logs nodered";
       else if (now - v.ts > limit) err = "last value is " + Math.round((now - v.ts) / 1000) + " s old (limit " + limit / 1000 + " s)";
       else if (v.q === "bad") err = "quality bad";
       const info = v ? " (q=" + v.q + ", " + e.live + " update(s) in " + stack.listenSeconds + " s)" : "";

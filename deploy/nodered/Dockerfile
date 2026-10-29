@@ -10,11 +10,16 @@ FROM nodered/node-red:4.1.16-22
 
 # Installed next to Node-RED itself (not in /data), so the /data volume with
 # flows and settings never hides or overrides them.
-# node-opcua: the OPC UA library used by OFM's acquisition flow (ADR-0017);
-# same version as node-red-contrib-opcua uses, so only one copy is installed.
+# Libraries used directly by OFM's acquisition flow, each at the version the
+# matching palette node already uses, so only one copy is installed:
+# node-opcua (OPC UA, ADR-0017), @st-one-io/nodes7 (Siemens S7, ADR-0018).
+# st-ethernet-ip: Rockwell Logix controllers over EtherNet/IP (ADR-0018).
+# Every package comes from the public npm registry.
 WORKDIR /usr/src/node-red
 RUN npm install --omit=dev --no-fund --no-audit --no-update-notifier \
       node-opcua@2.160.0 \
+      @st-one-io/nodes7@1.1.2 \
+      st-ethernet-ip@2.7.5 \
       node-red-contrib-opcua@0.2.355 \
       node-red-contrib-postgresql@0.16.2 \
       node-red-contrib-s7@3.1.3 \
