@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.6.4 (2026-10-30) — model changes reach the runtime without restart (§7.2, step 2.1) |
+| **Version** | 0.6.5 (2026-10-30) — `_meta` topics published; start-up clean-up of stale topics (§6.3, §7.2, step 2.2) |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -235,7 +235,7 @@ sequenceDiagram
 
 ### 7.2 The model cache
 
-Per ADR-0001, the runtime never queries SQL on the hot path. On startup, Node-RED loads `SELECT * FROM vw_runtime_model` — a view that pre-joins the full Physical and Information Models and pre-computes each property's topic — and builds three global-context indexes: by `(source, address)` (ingest), by machine ID (state and OEE logic), and by MQTT topic (command path). The startup load is part of Phase 1, so the hot path never issues SQL even in the first phase. Statement triggers on every configuration table send `NOTIFY model_changed` with the table name (migration 009); a listener in the runtime combines notifications arriving within 300 ms, reloads the view and atomically swaps the indexes, giving a model-edit-to-runtime latency under one second with no restarts and no polling. Each reload compares the old and new topic sets and clears retained topics, and status topics of sources, that no longer exist (ADR-0004). Acquisition reconnects only the sources whose endpoint, settings or address list changed; scaling, limits and names take effect without touching the PLC connection. After losing its database connection the listener reloads once on reconnecting, because notifications sent meanwhile are lost.
+Per ADR-0001, the runtime never queries SQL on the hot path. On startup, Node-RED loads `SELECT * FROM vw_runtime_model` — a view that pre-joins the full Physical and Information Models and pre-computes each property's topic — and builds three global-context indexes: by `(source, address)` (ingest), by machine ID (state and OEE logic), and by MQTT topic (command path). The startup load is part of Phase 1, so the hot path never issues SQL even in the first phase. Statement triggers on every configuration table send `NOTIFY model_changed` with the table name (migration 009); a listener in the runtime combines notifications arriving within 300 ms, reloads the view and atomically swaps the indexes, giving a model-edit-to-runtime latency under one second with no restarts and no polling. Each reload compares the old and new topic sets and clears retained topics, and status topics of sources, that no longer exist (ADR-0004). Acquisition reconnects only the sources whose endpoint, settings or address list changed; scaling, limits and names take effect without touching the PLC connection. After losing its database connection the listener reloads once on reconnecting, because notifications sent meanwhile are lost. Each property's `_meta` is published at start-up and republished only when its content changes. At start-up the runtime also clears retained OFM topics left by properties renamed or retired while it was not running (ADR-0004 amendment).
 
 ### 7.3 Runtime topology
 
@@ -415,4 +415,4 @@ Where the details live, by concern: contested decisions and their alternatives �
 
 ---
 
-*End of Architecture Overview v0.6.4. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.6.5. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

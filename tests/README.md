@@ -103,6 +103,17 @@ with the command of README step 12b running:
 | R4 | Set `retired_at` on a property, then clear it again | Its topic disappears from the broker, then values return |
 | R5 | Rename the property of R1 back | As R1 |
 
+**Step 2.2, `_meta` topics and start-up clean-up.** Automated: the `flows`
+suite checks the `_meta` content, that only changed `_meta` are republished,
+and which stale topics the clean-up clears or keeps; the `live` suite checks
+a matching `_meta` for every property. By hand:
+
+| # | Do | Expected |
+|---|---|---|
+| M1 | Watch `acme/+/+/+/+/+/_meta` (README step 12b command with that topic) | One retained line per property: property ID, data type, unit, display name, limits |
+| M2 | In Mathesar change an `alarm_high` | Within about a second, only that property's `_meta` line is republished with the new limit |
+| M3 | `docker compose stop nodered`; in Mathesar rename a property; `docker compose start nodered` | After start-up, the old value and `_meta` topics are gone; the Node-RED log shows `start-up clean-up: cleared 2 stale topic(s)`; values arrive on the new name |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

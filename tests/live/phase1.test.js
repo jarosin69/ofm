@@ -73,7 +73,7 @@ module.exports.run = async function (t) {
   }
   try {
     const model = (await db.query(
-      "SELECT property_id, topic, datatype, is_historised, max_publish_interval_ms, source_name " +
+      "SELECT property_id, topic, datatype, unit, is_historised, max_publish_interval_ms, source_name " +
       "FROM config.vw_runtime_model WHERE runtime_name = $1 ORDER BY topic", [runtime])).rows;
     if (!t.check("the model gives runtime " + runtime + " properties to acquire", model.length > 0,
                  "none - load the example plant: docker compose run --rm migrate example")) return;
@@ -113,6 +113,10 @@ module.exports.run = async function (t) {
       else if (v.q === "bad") err = "quality bad";
       const info = v ? " (q=" + v.q + ", " + e.live + " update(s) in " + stack.listenSeconds + " s)" : "";
       t.check(p.topic + ": current value on the UNS" + (err ? "" : info), !err, err);
+      const m = payload(p.topic + "/_meta");
+      t.check(p.topic + "/_meta: describes the property (step 2.2)",
+              m && m.propertyId === p.property_id && m.datatype === p.datatype && (m.unit || null) === (p.unit || null),
+              m ? "found " + JSON.stringify(m) : "no _meta on the UNS");
     }
 
     let checked = 0, unknown = 0;

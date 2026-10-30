@@ -13,15 +13,18 @@ const env = { OFM_RUNTIME_NAME: RUNTIME, OFM_MQTT_RUNTIME_PASSWORD: "not-a-real-
 const NSU = "nsu=http://microsoft.com/Opc/OpcPlc/;s=";
 const rows = [
   { property_id: 1, topic: "acme/melbourne/chocolate/eggline01/depositor01/chocolate_temp", datatype: "float", unit: "degC",
-    low: 20, high: 40, is_historised: true, scale_factor: "0.02", scale_offset: "30.5",
+    display_name: "Chocolate temperature", description: "Chocolate in the depositor hopper",
+    low: 20, high: 40, alarm_low: 28, alarm_high: 33, max_publish_interval_ms: 60000, is_historised: true, scale_factor: "0.02", scale_offset: "30.5",
     source_name: "opcplc", protocol: "opcua", endpoint: "opc.tcp://opcplc:50000", source_settings: { securityMode: "None" },
     address: NSU + "SpikeData", cache_key: "opcplc|" + NSU + "SpikeData" },
   { property_id: 3, topic: "acme/melbourne/chocolate/eggline01/depositor01/running", datatype: "bool", unit: null,
-    low: null, high: null, is_historised: true, scale_factor: "1", scale_offset: "0",
+    display_name: "Running", description: null,
+    low: null, high: null, alarm_low: null, alarm_high: null, max_publish_interval_ms: 60000, is_historised: true, scale_factor: "1", scale_offset: "0",
     source_name: "opcplc", protocol: "opcua", endpoint: "opc.tcp://opcplc:50000", source_settings: { securityMode: "None" },
     address: NSU + "AlternatingBoolean", cache_key: "opcplc|" + NSU + "AlternatingBoolean" },
   { property_id: 6, topic: "acme/melbourne/chocolate/eggline01/depositor01/recipe", datatype: "string", unit: null,
-    low: null, high: null, is_historised: true, scale_factor: null, scale_offset: null,
+    display_name: "Recipe", description: "Recipe loaded in the depositor",
+    low: null, high: null, alarm_low: null, alarm_high: null, max_publish_interval_ms: 30000, is_historised: true, scale_factor: null, scale_offset: null,
     source_name: null, protocol: null, endpoint: null, source_settings: null, address: null, cache_key: null }
 ];
 
@@ -48,8 +51,10 @@ module.exports.run = async function (t) {
 
   // --- model cache --------------------------------------------------------------
   const cache = loadFunction(flow, "ofm_rt_cache", { env, global });
-  const [platform, sourceMsg] = await cache.run({ payload: rows });
+  const [platform, sourceMsg, cleanup] = await cache.run({ payload: rows });
   const status = platform[0];
+  const metasOf = list => list.filter(m => m.topic.endsWith("/_meta") && m.payload !== "");
+  for (const m of metasOf(platform)) produced.push({ topic: m.topic, payload: m.payload, what: "_meta of " + m.topic.split("/").slice(-2, -1)[0] });
   produced.push({ topic: status.topic, payload: status.payload, what: "cache status after start-up" });
   const model = global.ofm_model;
   t.check("cache: every property by ID and topic, only mapped ones by source address",
@@ -61,18 +66,36 @@ module.exports.run = async function (t) {
     JSON.stringify(sourceMsg.payload));
   t.check("cache status reports the number of rows loaded",
     status.payload.rows === 3 && status.payload.trigger === "startup" && status.retain === true);
-  t.check("start-up clears nothing from the broker", platform.length === 1);
+  t.check("start-up: a retained _meta topic for every property (step 2.2)",
+    metasOf(platform).length === 3 && metasOf(platform).every(m => m.retain === true),
+    JSON.stringify(platform.map(m => m.topic)));
+  const tempMeta = metasOf(platform).find(m => m.topic.endsWith("chocolate_temp/_meta"));
+  t.check("_meta carries unit, range, alarm limits and the property ID from the model",
+    tempMeta && tempMeta.payload.unit === "degC" && tempMeta.payload.low === 20 && tempMeta.payload.alarmHigh === 33 &&
+    tempMeta.payload.propertyId === 1, JSON.stringify(tempMeta && tempMeta.payload));
+  t.check("start-up clears nothing from the broker", platform.every(m => m.payload !== ""));
+  t.check("start-up starts the clean-up of stale topics; a reload does not", cleanup !== null);
 
   // --- model reload after a change (step 2.1) -----------------------------------------
   const renamed = rows.map(r => Object.assign({}, r));
   renamed[1].topic = renamed[1].topic.replace(/running$/, "run_signal");          // property renamed
   renamed[0].scale_factor = "0.5";                                                  // scaling changed
-  const [reload, reloadSources] = await cache.run({ payload: renamed, trigger: "notify" });
+  const [reload, reloadSources, reloadCleanup] = await cache.run({ payload: renamed, trigger: "notify" });
   produced.push({ topic: reload[0].topic, payload: reload[0].payload, what: "cache status after a model change" });
-  t.check("reload: cache status says notify", reload[0].payload.trigger === "notify");
-  t.check("reload: old topic of a renamed property is cleared (empty retained message)",
-    reload.length === 2 && reload[1].topic.endsWith("/running") && reload[1].payload === "" && reload[1].retain === true,
-    JSON.stringify(reload.slice(1)));
+  t.check("reload: cache status says notify", reload[0].payload.trigger === "notify" && reloadCleanup === null);
+  const cleared = reload.filter(m => m.payload === "").map(m => m.topic);
+  t.check("reload: old value and _meta topics of a renamed property are cleared (empty retained messages)",
+    cleared.length === 2 && cleared.some(x => x.endsWith("/running")) && cleared.some(x => x.endsWith("/running/_meta")),
+    JSON.stringify(cleared));
+  t.check("reload: _meta published only for the renamed property (scaling is not in _meta)",
+    metasOf(reload).length === 1 && metasOf(reload)[0].topic.endsWith("/run_signal/_meta"),
+    JSON.stringify(metasOf(reload).map(m => m.topic)));
+  const limits = renamed.map(r => Object.assign({}, r));
+  limits[0].alarm_high = 32;
+  const [limitReload] = await cache.run({ payload: limits, trigger: "notify" });
+  t.check("reload: a changed alarm limit republishes that property's _meta only",
+    metasOf(limitReload).length === 1 && metasOf(limitReload)[0].payload.alarmHigh === 32 &&
+    limitReload.every(m => m.payload !== ""), JSON.stringify(limitReload.map(m => m.topic)));
   t.check("reload: new scaling is used at once", global.ofm_model.byKey["opcplc|" + NSU + "SpikeData"].factor === 0.5);
   t.check("reload: a scaling change keeps the source signature (no reconnect)",
     reloadSources.payload[0].signature === sourceMsg.payload[0].signature);

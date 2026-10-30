@@ -165,7 +165,9 @@ docker compose run --rm migrate example
     ```
     Expect one line per second per property, e.g.
     `acme/melbourne/chocolate/eggline01/depositor01/chocolate_temp {"v":29.4,"ts":1792927982001,"q":"good","tss":"device"}`,
-    plus the retained status of the runtime, the source and the model cache.
+    plus, per property, a retained `…/_meta` line with its unit, limits and
+    description (from Phase 2), and the retained status of the runtime, the
+    source and the model cache.
     And the historian:
     ```powershell
     docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "SELECT topic, count(*) AS rows, max(ts) AS latest_utc FROM hist.vw_measurement GROUP BY topic"

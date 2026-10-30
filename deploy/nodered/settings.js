@@ -18,7 +18,12 @@ if (!credentialSecret) throw new Error("NODE_RED_CREDENTIAL_SECRET is not set in
 // so function nodes can use it. Returns undefined if it is missing.
 function builtIn(name) {
     try {
-        return require(require.resolve(name, { paths: [process.cwd(), "/usr/src/node-red/node_modules"] }));
+        return require(require.resolve(name, { paths: [
+            process.cwd(),
+            "/usr/src/node-red/node_modules",
+            "/usr/src/node-red/node_modules/node-red",          // libraries that come with Node-RED itself
+            "/usr/src/node-red/node_modules/@node-red/nodes"
+        ] }));
     } catch (e) {
         console.warn("[ofm] library not available to function nodes: " + name);
         return undefined;
@@ -63,7 +68,8 @@ module.exports = {
         opcua: builtIn("node-opcua"),               // OPC UA acquisition (ADR-0017)
         s7: builtIn("@st-one-io/nodes7"),           // Siemens S7 acquisition (ADR-0018)
         ethernetip: builtIn("st-ethernet-ip"),      // Rockwell EtherNet/IP acquisition (ADR-0018)
-        pg: builtIn("pg")                           // model change listener (ADR-0001); comes with node-red-contrib-postgresql
+        pg: builtIn("pg"),                          // model change listener (ADR-0001); comes with node-red-contrib-postgresql
+        mqtt: builtIn("mqtt")                       // start-up clean-up of stale topics (ADR-0004); comes with Node-RED
     },
 
     editorTheme: {

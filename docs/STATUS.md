@@ -1,11 +1,10 @@
 # OFM — Status and development plan
 
-*Updated: 2026-10-30. Update this file at the end of every working session.*
+*Updated: 2026-10-31. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2, step 2.1 done — model changes reach the runtime
-without restart (checks R1–R5 passed).** Next: step 2.2, `_meta` topics and
-clean-up of stale topics at start-up. (Phase 1 with real PLCs: `v0.1.1`,
-2026-10-30.)
+**▶ We are here: Phase 2, step 2.2 done — `_meta` topics and start-up
+clean-up of stale topics (checks M1–M3 passed).** Next: step 2.3, deadband,
+heartbeat republish and `bad` quality on source loss.
 
 ## The plan in one view
 
@@ -17,7 +16,7 @@ publishing it as open source, runs alongside.
 ```
 Stage A  Foundations ............................. ✅ done
 Stage B  Phase 1   Live data path ................ ✅ v0.1.1 (2026-10-30)
-         Phase 2   Robust and editable ........... ▶ step 2.2 of 8
+         Phase 2   Robust and editable ........... ▶ step 2.3 of 8
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
          Phase 3b  OEE and efficiency KPIs ....... ⬜
@@ -98,7 +97,7 @@ food-safety retention with QA (2.5); MQTT encrypted, PostgreSQL not yet (2.6).
 | Step | What | Status |
 |---|---|---|
 | 2.1 | Model edits reach the runtime within a second, without restart: database triggers notify (migration 009), the runtime listens, reloads, clears topics and sources that no longer exist, and reconnects only changed sources; Grafana's Property list re-reads the model | ✅ 2026-10-30: on the laptop, tests and checks R1–R5 passed |
-| 2.2 | `_meta` topics: each value's unit, limits and description published next to it | ⬜ |
+| 2.2 | `_meta` topics: each value's unit, limits, description and property ID published next to it, republished when they change; at start-up, stale retained topics left by renames while the runtime was stopped are cleared | ✅ 2026-10-31: on the laptop, tests and checks M1–M3 passed |
 | 2.3 | Deadband and maximum publish interval; `bad` quality and source status on connection loss (ADR-0007) | ⬜ |
 | 2.4 | Batched historian writer with store-and-forward disk queue (ADR-0002) | ⬜ |
 | 2.5 | Historian housekeeping: compression, retention, 1-minute and 1-hour aggregates | ⬜ |
@@ -195,8 +194,8 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 2.2: `_meta` topics (unit, limits, description next to each value),
-   and clean-up at start-up of retained topics no longer in the model.
+1. Step 2.3: deadband, heartbeat republish (max publish interval) and `bad`
+   quality on source loss, for OPC UA, S7 and EtherNet/IP alike (ADR-0007).
 
 ## Open questions
 
@@ -278,10 +277,10 @@ Numbers are stable; answered questions are removed rather than renumbered.
   change reconnected only that PLC; after a database restart the listener
   reconnected and reloaded. Grafana's Property list refresh (on time range
   change, i.e. every auto-refresh) was not tested here.
-- Topic clean-up compares the new model with the one in memory, so a property
-  retired or renamed while the runtime was not running keeps its retained
-  value on the broker until the broker is cleaned by hand. Candidate for
-  step 2.2 (clean-up at start-up against the retained topics found).
+- Step 2.2 was tested on the local replica: `_meta` for all 15 properties,
+  valid against the schema; a stale value and `_meta` planted on the broker
+  while the runtime was stopped were cleared at start-up, a non-OFM retained
+  message beside them was left alone.
 - No automatic test run on GitHub (CI) yet; the runner's exit code is ready
   for it. Candidate for Stage D.
 - Mosquitto 2.1 deprecates `password_file`/`acl_file` in favour of plugins

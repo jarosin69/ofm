@@ -70,3 +70,15 @@ asset number never changes, even when the description does.
 - Related: ADR-0001 (cache and topic computation), ADR-0005 (naming).
 - `GENERATED ALWAYS` stops IDs being typed by hand; `pg_dump`/restore handles
   it correctly.
+
+## Amendments
+
+- 2026-10-30: **Clean-up, as built (steps 2.1, 2.2).** On every model reload
+  the runtime clears the value and `_meta` topics of properties that no
+  longer exist, and the status topics of removed sources. At start-up it also
+  reads the retained topics under each enterprise in the model and clears a
+  topic only if it has the shape of a property topic (6–7 levels, or that
+  plus `/_meta`), is not a reserved line-level topic (`workorder`, `kpi`,
+  `spc`, `foodsafety`) or a machine `state` topic, carries an OFM value or
+  `_meta` payload, and belongs to no property of any runtime. Anything else
+  on the broker is left alone.
