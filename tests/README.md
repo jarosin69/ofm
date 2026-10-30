@@ -74,10 +74,8 @@ D4 in Mathesar (log in as yourself), schema `config`:
    that you can see in UaExpert and that is not already mapped will do.)
 
 Afterwards you can keep it, or **retire** it: set `retired_at` on the
-property and on its mapping to the current time, then restart Node-RED. It
-cannot be deleted once it has history (ADR-0004: history keeps its IDs). Its
-last value stays on the broker as a retained message until Phase 2 step 2.1,
-which clears retired topics automatically.
+property and on its mapping to the current time. It cannot be deleted once it
+has history (ADR-0004: history keeps its IDs).
 
 **3. Record and release.** Paste the result line of the automated run and the
 drill outcomes into the Phase 1 exit check table in `docs/STATUS.md`, commit,
@@ -87,6 +85,23 @@ then tag the release from `C:\ofm`:
 git tag -a v0.1 -m "Phase 1: live data path"
 git push origin v0.1
 ```
+
+From Phase 2 step 2.1 the restart in D4 is no longer needed (see below).
+
+## Phase 2 checks so far
+
+**Step 2.1, model changes without restart.** Automated: the `database` suite
+checks that every configuration table notifies the runtime; the `live` suite
+sends that notification and expects a model reload within 2 seconds. By hand,
+with the command of README step 12b running:
+
+| # | In Mathesar | Expected within about a second, without restart |
+|---|---|---|
+| R1 | Rename a property (e.g. `water_temp` → `water_temperature`) | The old topic disappears from the broker (an empty retained message), values arrive on the new topic; its history continues (same property ID); `ofm/_system/cache/…` shows `"trigger":"notify"` |
+| R2 | Change a `scale_factor` | New values use the new scaling; no PLC reconnects |
+| R3 | Change a PLC tag's `address` | Only that PLC reconnects (its "not read" warnings, if any, appear again in the log); other PLCs keep running |
+| R4 | Set `retired_at` on a property, then clear it again | Its topic disappears from the broker, then values return |
+| R5 | Rename the property of R1 back | As R1 |
 
 ## Adding a test
 

@@ -53,7 +53,7 @@ module.exports.run = async function (t) {
     { address: "bad address", datatype: "float", maxIntervalMs: 60000 } // malformed
   ];
   const source = { name: "bench_s7", protocol: "s7", endpoint: "192.168.0.1",
-                   settings: { rack: 0, slot: 1, pollIntervalMs: 100 }, items };
+                   settings: { rack: 0, slot: 1, pollIntervalMs: 100 }, items, signature: "v1" };
   const counter = setInterval(() => { plc.values.MI20++; }, 100);
 
   try {
@@ -93,6 +93,20 @@ module.exports.run = async function (t) {
     const last = status()[status().length - 1];
     t.check("reconnected: reported online again and values flow", last.online === true && values().length > before,
             JSON.stringify(status()));
+
+    // Model reloads (step 2.1): only changed sources are reconnected.
+    const connects = plc.connects;
+    await fn.run({ payload: [source] });
+    await sleep(300);
+    t.check("reload with the source unchanged keeps its connection", plc.connects === connects, plc.connects + " connects");
+    await fn.run({ payload: [Object.assign({}, source, { signature: "v2", items: items.slice(0, 2) })] });
+    await sleep(300);
+    t.check("reload with the source changed reconnects it", plc.connects === connects + 1, plc.connects + " connects");
+    await fn.run({ payload: [] });
+    await sleep(250);
+    const n = fn.sent.length;
+    await sleep(300);
+    t.check("reload with the source removed closes it", fn.sent.length === n);
   } finally {
     clearInterval(counter);
     await fn.stop();

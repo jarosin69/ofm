@@ -2,10 +2,10 @@
 
 *Updated: 2026-10-30. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 1 is complete (`v0.1`, 2026-10-27). Step 1.7 — real
-PLCs: all three bench PLCs read end to end and recover from a network
-disconnection; the full test run remains.** Next: release `v0.1.1`, then
-Phase 2 detailed design.
+**▶ We are here: Phase 2, step 2.1 done — model changes reach the runtime
+without restart (checks R1–R5 passed).** Next: step 2.2, `_meta` topics and
+clean-up of stale topics at start-up. (Phase 1 with real PLCs: `v0.1.1`,
+2026-10-30.)
 
 ## The plan in one view
 
@@ -16,8 +16,8 @@ publishing it as open source, runs alongside.
 
 ```
 Stage A  Foundations ............................. ✅ done
-Stage B  Phase 1   Live data path ................ ✅ v0.1 (2026-10-27)
-         Phase 2   Robust and editable ........... ⬜
+Stage B  Phase 1   Live data path ................ ✅ v0.1.1 (2026-10-30)
+         Phase 2   Robust and editable ........... ▶ step 2.2 of 8
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
          Phase 3b  OEE and efficiency KPIs ....... ⬜
@@ -85,20 +85,26 @@ OPC UA. Guide: deploy README section 5.
 | S7-1200 CPU 1212C (`s7`, rack 0 slot 1): tags read end to end, unplug drill | ✅ 2026-10-30 |
 | S7-300 family, IM151-8 PN/DP CPU (`s7`, rack 0 slot 2): tags read end to end, unplug drill | ✅ 2026-10-30 |
 | CompactLogix 1769-L16ER (`ethernetip`, slot 0): tags read end to end, unplug drill | ✅ 2026-10-30 |
-| `docker compose run --rm test` with all three PLCs in the model | ⬜ |
+| `docker compose run --rm test` with all three PLCs in the model; tagged `v0.1.1` | ✅ 2026-10-30 |
 
-## Stage B — Phase 2: Robust and editable ⬜ (release v0.2)
+## Stage B — Phase 2: Robust and editable ▶ (release v0.2)
 
-| Step | What |
-|---|---|
-| 2.1 | Model edits reach the runtime within a second, without restart (LISTEN/NOTIFY); old retained topics cleared on rename |
-| 2.2 | `_meta` topics: each value's unit, limits and description published next to it |
-| 2.3 | Deadband and maximum publish interval; `bad` quality and source status on connection loss (ADR-0007) |
-| 2.4 | Batched historian writer with store-and-forward disk queue (ADR-0002) |
-| 2.5 | Historian housekeeping: compression, retention, 1-minute and 1-hour aggregates |
-| 2.6 | Broker encryption (TLS) |
-| 2.7 | Offline install bundle: all images and the repository for a network without internet |
-| 2.8 | Load test (2,000 values/s) and failure drills; release `v0.2` |
+Goal: ready for the plant pilot — model changes without restarts, honest data
+quality, no lost history, encrypted traffic. Decisions still open, with their
+defaults (assumptions until decided): disk queue limit 2 GB, oldest dropped
+with an alarm (2.4); raw data 90 days, 1-min/1-h averages 5 years — check
+food-safety retention with QA (2.5); MQTT encrypted, PostgreSQL not yet (2.6).
+
+| Step | What | Status |
+|---|---|---|
+| 2.1 | Model edits reach the runtime within a second, without restart: database triggers notify (migration 009), the runtime listens, reloads, clears topics and sources that no longer exist, and reconnects only changed sources; Grafana's Property list re-reads the model | ✅ 2026-10-30: on the laptop, tests and checks R1–R5 passed |
+| 2.2 | `_meta` topics: each value's unit, limits and description published next to it | ⬜ |
+| 2.3 | Deadband and maximum publish interval; `bad` quality and source status on connection loss (ADR-0007) | ⬜ |
+| 2.4 | Batched historian writer with store-and-forward disk queue (ADR-0002) | ⬜ |
+| 2.5 | Historian housekeeping: compression, retention, 1-minute and 1-hour aggregates | ⬜ |
+| 2.6 | Broker encryption (TLS) | ⬜ |
+| 2.7 | Offline install bundle: all images and the repository for a network without internet | ⬜ |
+| 2.8 | Load test (2,000 values/s) and failure drills; release `v0.2` | ⬜ |
 
 ## Stage C — Plant pilot ⬜ (after Phase 2)
 
@@ -189,12 +195,8 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek runs `docker compose run --rm test` with the three PLCs in the
-   model and ticks the last row of the step 1.7 table.
-2. Commit, tag `v0.1.1`.
-3. Phase 2 detailed design, starting with step 2.1 (model changes reach the
-   runtime without restart; also: Grafana's Property list re-reads the model
-   on refresh), for Jarek's review.
+1. Step 2.2: `_meta` topics (unit, limits, description next to each value),
+   and clean-up at start-up of retained topics no longer in the model.
 
 ## Open questions
 
@@ -270,10 +272,18 @@ Numbers are stable; answered questions are removed rather than renumbered.
   CompactLogix rungs given in the rung editor's text format (README 5.3).
 - Polled sources: when a PLC is lost, its values keep their last quality
   until Phase 2 step 2.3, as for OPC UA.
+- Step 2.1 was tested on the local replica with OPC UA, S7 and EtherNet/IP
+  stand-ins: reload 0.3–0.4 s after a committed change; a renamed property's
+  old topic cleared; scaling changes applied without reconnecting; an address
+  change reconnected only that PLC; after a database restart the listener
+  reconnected and reloaded. Grafana's Property list refresh (on time range
+  change, i.e. every auto-refresh) was not tested here.
+- Topic clean-up compares the new model with the one in memory, so a property
+  retired or renamed while the runtime was not running keeps its retained
+  value on the broker until the broker is cleaned by hand. Candidate for
+  step 2.2 (clean-up at start-up against the retained topics found).
 - No automatic test run on GitHub (CI) yet; the runner's exit code is ready
   for it. Candidate for Stage D.
-- Phase 1 limitation: a model change reaches the runtime on restart of
-  Node-RED; immediate reload is step 2.1.
 - Mosquitto 2.1 deprecates `password_file`/`acl_file` in favour of plugins
   (removal planned for 3.0). Migrate before any upgrade to 3.x.
 - The installation has been run end-to-end on one machine only.

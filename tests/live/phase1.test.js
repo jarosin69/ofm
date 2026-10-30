@@ -101,7 +101,7 @@ module.exports.run = async function (t) {
     const cache = payload("ofm/_system/cache/" + runtime);
     t.check("runtime loaded the whole model (" + model.length + " rows)",
             cache && cache.rows === model.length,
-            cache ? "cache status says " + cache.rows + " rows - restart Node-RED after a model change (Phase 1)" : "no cache status");
+            cache ? "cache status says " + cache.rows + " rows - is the runtime's 'model change listener' node green?" : "no cache status");
 
     for (const p of model) {
       const v = payload(p.topic);

@@ -15,7 +15,7 @@ const SUITES = [
   { name: "schemas",  title: "Payload contracts (schemas/ and their examples)", dir: "schemas" },
   { name: "flows",    title: "Runtime flow, unit tests (flows/ofm-runtime.json)", dir: "flows" },
   { name: "database", title: "Database: model rules, runtime view, permissions, audit", dir: "database" },
-  { name: "live",     title: "Live stack: Phase 1 exit check", dir: "live" }
+  { name: "live",     title: "Live stack: end to end (exit checks)", dir: "live" }
 ];
 const GROUPS = { all: SUITES.map(s => s.name), offline: ["schemas", "flows"] };
 

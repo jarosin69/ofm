@@ -200,9 +200,10 @@ docker compose run --rm migrate example
     there, `git diff` shows what changed, and a change is committed like any
     other. Keep experiments on separate tabs and delete them before
     committing. No passwords are ever stored in flows; they come from `.env`.
-    A model change (a new property, a new mapping) needs no flow change: in
-    Phase 1 it takes effect when Node-RED restarts
-    (`docker compose restart nodered`); from Phase 2 immediately.
+    A model change (a new property, a new mapping, new scaling) needs no
+    flow change and no restart: the runtime reloads the model within about
+    a second of the change being saved (step 2.1). Only PLC connections whose
+    endpoint, settings or address list changed are reconnected.
 14. **Container-to-container addresses.** Inside flows and datasources, use
     Compose service names, never `localhost`:
     - MQTT broker host: `mosquitto`, port 1883
@@ -270,21 +271,38 @@ This section walks through three bench PLCs, one per protocol family:
 a CompactLogix (5.3), an S7-300 (5.4) and an S7-1200 (5.5). Start with any;
 the CompactLogix and the S7-300 need no change to the PLC's configuration.
 
-### 5.1 The four rows behind every PLC tag
+### 5.1 The rows behind every PLC tag
 
-The model links a PLC tag to a topic through four tables. Fill them **in this
-order**, because each one picks a row of the one before it from a list:
+The model links a PLC tag to a topic through six tables. Fill them **in this
+order**: a field with a list (*Pick a Record*) offers only rows that already
+exist, so each row must be there before the next one can pick it.
 
 | # | Table | One row per | Says |
 |---|---|---|---|
 | 1 | `source` | PLC (connection) | how to reach it: protocol, IP address, rack/slot |
-| 2 | `machine` | machine (here: one per bench PLC) | where it sits in the plant: line, name |
-| 3 | `machine_property` | value | what it means: name, data type, unit, limits |
-| 4 | `plc_mapping` | value | where it comes from: which source, which address, scaling |
+| 2 | `area` | plant area — **only if it does not exist yet** | where in the site |
+| 3 | `line` | production line — **only if it does not exist yet** | which line, in which area |
+| 4 | `machine` | machine (here: one per bench PLC) | where it sits: line, name |
+| 5 | `machine_property` | value | what it means: name, data type, unit, limits |
+| 6 | `plc_mapping` | value | where it comes from: which source, which address, scaling |
 
-A pick-list shows only rows that already exist. If the *source* list in
-`plc_mapping` shows only `opcplc`, the PLC's `source` row (step 1) has not
-been added yet.
+Two examples of the rule: the *line* list in `machine` is empty until the
+`line` row (step 3) exists; the *source* list in `plc_mapping` shows only
+`opcplc` until the PLC's `source` row (step 1) exists.
+
+In Mathesar (logged in as yourself, schema `config`), add a row with the **+**
+below a table's last row. Leave every field not named in this section at its
+default.
+
+**Steps 2 and 3 for the bench** — once, with the first PLC; every later bench
+PLC reuses them:
+
+| # | Table | Field | Value |
+|---|---|---|---|
+| 2 | `area` | site | Melbourne plant |
+| | | name / display_name | `bench` / `Test bench` |
+| 3 | `line` | area | Test bench |
+| | | name / display_name | `bench01` / `PLC test bench` |
 
 | Controller | `protocol` | `endpoint` | `settings` |
 |---|---|---|---|
@@ -298,19 +316,6 @@ default once per second (minimum 100). A polled value is sent when it
 changes, and at least once per `max_publish_interval_ms` (60 s by default)
 when it does not. PLCs send no timestamps, so values are stamped with the
 time they arrive (`tss: "gateway"`, ADR-0003).
-
-**Once, before the first PLC** — a line for the bench, in Mathesar (logged in
-as yourself, schema `config`). In each table, add a row with the **+** below
-the last row; a field with a list opens *Pick a Record*.
-
-| Table | Field | Value |
-|---|---|---|
-| `area` | site | Melbourne plant |
-| | name / display_name | `bench` / `Test bench` |
-| `line` | area | Test bench |
-| | name / display_name | `bench01` / `PLC test bench` |
-
-Leave every field not listed in these tables at its default.
 
 ### 5.2 Network (every PLC)
 
@@ -360,10 +365,10 @@ that change on their own:
 2. In MainProgram → MainRoutine, add four rungs. You can type each line into
    the rung's text editor (double-click the rung number):
    ```
-   XIO(OFM_Timer.DN)TON(OFM_Timer,1000,0);
-   XIC(OFM_Timer.DN)ADD(OFM_Count,1,OFM_Count);
-   XIC(OFM_Count.0)OTE(OFM_Run);
-   CPT(OFM_Speed,(OFM_Count MOD 100)*0.5);
+   XIO OFM_Timer.DN TON OFM_Timer 1000,0
+   XIC OFM_Timer.DN ADD OFM_Count 1 OFM_Count
+   XIC OFM_Count.0 OTE OFM_Run
+   CPT OFM_Speed "(OFM_Count MOD 100)*0.5"
    ```
    Every second `OFM_Count` goes up by one, `OFM_Run` toggles and
    `OFM_Speed` ramps 0 → 49.5 and back to 0.
@@ -383,13 +388,14 @@ reads single values of type BOOL, SINT, INT, DINT, LINT and REAL; structures
 | | | protocol | `ethernetip` |
 | | | endpoint | the PLC's IP address, e.g. `192.168.0.3` |
 | | | settings | `{"slot": 0}` |
-| 2 | `machine` | line | PLC test bench |
+| 2–3 | `area`, `line` | | first bench PLC only: as in 5.1 |
+| 4 | `machine` | line | PLC test bench |
 | | | name / display_name | `compactlogix` / `Bench CompactLogix` |
-| 3 | `machine_property` ×3 | machine | Bench CompactLogix |
+| 5 | `machine_property` ×3 | machine | Bench CompactLogix |
 | | | name / display_name / datatype / engineering_unit | `count` / `Count` / `int` / pcs |
 | | | | `run` / `Running` / `bool` / *(empty)* |
 | | | | `speed` / `Speed` / `float` / m_per_min |
-| 4 | `plc_mapping` ×3 | property / source / address | Count / bench_clx / `OFM_Count` |
+| 6 | `plc_mapping` ×3 | property / source / address | Count / bench_clx / `OFM_Count` |
 | | | | Running / bench_clx / `OFM_Run` |
 | | | | Speed / bench_clx / `OFM_Speed` |
 
@@ -446,13 +452,14 @@ always have fixed addresses. For the test:
 | | | protocol | `s7` |
 | | | endpoint | the CPU's IP address, e.g. `192.168.0.2` |
 | | | settings | `{"rack": 0, "slot": 2}` |
-| 2 | `machine` | line | PLC test bench |
+| 2–3 | `area`, `line` | | first bench PLC only: as in 5.1 |
+| 4 | `machine` | line | PLC test bench |
 | | | name / display_name | `s7_300` / `Bench S7-300` |
-| 3 | `machine_property` ×3 | machine | Bench S7-300 |
+| 5 | `machine_property` ×3 | machine | Bench S7-300 |
 | | | name / display_name / datatype / engineering_unit | `count` / `Count` / `int` / pcs |
 | | | | `run` / `Running` / `bool` / *(empty)* |
 | | | | `speed` / `Speed` / `float` / m_per_min |
-| 4 | `plc_mapping` ×3 | property / source / address | Count / bench_s7300 / `DB10,DINT4` |
+| 6 | `plc_mapping` ×3 | property / source / address | Count / bench_s7300 / `DB10,DINT4` |
 | | | | Running / bench_s7300 / `DB10,X8.0` |
 | | | | Speed / bench_s7300 / `DB10,REAL0` |
 
@@ -505,14 +512,15 @@ question 24).
 | | | protocol | `s7` |
 | | | endpoint | the CPU's IP address, e.g. `192.168.0.1` |
 | | | settings | `{"rack": 0, "slot": 1}` |
-| 2 | `machine` | line | PLC test bench |
+| 2–3 | `area`, `line` | | first bench PLC only: as in 5.1 |
+| 4 | `machine` | line | PLC test bench |
 | | | name / display_name | `s7_1200` / `Bench S7-1200` |
-| 3 | `machine_property` ×4 | machine | Bench S7-1200 |
+| 5 | `machine_property` ×4 | machine | Bench S7-1200 |
 | | | name / display_name / datatype / engineering_unit | `count` / `Count` / `int` / pcs |
 | | | | `run` / `Running` / `bool` / *(empty)* |
 | | | | `speed` / `Speed` / `float` / m_per_min |
 | | | | `analog_in_0` / `Analog input 0` / `float` / pct; low `0`, high `100` |
-| 4 | `plc_mapping` ×4 | property / source / address | Count / bench_s71200 / `DB10,DINT4` |
+| 6 | `plc_mapping` ×4 | property / source / address | Count / bench_s71200 / `DB10,DINT4` |
 | | | | Running / bench_s71200 / `DB10,X8.0` |
 | | | | Speed / bench_s71200 / `DB10,REAL0` |
 | | | | Analog input 0 / bench_s71200 / `II64`, scale_factor `0.00361689814814815` |
@@ -523,10 +531,9 @@ wired to it the value sits near 0. Then do the checks in 5.6.
 
 ### 5.6 Checks (every PLC)
 
-1. Restart the runtime, so it reads the new rows (Phase 1; automatic from
-   Phase 2), and read its log:
+1. The runtime picks up the new rows by itself within about a second of
+   saving them in Mathesar. Read its log:
    ```powershell
-   docker compose restart nodered
    docker compose logs nodered --since 2m
    ```
    A line `… <address>: … - not read` names every address the PLC refused.
@@ -538,7 +545,9 @@ wired to it the value sits near 0. Then do the checks in 5.6.
    Expect `ofm/_system/sources/<source> {"state":"online",…}` and, about once
    a second, e.g.
    `acme/melbourne/bench/bench01/compactlogix/count {"v":1234,"ts":…,"q":"good","tss":"gateway"}`.
-3. Grafana: reload **OFM · Live data** (F5). The new properties are in the
+3. Grafana: **OFM · Live data** re-reads its *Property* list on every
+   refresh (5 s); if a new property is missing, reload the page (F5). The new
+   properties are in the
    *Property* list and have charts.
 4. Run the tests: `docker compose run --rm test live`. Every property of
    every PLC in the model is checked end to end.

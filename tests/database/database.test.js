@@ -202,6 +202,13 @@ module.exports.run = async function (t) {
     t.check("historian tables are TimescaleDB hypertables",
       hyper.includes("measurement") && hyper.includes("measurement_text"), "found: " + (hyper.join(", ") || "none"));
 
+    const silent = (await db.query(
+      "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
+      "WHERE n.nspname = 'config' AND c.relkind IN ('r', 'p') AND NOT EXISTS (" +
+      "SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'trg_notify_model_changed') ORDER BY 1")).rows;
+    t.check("every configuration table notifies the runtime of changes (step 2.1)", silent.length === 0,
+      "no trigger on: " + silent.map(r => r.relname).join(", "));
+
     // --- cases ------------------------------------------------------------------------
     for (const c of CASES) {
       let err;

@@ -62,7 +62,8 @@ module.exports = {
     functionGlobalContext: {
         opcua: builtIn("node-opcua"),               // OPC UA acquisition (ADR-0017)
         s7: builtIn("@st-one-io/nodes7"),           // Siemens S7 acquisition (ADR-0018)
-        ethernetip: builtIn("st-ethernet-ip")       // Rockwell EtherNet/IP acquisition (ADR-0018)
+        ethernetip: builtIn("st-ethernet-ip"),      // Rockwell EtherNet/IP acquisition (ADR-0018)
+        pg: builtIn("pg")                           // model change listener (ADR-0001); comes with node-red-contrib-postgresql
     },
 
     editorTheme: {

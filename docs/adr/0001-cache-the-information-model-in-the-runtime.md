@@ -97,3 +97,11 @@ completely different change rates and must not share a hot path.
 - 2026-10-18: **Cache status topic.** The status topic is per runtime instance,
   `ofm/_system/cache/{runtime}`, because Architecture Overview §7.3 allows
   several instances. Its payload is defined in `schemas/system-cache.schema.json`.
+- 2026-10-30: **Reload, as built (step 2.1).** Channel `model_changed`,
+  payload the table name; statement-level triggers on every `config` table
+  (migration 009), attached to future tables by `audit.fn_enable`. The
+  listener combines notifications within 300 ms into one reload and reloads
+  once after reconnecting to the database. Indexes as built: by
+  `(source, address)` and by topic, plus by property ID; a by-machine index
+  follows with machine states (Phase 3a). Acquisition keeps connections whose
+  source signature (protocol, endpoint, settings, addresses) is unchanged.

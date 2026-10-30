@@ -26,7 +26,7 @@
         },
         "query": "SELECT p.display_name || COALESCE(' [' || u.symbol || ']', '') || ' · ' || substring(p.topic from '([^/]+/[^/]+)$') AS __text,\n       p.property_id AS __value\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nWHERE NOT p.is_retired\nORDER BY p.topic",
         "definition": "SELECT p.display_name || COALESCE(' [' || u.symbol || ']', '') || ' · ' || substring(p.topic from '([^/]+/[^/]+)$') AS __text,\n       p.property_id AS __value\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nWHERE NOT p.is_retired\nORDER BY p.topic",
-        "refresh": 1,
+        "refresh": 2,
         "multi": true,
         "includeAll": true,
         "current": {

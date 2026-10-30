@@ -48,7 +48,8 @@ module.exports.run = async function (t) {
 
   // --- model cache --------------------------------------------------------------
   const cache = loadFunction(flow, "ofm_rt_cache", { env, global });
-  const [status, sourceMsg] = await cache.run({ payload: rows });
+  const [platform, sourceMsg] = await cache.run({ payload: rows });
+  const status = platform[0];
   produced.push({ topic: status.topic, payload: status.payload, what: "cache status after start-up" });
   const model = global.ofm_model;
   t.check("cache: every property by ID and topic, only mapped ones by source address",
@@ -60,6 +61,30 @@ module.exports.run = async function (t) {
     JSON.stringify(sourceMsg.payload));
   t.check("cache status reports the number of rows loaded",
     status.payload.rows === 3 && status.payload.trigger === "startup" && status.retain === true);
+  t.check("start-up clears nothing from the broker", platform.length === 1);
+
+  // --- model reload after a change (step 2.1) -----------------------------------------
+  const renamed = rows.map(r => Object.assign({}, r));
+  renamed[1].topic = renamed[1].topic.replace(/running$/, "run_signal");          // property renamed
+  renamed[0].scale_factor = "0.5";                                                  // scaling changed
+  const [reload, reloadSources] = await cache.run({ payload: renamed, trigger: "notify" });
+  produced.push({ topic: reload[0].topic, payload: reload[0].payload, what: "cache status after a model change" });
+  t.check("reload: cache status says notify", reload[0].payload.trigger === "notify");
+  t.check("reload: old topic of a renamed property is cleared (empty retained message)",
+    reload.length === 2 && reload[1].topic.endsWith("/running") && reload[1].payload === "" && reload[1].retain === true,
+    JSON.stringify(reload.slice(1)));
+  t.check("reload: new scaling is used at once", global.ofm_model.byKey["opcplc|" + NSU + "SpikeData"].factor === 0.5);
+  t.check("reload: a scaling change keeps the source signature (no reconnect)",
+    reloadSources.payload[0].signature === sourceMsg.payload[0].signature);
+  const moved = renamed.map(r => Object.assign({}, r));
+  moved[0].address = NSU + "DipData"; moved[0].cache_key = "opcplc|" + NSU + "DipData";
+  const [, movedSources] = await cache.run({ payload: moved, trigger: "notify" });
+  t.check("reload: a changed address changes the source signature (reconnect)",
+    movedSources.payload[0].signature !== sourceMsg.payload[0].signature);
+  const [gone] = await cache.run({ payload: [rows[2]], trigger: "notify" });
+  t.check("reload: a removed source's status topic is cleared",
+    gone.some(m => m.topic === "ofm/_system/sources/opcplc" && m.payload === ""), JSON.stringify(gone));
+  await cache.run({ payload: rows });                                               // back to the original model
 
   // --- source status ------------------------------------------------------------
   const src = loadFunction(flow, "ofm_rt_srcstat", { env, global });
