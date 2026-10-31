@@ -20,7 +20,7 @@ module.exports.run = async function (t) {
     const statuses = [];
     await new Promise((resolve, reject) => {
       client.on("error", reject);
-      client.on("connect", () => client.subscribe(topic, { qos: 1 }, e => e ? reject(e) : resolve()));
+      client.on("connect", () => client.subscribe(topic, { qos: 0 }, e => e ? reject(e) : resolve()));
     });
     client.on("message", (_, buf) => { try { statuses.push({ at: Date.now(), p: JSON.parse(buf.toString()) }); } catch (e) { /* ignore */ } });
     await new Promise(r => setTimeout(r, 500));                  // the retained status arrives first

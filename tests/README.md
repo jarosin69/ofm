@@ -136,6 +136,16 @@ that the writer is `writing` with nothing queued or dropped. By hand, with
 | S2 | `docker compose stop timescaledb`, wait 2 minutes, `docker compose start timescaledb` | `"state":"buffering"` with a growing `queueDepth`; live values keep flowing; after the start, `"state":"writing"`, `queueDepth` 0 — and Grafana's charts for those 2 minutes have **no gap** |
 | S3 | During S2's outage, also `docker compose restart nodered` | Rows up to the restart are kept (saved to the queue on stop, written later). After the restart, no values at all until the database is back: the runtime needs the model to start (known limitation, see STATUS) |
 
+**Step 2.5, historian housekeeping.** Automated: the `database` suite checks
+compression, refresh and retention policies and who may read the averages.
+By hand:
+
+| # | Do | Expected |
+|---|---|---|
+| K1 | `docker compose up -d`, then `docker compose logs migrate` | Last line: `Historian retention: raw data 365 days, 1-minute and 1-hour averages 5 years` |
+| K2 | In Grafana set the time range to *Last 7 days* (or longer) | Charts load quickly; the blue line is the average inside a light grey band from the lowest to the highest value; lines break where nothing was recorded (e.g. nights with the stack off); *Last 15 minutes* shows raw values again. The `live` suite checks that Grafana serves the dashboard file of the repository |
+| K3 | List the housekeeping jobs: `docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "SELECT job_id, proc_name, hypertable_name, config FROM timescaledb_information.jobs WHERE hypertable_schema = 'hist' ORDER BY 1"` | Two compression jobs (7 days), two refresh jobs, four retention jobs (365 days, 5 years) |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

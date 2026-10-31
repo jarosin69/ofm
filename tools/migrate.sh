@@ -14,7 +14,9 @@
 # The stack also runs "up" automatically on every "docker compose up".
 # After applying migrations, "up" sets the passwords of the platform roles
 # (ofm_runtime, ofm_config, ofm_reader, ofm_mathesar) to the values in
-# deploy/.env, so .env stays the single source of every password.
+# deploy/.env, so .env stays the single source of every password, and sets
+# the historian retention from .env (OFM_RAW_RETENTION_DAYS,
+# OFM_AGG_RETENTION_YEARS).
 # Connection settings come from PGHOST, PGUSER, PGPASSWORD, PGDATABASE.
 set -eu
 
@@ -94,6 +96,46 @@ cmd_up() {
     echo "Applied $count migration(s). Database is up to date."
   fi
   sync_role_passwords
+  sync_retention
+}
+
+# Sets how long the historian keeps data (step 2.5), from deploy/.env:
+# raw rows OFM_RAW_RETENTION_DAYS (default 365), 1-minute and 1-hour averages
+# OFM_AGG_RETENTION_YEARS (default 5). A policy is changed only when its
+# value differs. Raw data must be kept longer than the 30-day refresh window
+# of the averages, or refreshing would erase averages whose raw data is gone.
+sync_retention() {
+  raw=${OFM_RAW_RETENTION_DAYS:-365}
+  agg=${OFM_AGG_RETENTION_YEARS:-5}
+  case "$raw" in ''|*[!0-9]*) echo "ERROR: OFM_RAW_RETENTION_DAYS must be a whole number of days" >&2; exit 1 ;; esac
+  case "$agg" in ''|*[!0-9]*) echo "ERROR: OFM_AGG_RETENTION_YEARS must be a whole number of years" >&2; exit 1 ;; esac
+  if [ "$raw" -lt 31 ] || [ "$agg" -lt 1 ]; then
+    echo "ERROR: OFM_RAW_RETENTION_DAYS must be at least 31 and OFM_AGG_RETENTION_YEARS at least 1" >&2
+    exit 1
+  fi
+  ready=$(sql -At -c "SELECT count(*) FROM pg_views WHERE schemaname = 'hist' AND viewname = 'measurement_1h'")
+  [ "$ready" = "1" ] || return 0                     # before migration 011
+  sql -v raw="$raw" -v agg="$agg" <<'EOSQL'
+SELECT set_config('ofm.raw', :'raw' || ' days', false), set_config('ofm.agg', :'agg' || ' years', false) \g /dev/null
+DO $$
+DECLARE
+  t text;
+  want interval;
+  have interval;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['measurement', 'measurement_text', 'measurement_1m', 'measurement_1h'] LOOP
+    want := current_setting(CASE WHEN t LIKE '%\_1_' THEN 'ofm.agg' ELSE 'ofm.raw' END)::interval;
+    SELECT (config ->> 'drop_after')::interval INTO have
+      FROM timescaledb_information.jobs
+     WHERE proc_name = 'policy_retention' AND hypertable_schema = 'hist' AND hypertable_name = t;
+    IF have IS DISTINCT FROM want THEN
+      PERFORM remove_retention_policy('hist.' || t, if_exists => true);
+      PERFORM add_retention_policy('hist.' || t, want);
+    END IF;
+  END LOOP;
+END $$;
+EOSQL
+  echo "Historian retention: raw data $raw days, 1-minute and 1-hour averages $agg years"
 }
 
 # Sets each platform role's password to its value in deploy/.env, if the role

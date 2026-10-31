@@ -25,14 +25,19 @@ function listen(seconds) {
       connectTimeout: 5000,
       reconnectPeriod: 0
     });
-    client.on("error", e => { client.end(true); reject(e); });
+    let done = false;                      // once listening is over, late errors do not matter
+    const finish = () => { if (done) return; done = true; client.end(true); resolve(topics); };
+    client.on("error", e => { if (done) return; done = true; client.end(true); reject(e); });
     client.on("connect", () => {
-      client.subscribe(["#"], { qos: 1 }, err => {
-        if (err) { client.end(true); reject(err); return; }
-        setTimeout(() => client.end(false, () => resolve(topics)), seconds * 1000);
+      // QoS 0: the broker expects no acknowledgements, so stopping while
+      // messages are still arriving cannot fail ("write after end").
+      client.subscribe(["#"], { qos: 0 }, err => {
+        if (err) { if (!done) { done = true; client.end(true); reject(err); } return; }
+        setTimeout(finish, seconds * 1000);
       });
     });
     client.on("message", (topic, buf, packet) => {
+      if (done) return;
       const e = topics.get(topic) || { retained: 0, live: 0, last: null, raw: null, invalid: [] };
       if (packet.retain) e.retained++; else e.live++;
       e.raw = buf.toString("utf8");
@@ -165,6 +170,31 @@ module.exports.run = async function (t) {
             model.every(p => choices.some(c => Number(c.__value) === p.property_id)),
             choices.length + " choices");
 
+    // Every panel query of the dashboard, with Grafana's macros filled in the
+    // way Grafana fills them (quoted UTC times), at raw, 1-minute and 1-hour
+    // resolution, run as ofm_reader - so a query error shows here, not only
+    // as a red triangle in Grafana.
+    const to = new Date(), from = new Date(to.getTime() - 7 * 86400000);
+    const q = d => "'" + d.toISOString() + "'";
+    const expand = (sql, ms) => sql
+      .replace(/\$__timeGroupAlias\(([^,]+),\s*\$__interval\)/g, (_, c) => "time_bucket(make_interval(secs => " + ms / 1000 + "), " + c + ") AS \"time\"")
+      .replace(/\$__timeFilter\(([^)]+)\)/g, (_, c) => c + " BETWEEN " + q(from) + " AND " + q(to))
+      .replace(/\$__timeFrom\(\)/g, q(from)).replace(/\$__timeTo\(\)/g, q(to))
+      .replace(/\$__interval_ms/g, String(ms))
+      .replace(/\$property/g, String(model[0].property_id));
+    const failed = [];
+    for (const panel of dash.panels || []) {
+      for (const target of panel.targets || []) {
+        if (!target.rawSql) continue;
+        for (const ms of [1000, 600000, 7200000]) {
+          try { await db.query(expand(target.rawSql, ms)); }
+          catch (e) { failed.push((panel.title || "panel") + " @ " + ms / 1000 + " s per point: " + e.message); }
+        }
+      }
+    }
+    t.check("every dashboard query runs as ofm_reader (raw, 1-minute and 1-hour resolution)", failed.length === 0,
+            failed.slice(0, 3).join("\n             "));
+
     const grafana = { user: process.env.GRAFANA_USER, password: process.env.GRAFANA_PASSWORD };
     try {
       const h = await http(stack.grafanaUrl + "/api/health");
@@ -172,6 +202,10 @@ module.exports.run = async function (t) {
       const d = await http(stack.grafanaUrl + "/api/dashboards/uid/ofm-live-data", grafana);
       t.check("Grafana serves 'OFM · Live data', provisioned from the repository",
               d.status === 200 && d.body.meta && d.body.meta.provisioned === true, "HTTP " + d.status);
+      const queries = x => (x.panels || []).flatMap(p => (p.targets || []).map(q => q.rawSql || "")).sort().join("\n");
+      t.check("the dashboard Grafana serves is the one in the repository (same queries)",
+              d.status === 200 && queries(d.body.dashboard) === queries(dash),
+              "Grafana has an older version - restart it: docker compose restart grafana");
       const ds = await http(stack.grafanaUrl + "/api/datasources/uid/ofm-historian/health", grafana);
       t.check("Grafana reaches the historian as ofm_reader", ds.status === 200 && ds.body && ds.body.status === "OK",
               "HTTP " + ds.status + " " + JSON.stringify(ds.body));

@@ -92,3 +92,10 @@ Overview §2) favours the smallest tool that does this safely.
   model-editing login (member of `ofm_config`) and prints its password once
   (ADR-0013). `example` is now re-runnable: it adds what is missing and
   refreshes the example mappings.
+- 2026-10-31: **Historian retention from `.env` (step 2.5).** After the role
+  passwords, `up` sets the TimescaleDB retention policies from `deploy/.env`:
+  raw rows `OFM_RAW_RETENTION_DAYS` (default 365, at least 31, because the
+  averages refresh 30 days back), 1-minute and 1-hour averages
+  `OFM_AGG_RETENTION_YEARS` (default 5). A policy is replaced only when its
+  value differs. Retention is site configuration, not structure, so it is not
+  a migration.

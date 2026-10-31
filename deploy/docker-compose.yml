@@ -56,6 +56,10 @@ services:
       OFM_CONFIG_DB_PASSWORD: ${OFM_CONFIG_DB_PASSWORD}
       OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD}
       OFM_MATHESAR_DB_PASSWORD: ${OFM_MATHESAR_DB_PASSWORD:?run make-env.sh to add OFM_MATHESAR_DB_PASSWORD to .env}
+      # Historian retention, set after every run (step 2.5). Lengthening is
+      # safe; shortening DELETES the older data at the next daily run.
+      OFM_RAW_RETENTION_DAYS: ${OFM_RAW_RETENTION_DAYS:-365}
+      OFM_AGG_RETENTION_YEARS: ${OFM_AGG_RETENTION_YEARS:-5}
     volumes:
       - ..:/repo                   # the repository: db/migrations, tools, docs/generated
     depends_on:

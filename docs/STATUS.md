@@ -2,9 +2,10 @@
 
 *Updated: 2026-10-31. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2, step 2.4 — store-and-forward historian writer, and
-refused addresses published `bad`; S2 passed; correction for S1 delivered
-(the historian now stores "bad, no value"), S1 and S3 to check.** Next: step 2.5, historian housekeeping (decision: retention).
+**▶ We are here: Phase 2, step 2.5 — historian housekeeping (compression,
+1-min/1-h averages, retention 1 year raw / 5 years averages); K1–K3 passed;
+chart correction delivered (gaps shown as breaks, min–max as a band), Jarek
+checks K2 again.** Next: step 2.6, runtime starts without the database.
 
 ## The plan in one view
 
@@ -16,7 +17,7 @@ publishing it as open source, runs alongside.
 ```
 Stage A  Foundations ............................. ✅ done
 Stage B  Phase 1   Live data path ................ ✅ v0.1.1 (2026-10-30)
-         Phase 2   Robust and editable ........... ▶ step 2.4 of 9
+         Phase 2   Robust and editable ........... ▶ step 2.5 of 9
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
          Phase 3b  OEE and efficiency KPIs ....... ⬜
@@ -89,19 +90,20 @@ OPC UA. Guide: deploy README section 5.
 ## Stage B — Phase 2: Robust and editable ▶ (release v0.2)
 
 Goal: ready for the plant pilot — model changes without restarts, honest data
-quality, no lost history, encrypted traffic. Decided: disk queue limit 10 GB,
-compressed, configurable in `.env`, oldest dropped and reported when full
-(2.4, 2026-10-31). Still open, with their defaults (assumptions until
-decided): raw data 90 days, 1-min/1-h averages 5 years — check food-safety
-retention with QA (2.5); MQTT encrypted, PostgreSQL not yet (2.7).
+quality, no lost history, encrypted traffic. Decided (2026-10-31): disk
+queue limit 10 GB, compressed, configurable in `.env`, oldest dropped and
+reported when full (2.4); retention raw data 1 year, 1-min/1-h averages
+5 years, configurable in `.env` (2.5; to be confirmed against food-safety
+record requirements with QA). Still open, with its default (assumption until
+decided): MQTT encrypted, PostgreSQL not yet (2.7).
 
 | Step | What | Status |
 |---|---|---|
 | 2.1 | Model edits reach the runtime within a second, without restart: database triggers notify (migration 009), the runtime listens, reloads, clears topics and sources that no longer exist, and reconnects only changed sources; Grafana's Property list re-reads the model | ✅ 2026-10-30: on the laptop, tests and checks R1–R5 passed |
 | 2.2 | `_meta` topics: each value's unit, limits, description and property ID published next to it, republished when they change; at start-up, stale retained topics left by renames while the runtime was stopped are cleared | ✅ 2026-10-31: on the laptop, tests and checks M1–M3 passed |
 | 2.3 | Deadband (opt-in per property; 0 = every value, for SPC) and heartbeat republish at the maximum publish interval; all values of a lost source republished `bad` at once — for OPC UA, S7 and EtherNet/IP alike (ADR-0007) | ✅ 2026-10-31: on the laptop, H1–H3 passed |
-| 2.4 | Batched historian writer with compressed store-and-forward disk queue (10 GB, `.env`), status on `ofm/_system/historian/…`; addresses a PLC refuses published `v: null, q: bad` (ADR-0002, ADR-0007) | ▶ delivered 2026-10-31; Jarek checks |
-| 2.5 | Historian housekeeping: compression, retention, 1-minute and 1-hour aggregates | ⬜ |
+| 2.4 | Batched historian writer with compressed store-and-forward disk queue (10 GB, `.env`), status on `ofm/_system/historian/…`; addresses a PLC refuses published `v: null, q: bad` (ADR-0002, ADR-0007) | ✅ 2026-10-31: on the laptop, S1–S3 passed (S1 after migration 010) |
+| 2.5 | Historian housekeeping: compression after 7 days; 1-minute and 1-hour averages (avg, min, max, worst quality); retention from `.env` (raw 1 year, averages 5 years); long-range charts read the averages (migration 011) | ▶ delivered 2026-10-31; Jarek checks |
 | 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3) | ⬜ |
 | 2.7 | Broker encryption (TLS) | ⬜ |
 | 2.8 | Offline install bundle: all images and the repository for a network without internet | ⬜ |
@@ -196,11 +198,9 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek installs the step 2.4 correction (migration 010), repeats S1 and
-   runs S3 (tests/README).
-2. Step 2.5: historian housekeeping — compression, 1-min/1-h averages,
-   retention. Decision needed: raw data retention (default 90 days; check
-   food-safety record requirements with QA).
+1. Jarek installs step 2.5, runs the tests and checks K1–K3 (tests/README).
+2. Step 2.6: the runtime keeps a copy of the last model on disk and starts
+   from it when the database cannot be reached.
 
 ## Open questions
 
@@ -220,7 +220,6 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 12 | Verify KPI terminology against ISO 22400-2 (ADR-0008) | Going public |
 | 13 | Schemas still to write: machine state (3a), line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
 | 14 | First SPC characteristics and their plans (pack weight, temper index?); how lab results arrive (manual entry or instrument interface) | Phase 3c |
-| 17 | Historian compression and retention (columnstore off in Phase 1) and the 1-min/1-h continuous aggregates | Phase 2 |
 | 19 | Offline install bundle: script that saves all pinned images and the repository for transfer to an isolated network | Phase 2 |
 | 20 | Phase 3a must build `config.material` (with `material_type`), not `product` (ADR-0014) | Phase 3a |
 | 21 | Food safety: which checks first; who verifies; electronic records replacing or accompanying paper under the site's certification scheme | Phase 3d |
@@ -289,6 +288,29 @@ Numbers are stable; answered questions are removed rather than renumbered.
   volume to `/data/sfqueue` in the `nodered-data` volume (owned by the
   Node-RED user); the old volume can be removed with
   `docker volume rm ofm_sf-queue`.
+- Step 2.5 was tested on a local TimescaleDB 2.30.2 (built from source, the
+  version in the stack) — the first time the full migration series 001–011
+  ran on real TimescaleDB outside Jarek's laptop: compression of a 10-day-old
+  chunk (712 kB → 40 kB); late and replayed inserts into a compressed chunk
+  (written once, no error); averages readable by `ofm_reader`, not by
+  `ofm_config`; retention set from the environment, unchanged on a second run,
+  too-short values refused; the chart query at raw, 1-minute and 1-hour
+  resolution. Grafana's rendering was not tested here; on Jarek's laptop
+  (K2) the min/max lines were correct but hard to read, and lines were drawn
+  across periods without data. Corrected: points of a minute or longer with
+  no data stay empty (TimescaleDB gap-filling), so lines break at gaps;
+  min–max shown as a band; the `live` suite now checks that Grafana serves
+  the repository's dashboard file. The first version of that correction
+  failed in Grafana ("No data", red triangle): with Grafana's quoted time
+  bounds, PostgreSQL picked the time-zone variant of `time_bucket_gapfill`;
+  fixed with explicit casts. The `live` suite now runs every dashboard query
+  with Grafana-style macros at three resolutions, which catches this.
+- A property whose `max_publish_interval_ms` is longer than a minute and
+  whose value does not change can show breaks on charts at 1-minute
+  resolution (no row in those minutes).
+- Rows written late by store-and-forward appear in the averages at the next
+  refresh if they are less than 30 days old; older late rows need a manual
+  `CALL refresh_continuous_aggregate(…)`.
 - A runtime that **starts** while the database is down acquires nothing until
   the database is back, because it loads the model from the database. A
   copy of the last model on disk removes this: step 2.6.

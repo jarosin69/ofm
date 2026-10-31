@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.6.6 (2026-10-31) — store-and-forward historian writer (§8, step 2.4); deadband, heartbeat, `bad` on loss (step 2.3) |
+| **Version** | 0.6.7 (2026-10-31) — historian housekeeping: compression, 1-min/1-h rollups, retention from `.env` (§8, step 2.5) |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -245,7 +245,7 @@ One Node-RED instance per plant is the Phase 1 topology. The scaling unit is the
 
 Per ADR-0002, history is written directly from the runtime to TimescaleDB, in parallel with — never through — the broker. Telemetry inserts are batched (1–2 s flush); MES-significant events (state events, reason assignments, work-order events, counts) are written transactionally per event. A local, compressed disk queue provides store-and-forward across database outages (size limit `OFM_SF_QUEUE_MAX_GB`, default 10 GB, oldest dropped and reported when full), with queue depth exposed on `ofm/_system/historian/{runtime}` (ADR-0002 amendment).
 
-The historian schema is narrow and ID-keyed. `measurement (ts timestamptz, property_id int, value double precision, quality smallint, ts_source smallint)` is a hypertable partitioned on `ts`; text values and states go to sibling tables rather than overloading one table with nullable columns. Native TimescaleDB compression is applied after 7 days and continuous aggregates maintain 1-minute and 1-hour rollups per property, which serve most dashboard queries and the 5-year retention tier while raw data ages out at 90 days. Operational-Model instance tables (`machine_state_event`, `state_reason`, `work_order_event`, `production_count`, `event`, `runtime_heartbeat`) follow the same pattern: immutable IDs, `timestamptz`, no display names — and all are append-only: the runtime's database role can SELECT and INSERT in `hist` but never UPDATE or DELETE (ADR-0002 amendment, ADR-0006). Inserts are idempotent (`ON CONFLICT DO NOTHING`), so a store-and-forward queue replayed twice is harmless.
+The historian schema is narrow and ID-keyed. `measurement (ts timestamptz, property_id int, value double precision, quality smallint, ts_source smallint)` is a hypertable partitioned on `ts`; text values and states go to sibling tables rather than overloading one table with nullable columns. Native TimescaleDB compression (columnstore, segmented by property) is applied after 7 days, and continuous aggregates maintain 1-minute and 1-hour rollups per property (average, minimum, maximum, count, worst quality), which serve long-range dashboard queries and the long-term tier. Retention is set per site in `.env` and applied by the migration runner: by default raw data is kept 1 year and the rollups 5 years (migration 011, ADR-0012 amendment). Operational-Model instance tables (`machine_state_event`, `state_reason`, `work_order_event`, `production_count`, `event`, `runtime_heartbeat`) follow the same pattern: immutable IDs, `timestamptz`, no display names — and all are append-only: the runtime's database role can SELECT and INSERT in `hist` but never UPDATE or DELETE (ADR-0002 amendment, ADR-0006). Inserts are idempotent (`ON CONFLICT DO NOTHING`), so a store-and-forward queue replayed twice is harmless.
 
 Nothing in the historian references topics or display names. Historical queries join to the model at read time, so equipment renames and topic restructures never corrupt history.
 
@@ -415,4 +415,4 @@ Where the details live, by concern: contested decisions and their alternatives �
 
 ---
 
-*End of Architecture Overview v0.6.6. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.6.7. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

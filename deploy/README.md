@@ -625,6 +625,14 @@ The queue is limited to 10 GB (about 5 months at 100 values per second); set
 the oldest rows are dropped and counted in `droppedRows` — anything above 0
 needs attention.
 
+**How long history is kept.** Raw values are kept 1 year, 1-minute and
+1-hour averages (average, min, max) 5 years; data older than 7 days is
+stored compressed. To change it, set `OFM_RAW_RETENTION_DAYS` and/or
+`OFM_AGG_RETENTION_YEARS` in `.env` and run `docker compose up -d`; the
+migration log line `Historian retention: …` confirms it. Lengthening is
+always safe. **Shortening deletes the older data** at the next daily run and
+cannot be undone, so check food-safety and quality record requirements first.
+
 **Upgrading OFM** (after `git pull`): back up the model first (below), then
 add any new settings to `.env` and restart:
 ```powershell

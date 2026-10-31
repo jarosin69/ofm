@@ -364,7 +364,7 @@
           "editorMode": "code",
           "rawQuery": true,
           "format": "time_series",
-          "rawSql": "-- One chart per property. 'not good' marks uncertain or bad values (ADR-0003);\n-- the alarm lines come from the model, so they follow any change made in Mathesar.\nSELECT $__timeGroupAlias(m.ts, $__interval),\n       avg(m.value) AS \"value\",\n       CASE WHEN max(m.quality) > 0 THEN avg(m.value) END AS \"not good\",\n       min(p.alarm_low) AS \"alarm low\",\n       min(p.alarm_high) AS \"alarm high\"\nFROM hist.measurement m\nJOIN config.machine_property p ON p.id = m.property_id\nWHERE m.property_id = $property AND $__timeFilter(m.ts)\nGROUP BY 1\nORDER BY 1"
+          "rawSql": "-- One chart per property. Short ranges (under a minute per point) read raw\n-- rows; longer ranges read the 1-minute or 1-hour averages (step 2.5), so a\n-- month or a year loads quickly. From a minute per point, a point with no data\n-- stays empty, so the line breaks where nothing was recorded (e.g. the stack\n-- was off) instead of drawing across the gap; while OFM runs, the heartbeat\n-- stores every value at least once a minute (ADR-0007). 'min'/'max' are the\n-- extremes inside each point, drawn as a band; 'not good' marks uncertain or\n-- bad values (ADR-0003); the alarm lines come from the model.\nWITH src AS (\n  SELECT ts, value, value AS vmin, value AS vmax, quality\n  FROM hist.measurement\n  WHERE property_id = $property AND $__timeFilter(ts) AND $__interval_ms < 60000\n  UNION ALL\n  SELECT bucket, avg_value, min_value, max_value, worst_quality\n  FROM hist.measurement_1m\n  WHERE property_id = $property AND $__timeFilter(bucket) AND $__interval_ms >= 60000 AND $__interval_ms < 3600000\n  UNION ALL\n  SELECT bucket, avg_value, min_value, max_value, worst_quality\n  FROM hist.measurement_1h\n  WHERE property_id = $property AND $__timeFilter(bucket) AND $__interval_ms >= 3600000\n),\npoints AS (\n  SELECT time_bucket(make_interval(secs => $__interval_ms / 1000.0), ts) AS \"time\",\n         avg(value) AS value, min(vmin) AS vmin, max(vmax) AS vmax, max(quality) AS quality\n  FROM src\n  WHERE $__interval_ms < 60000\n  GROUP BY 1\n  UNION ALL\n  SELECT * FROM (\n    SELECT time_bucket_gapfill(make_interval(secs => $__interval_ms / 1000.0), ts, $__timeFrom()::timestamptz, $__timeTo()::timestamptz) AS \"time\",\n           avg(value) AS value, min(vmin) AS vmin, max(vmax) AS vmax, max(quality) AS quality\n    FROM src\n    GROUP BY 1\n  ) gapfilled\n  WHERE $__interval_ms >= 60000\n)\nSELECT points.\"time\",\n       points.value AS \"value\",\n       points.vmin AS \"min\",\n       points.vmax AS \"max\",\n       CASE WHEN points.quality > 0 THEN points.value END AS \"not good\",\n       p.alarm_low AS \"alarm low\",\n       p.alarm_high AS \"alarm high\"\nFROM points\nCROSS JOIN config.machine_property p\nWHERE p.id = $property\nORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -453,6 +453,68 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "max"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "rgba(160, 160, 160, 0.6)"
+                }
+              },
+              {
+                "id": "displayName",
+                "value": "min–max"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillBelowTo",
+                "value": "min"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 25
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "min"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "rgba(160, 160, 160, 0.6)"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            ]
           }
         ]
       },
@@ -466,7 +528,8 @@
           "mode": "multi",
           "sort": "none"
         }
-      }
+      },
+      "description": "Short ranges show raw values. From one minute per point, 1-minute or 1-hour averages, with a grey band from the lowest to the highest value inside each point; the line breaks where nothing was recorded. Orange: not good. Red dashed: alarm limits from the model."
     }
   ]
 }

@@ -111,6 +111,10 @@ const CASES = [
     { as: "ofm_config", sql: "SELECT 1 FROM audit.audit_log LIMIT 1", expect: NO_PERMISSION }] },
   { name: "ofm_mathesar (model editor) cannot read the historian", steps: [
     { as: "ofm_mathesar", sql: "SELECT 1 FROM hist.measurement LIMIT 1", expect: NO_PERMISSION }] },
+  { name: "ofm_reader can read the 1-minute and 1-hour averages; ofm_config cannot", steps: [
+    { as: "ofm_reader", sql: "SELECT count(*) FROM hist.measurement_1m WHERE false" },
+    { as: "ofm_reader", sql: "SELECT count(*) FROM hist.measurement_1h WHERE false" },
+    { as: "ofm_config", sql: "SELECT count(*) FROM hist.measurement_1h WHERE false", expect: NO_PERMISSION }] },
   { name: "ofm_reader can read model, historian and audit log", steps: [
     { as: "ofm_reader", sql: "SELECT (SELECT count(*) FROM config.vw_runtime_model) + (SELECT count(*) FROM hist.measurement WHERE false) + (SELECT count(*) FROM audit.audit_log WHERE false) AS n" }] },
   { name: "ofm_reader cannot change anything", steps: [
@@ -204,6 +208,23 @@ module.exports.run = async function (t) {
     } catch (e) { /* TimescaleDB missing: reported below */ }
     t.check("historian tables are TimescaleDB hypertables",
       hyper.includes("measurement") && hyper.includes("measurement_text"), "found: " + (hyper.join(", ") || "none"));
+
+    // --- housekeeping (step 2.5) ---------------------------------------------------------
+    let jobs = [];
+    try {
+      jobs = (await db.query(
+        "SELECT proc_name, hypertable_name, config FROM timescaledb_information.jobs WHERE hypertable_schema = 'hist'")).rows;
+    } catch (e) { /* TimescaleDB missing: reported below */ }
+    const job = (proc, table) => jobs.find(j => j.proc_name === proc && j.hypertable_name === table);
+    t.check("compression after 7 days on both historian tables",
+      ["measurement", "measurement_text"].every(x => job("policy_compression", x) && job("policy_compression", x).config.compress_after === "7 days"),
+      JSON.stringify(jobs.filter(j => j.proc_name === "policy_compression").map(j => j.hypertable_name)));
+    t.check("1-minute and 1-hour averages kept up to date (refresh policies)",
+      job("policy_refresh_continuous_aggregate", "measurement_1m") && job("policy_refresh_continuous_aggregate", "measurement_1h"));
+    const keep = x => { const j = job("policy_retention", x); return j ? j.config.drop_after : "none"; };
+    t.check("retention set: raw " + keep("measurement") + ", averages " + keep("measurement_1h"),
+      ["measurement", "measurement_text", "measurement_1m", "measurement_1h"].every(x => keep(x) !== "none"),
+      "missing - run docker compose up -d (the migration runner sets retention from .env)");
 
     const silent = (await db.query(
       "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
