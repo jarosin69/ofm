@@ -69,7 +69,10 @@ module.exports = {
         s7: builtIn("@st-one-io/nodes7"),           // Siemens S7 acquisition (ADR-0018)
         ethernetip: builtIn("st-ethernet-ip"),      // Rockwell EtherNet/IP acquisition (ADR-0018)
         pg: builtIn("pg"),                          // model change listener (ADR-0001); comes with node-red-contrib-postgresql
-        mqtt: builtIn("mqtt")                       // start-up clean-up of stale topics (ADR-0004); comes with Node-RED
+        mqtt: builtIn("mqtt"),                      // start-up clean-up of stale topics (ADR-0004); comes with Node-RED
+        fs: require("fs"),                          // historian store-and-forward queue (ADR-0002); Node.js itself
+        path: require("path"),
+        zlib: require("zlib")
     },
 
     editorTheme: {

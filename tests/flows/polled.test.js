@@ -1,6 +1,6 @@
 // Unit tests for "S7 and EtherNet/IP acquisition" (ADR-0018), run against a
 // stand-in S7 library, so no PLC is needed: values are sent only when they
-// change or are due again; an unreadable address is skipped with a warning
+// change, and all again after each reconnection; an unreadable address is published bad with a warning
 // and does not stop the others; a lost connection is reported offline, then
 // online again after reconnecting. Takes about 4 seconds (real timers).
 "use strict";
@@ -47,10 +47,10 @@ module.exports.run = async function (t) {
   const { plc, lib } = fakeS7();
   const fn = loadFunction(loadFlow(), "ofm_rt_poll", { global: { s7: lib } });
   const items = [
-    { address: "MR100", datatype: "float", maxIntervalMs: 350 },        // constant value
-    { address: "MI20", datatype: "int", maxIntervalMs: 60000 },         // counts up
-    { address: "DB99,REAL0", datatype: "float", maxIntervalMs: 60000 }, // does not exist in the PLC
-    { address: "bad address", datatype: "float", maxIntervalMs: 60000 } // malformed
+    { address: "MR100", datatype: "float" },        // constant value
+    { address: "MI20", datatype: "int" },           // counts up
+    { address: "DB99,REAL0", datatype: "float" },   // does not exist in the PLC
+    { address: "bad address", datatype: "float" }   // malformed
   ];
   const source = { name: "bench_s7", protocol: "s7", endpoint: "192.168.0.1",
                    settings: { rack: 0, slot: 1, pollIntervalMs: 100 }, items, signature: "v1" };
@@ -68,14 +68,16 @@ module.exports.run = async function (t) {
             JSON.stringify(status()));
     t.check("only S7 and EtherNet/IP sources are handled here (OPC UA ignored)",
             status().every(s => s.source === "bench_s7"));
-    t.check("unchanged value: sent at start, again only when due (max interval 350 ms)",
-            of("MR100").length === 2, of("MR100").length + " messages");
+    t.check("unchanged value: sent once after connecting, then not again (the heartbeat republishes)",
+            of("MR100").length === 1, of("MR100").length + " messages");
     t.check("changing value: sent on every poll that sees a change", of("MI20").length >= 4,
             of("MI20").length + " messages");
+    const read = values().filter(v => v.address === "MR100" || v.address === "MI20");
     t.check("PLC values carry gateway time (no device timestamp) and Good status",
-            values().every(v => v.sourceTimestamp === null && v.status === "Good" && Number.isFinite(v.receivedAt)));
-    t.check("unreadable and malformed addresses are skipped, with a warning each",
-            of("DB99,REAL0").length === 0 && of("bad address").length === 0 &&
+            read.every(v => v.sourceTimestamp === null && v.status === "Good" && Number.isFinite(v.receivedAt)));
+    t.check("unreadable and malformed addresses: a warning each, and published once as v null with a Bad status (step 2.4)",
+            of("DB99,REAL0").length === 1 && of("bad address").length === 1 &&
+            of("DB99,REAL0")[0].value === null && /^Bad/.test(of("DB99,REAL0")[0].status) &&
             fn.warnings.some(w => w.includes("DB99,REAL0")) && fn.warnings.some(w => w.includes("bad address")),
             JSON.stringify(fn.warnings));
 
@@ -93,6 +95,8 @@ module.exports.run = async function (t) {
     const last = status()[status().length - 1];
     t.check("reconnected: reported online again and values flow", last.online === true && values().length > before,
             JSON.stringify(status()));
+    t.check("after reconnecting, unchanged values are sent again (their quality is current again)",
+            of("MR100").length === 2, of("MR100").length + " messages");
 
     // Model reloads (step 2.1): only changed sources are reconnected.
     const connects = plc.connects;

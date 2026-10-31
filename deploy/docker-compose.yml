@@ -114,13 +114,16 @@ services:
       # is ever stored in a flow:
       OFM_RUNTIME_DB_PASSWORD: ${OFM_RUNTIME_DB_PASSWORD}
       OFM_MQTT_RUNTIME_PASSWORD: ${OFM_MQTT_RUNTIME_PASSWORD:?set OFM_MQTT_RUNTIME_PASSWORD in .env}
+      # Store-and-forward queue for the historian (ADR-0002): compressed batches
+      # in the nodered-data volume while the database cannot be reached.
+      OFM_SF_QUEUE_DIR: /data/sfqueue
+      OFM_SF_QUEUE_MAX_GB: ${OFM_SF_QUEUE_MAX_GB:-10}
     ports:
       - "127.0.0.1:1880:1880"
     volumes:
       - nodered-data:/data
       - ./nodered/settings.js:/data/settings.js:ro
       - ../flows:/ofm/flows        # the repository's flows folder; Deploy writes here
-      - sf-queue:/sfqueue          # store-and-forward disk queue (ADR-0002)
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -253,4 +256,3 @@ volumes:
   mathesar-static:
   mathesar-media:
   mathesar-pgdata:
-  sf-queue:

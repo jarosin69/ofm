@@ -554,8 +554,10 @@ wired to it the value sits near 0. Then do the checks in 5.6.
 4. Run the tests: `docker compose run --rm test live`. Every property of
    every PLC in the model is checked end to end.
 5. **Drill:** unplug the PLC's network cable. Within a few seconds the source
-   shows `"state":"offline"` with the error; plug it back in and it is
-   `online` again within about 15 seconds, values flowing.
+   shows `"state":"offline"` with the error, and every value of that PLC is
+   republished with its last value and `"q":"bad"` (orange in Grafana); plug
+   it back in and it is `online` again within about 15 seconds, values
+   flowing with `"q":"good"`.
 
 **If Mathesar will not accept the settings**, add the source row from
 PowerShell instead (as yourself, so the audit log shows you), e.g.:
@@ -612,6 +614,16 @@ docker compose restart nodered     # restart one service
 docker compose down                # stop all (volumes/data survive)
 docker compose down -v             # stop AND DELETE ALL DATA — careful
 ```
+
+**When the database is unavailable** (stopped, restarting, being upgraded),
+live values keep flowing to the broker and the historian rows wait in a
+compressed queue on disk; they are written when the database is back, so the
+history has no gap. `ofm/_system/historian/ofm_runtime_01` shows `buffering`
+with the number of rows waiting, and `writing` again when the queue is empty.
+The queue is limited to 10 GB (about 5 months at 100 values per second); set
+`OFM_SF_QUEUE_MAX_GB` in `.env` to change it. If the limit is ever reached,
+the oldest rows are dropped and counted in `droppedRows` — anything above 0
+needs attention.
 
 **Upgrading OFM** (after `git pull`): back up the model first (below), then
 add any new settings to `.env` and restart:

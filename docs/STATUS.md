@@ -2,9 +2,9 @@
 
 *Updated: 2026-10-31. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2, step 2.2 done — `_meta` topics and start-up
-clean-up of stale topics (checks M1–M3 passed).** Next: step 2.3, deadband,
-heartbeat republish and `bad` quality on source loss.
+**▶ We are here: Phase 2, step 2.4 — store-and-forward historian writer, and
+refused addresses published `bad`; S2 passed; correction for S1 delivered
+(the historian now stores "bad, no value"), S1 and S3 to check.** Next: step 2.5, historian housekeeping (decision: retention).
 
 ## The plan in one view
 
@@ -16,7 +16,7 @@ publishing it as open source, runs alongside.
 ```
 Stage A  Foundations ............................. ✅ done
 Stage B  Phase 1   Live data path ................ ✅ v0.1.1 (2026-10-30)
-         Phase 2   Robust and editable ........... ▶ step 2.3 of 8
+         Phase 2   Robust and editable ........... ▶ step 2.4 of 9
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
          Phase 3b  OEE and efficiency KPIs ....... ⬜
@@ -89,21 +89,23 @@ OPC UA. Guide: deploy README section 5.
 ## Stage B — Phase 2: Robust and editable ▶ (release v0.2)
 
 Goal: ready for the plant pilot — model changes without restarts, honest data
-quality, no lost history, encrypted traffic. Decisions still open, with their
-defaults (assumptions until decided): disk queue limit 2 GB, oldest dropped
-with an alarm (2.4); raw data 90 days, 1-min/1-h averages 5 years — check
-food-safety retention with QA (2.5); MQTT encrypted, PostgreSQL not yet (2.6).
+quality, no lost history, encrypted traffic. Decided: disk queue limit 10 GB,
+compressed, configurable in `.env`, oldest dropped and reported when full
+(2.4, 2026-10-31). Still open, with their defaults (assumptions until
+decided): raw data 90 days, 1-min/1-h averages 5 years — check food-safety
+retention with QA (2.5); MQTT encrypted, PostgreSQL not yet (2.7).
 
 | Step | What | Status |
 |---|---|---|
 | 2.1 | Model edits reach the runtime within a second, without restart: database triggers notify (migration 009), the runtime listens, reloads, clears topics and sources that no longer exist, and reconnects only changed sources; Grafana's Property list re-reads the model | ✅ 2026-10-30: on the laptop, tests and checks R1–R5 passed |
 | 2.2 | `_meta` topics: each value's unit, limits, description and property ID published next to it, republished when they change; at start-up, stale retained topics left by renames while the runtime was stopped are cleared | ✅ 2026-10-31: on the laptop, tests and checks M1–M3 passed |
-| 2.3 | Deadband and maximum publish interval; `bad` quality and source status on connection loss (ADR-0007) | ⬜ |
-| 2.4 | Batched historian writer with store-and-forward disk queue (ADR-0002) | ⬜ |
+| 2.3 | Deadband (opt-in per property; 0 = every value, for SPC) and heartbeat republish at the maximum publish interval; all values of a lost source republished `bad` at once — for OPC UA, S7 and EtherNet/IP alike (ADR-0007) | ✅ 2026-10-31: on the laptop, H1–H3 passed |
+| 2.4 | Batched historian writer with compressed store-and-forward disk queue (10 GB, `.env`), status on `ofm/_system/historian/…`; addresses a PLC refuses published `v: null, q: bad` (ADR-0002, ADR-0007) | ▶ delivered 2026-10-31; Jarek checks |
 | 2.5 | Historian housekeeping: compression, retention, 1-minute and 1-hour aggregates | ⬜ |
-| 2.6 | Broker encryption (TLS) | ⬜ |
-| 2.7 | Offline install bundle: all images and the repository for a network without internet | ⬜ |
-| 2.8 | Load test (2,000 values/s) and failure drills; release `v0.2` | ⬜ |
+| 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3) | ⬜ |
+| 2.7 | Broker encryption (TLS) | ⬜ |
+| 2.8 | Offline install bundle: all images and the repository for a network without internet | ⬜ |
+| 2.9 | Load test (2,000 values/s) and failure drills; release `v0.2` | ⬜ |
 
 ## Stage C — Plant pilot ⬜ (after Phase 2)
 
@@ -194,8 +196,11 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 2.3: deadband, heartbeat republish (max publish interval) and `bad`
-   quality on source loss, for OPC UA, S7 and EtherNet/IP alike (ADR-0007).
+1. Jarek installs the step 2.4 correction (migration 010), repeats S1 and
+   runs S3 (tests/README).
+2. Step 2.5: historian housekeeping — compression, 1-min/1-h averages,
+   retention. Decision needed: raw data retention (default 90 days; check
+   food-safety record requirements with QA).
 
 ## Open questions
 
@@ -269,8 +274,27 @@ Numbers are stable; answered questions are removed rather than renumbered.
   data stopped and resumed a few seconds after reconnecting. Corrections from
   the bench run: area and line added to the table order (README 5.1); the
   CompactLogix rungs given in the rung editor's text format (README 5.3).
-- Polled sources: when a PLC is lost, its values keep their last quality
-  until Phase 2 step 2.3, as for OPC UA.
+- Step 2.3 was tested on the local replica: a static value republished at
+  its interval (5 s in the test) with gateway time; with the S7 stand-in
+  stopped, all its values were republished `bad` at once and repeated `bad`
+  while it was out; restarted, values returned `good` within one poll.
+- Step 2.4 was tested on the local replica: with the database stopped for
+  32 s, 6 compressed queue files, status `buffering`; after the restart the
+  queue drained within one tick and the historian had one row per second for
+  every second of the outage (no gap); refused S7 and EtherNet/IP addresses
+  published `v: null, q: bad`. Found by Jarek in S1: Grafana still showed the
+  last good value, because the historian could not store a row without a
+  value; corrected with migration 010 (NULL value allowed with quality bad)
+  and a `stale` quality in the dashboard's latest-values table. The queue moved from the unused `sf-queue`
+  volume to `/data/sfqueue` in the `nodered-data` volume (owned by the
+  Node-RED user); the old volume can be removed with
+  `docker volume rm ofm_sf-queue`.
+- A runtime that **starts** while the database is down acquires nothing until
+  the database is back, because it loads the model from the database. A
+  copy of the last model on disk removes this: step 2.6.
+- After a short OPC UA outage in which the session survives, a value that has
+  not changed is not resent by the server; it returns to `good` with the next
+  heartbeat (within its max publish interval), not immediately.
 - Step 2.1 was tested on the local replica with OPC UA, S7 and EtherNet/IP
   stand-ins: reload 0.3–0.4 s after a committed change; a renamed property's
   old topic cleared; scaling changes applied without reconnecting; an address

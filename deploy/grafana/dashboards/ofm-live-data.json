@@ -230,7 +230,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "ofm-historian"
       },
-      "description": "The most recent stored value of every property in the model. 'Age' grows when values stop arriving.",
+      "description": "Newest historian row of every property. Quality 'stale': nothing stored for more than twice the property's max publish interval (ADR-0007) - the source or the runtime is not delivering.",
       "gridPos": {
         "h": 7,
         "w": 24,
@@ -247,7 +247,7 @@
           "editorMode": "code",
           "rawQuery": true,
           "format": "table",
-          "rawSql": "SELECT p.display_name AS \"Property\",\n       substring(p.topic from '([^/]+/[^/]+)$') AS \"Machine / property\",\n       m.value AS \"Value\",\n       u.symbol AS \"Unit\",\n       (ARRAY['good', 'uncertain', 'bad'])[m.quality + 1] AS \"Quality\",\n       m.ts AS \"Time\",\n       extract(epoch FROM now() - m.ts)::int AS \"Age (s)\",\n       (ARRAY['device', 'gateway'])[m.ts_source + 1] AS \"Time source\"\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nJOIN LATERAL (SELECT * FROM hist.measurement h\n              WHERE h.property_id = p.property_id\n              ORDER BY h.ts DESC LIMIT 1) m ON true\nWHERE NOT p.is_retired\nORDER BY p.topic"
+          "rawSql": "SELECT p.display_name AS \"Property\",\n       substring(p.topic from '([^/]+/[^/]+)$') AS \"Machine / property\",\n       m.value AS \"Value\",\n       u.symbol AS \"Unit\",\n       CASE WHEN extract(epoch FROM now() - m.ts) * 1000 > 2 * mp.max_publish_interval_ms THEN 'stale'\n            ELSE (ARRAY['good', 'uncertain', 'bad'])[m.quality + 1] END AS \"Quality\",\n       m.ts AS \"Time\",\n       extract(epoch FROM now() - m.ts)::int AS \"Age (s)\",\n       (ARRAY['device', 'gateway'])[m.ts_source + 1] AS \"Time source\"\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nJOIN LATERAL (SELECT * FROM hist.measurement h\n              WHERE h.property_id = p.property_id\n              ORDER BY h.ts DESC LIMIT 1) m ON true\nWHERE NOT p.is_retired\nORDER BY p.topic"
         }
       ],
       "fieldConfig": {
@@ -291,6 +291,10 @@
                       "bad": {
                         "color": "red",
                         "index": 2
+                      },
+                      "stale": {
+                        "color": "purple",
+                        "index": 3
                       }
                     }
                   }

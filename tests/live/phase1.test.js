@@ -98,6 +98,9 @@ module.exports.run = async function (t) {
       const st = payload("ofm/_system/sources/" + s);
       t.check("source " + s + " reports online", st && st.state === "online", JSON.stringify(st));
     }
+    const hist = payload("ofm/_system/historian/" + runtime);
+    t.check("historian writer is writing, nothing queued or dropped (step 2.4)",
+            hist && hist.state === "writing" && hist.queueDepth === 0 && hist.droppedRows === 0, JSON.stringify(hist));
     const cache = payload("ofm/_system/cache/" + runtime);
     t.check("runtime loaded the whole model (" + model.length + " rows)",
             cache && cache.rows === model.length,
@@ -110,7 +113,9 @@ module.exports.run = async function (t) {
       let err = null;
       if (!v) err = "no value on the UNS - wrong address? See the runtime's warnings: docker compose logs nodered";
       else if (now - v.ts > limit) err = "last value is " + Math.round((now - v.ts) / 1000) + " s old (limit " + limit / 1000 + " s)";
-      else if (v.q === "bad") err = "quality bad";
+      else if (v.q === "bad") err = v.v === null
+        ? "v null, q bad - address refused by the PLC? See the runtime's warnings: docker compose logs nodered"
+        : "quality bad - source offline?";
       const info = v ? " (q=" + v.q + ", " + e.live + " update(s) in " + stack.listenSeconds + " s)" : "";
       t.check(p.topic + ": current value on the UNS" + (err ? "" : info), !err, err);
       const m = payload(p.topic + "/_meta");

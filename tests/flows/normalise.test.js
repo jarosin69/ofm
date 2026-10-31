@@ -12,7 +12,8 @@ module.exports.run = async function (t) {
         "src|T": { propertyId: 7, topic: "a/b/c/d/m/temp", datatype: "float", low: 0, high: 50, historised: true, factor: 0.1, offset: 0 },
         "src|B": { propertyId: 8, topic: "a/b/c/d/m/run", datatype: "bool", historised: true, factor: 1, offset: 0 },
         "src|N": { propertyId: 9, topic: "a/b/c/d/m/count", datatype: "int", historised: false, factor: 1, offset: 0 },
-        "src|S": { propertyId: 10, topic: "a/b/c/d/m/recipe", datatype: "string", historised: true, factor: 1, offset: 0 } } }
+        "src|S": { propertyId: 10, topic: "a/b/c/d/m/recipe", datatype: "string", historised: true, factor: 1, offset: 0 },
+        "src|D": { propertyId: 11, topic: "a/b/c/d/m/level", datatype: "float", historised: true, factor: 1, offset: 0, deadband: 0.5 } } }
     }
   });
   const now = Date.UTC(2026, 9, 25, 11, 0, 0);
@@ -39,8 +40,8 @@ module.exports.run = async function (t) {
     o => o[0].payload.q === "uncertain");
   await c("OPC UA Uncertain status kept", { address: "T", value: 100, sourceTimestamp: now + 1, status: "UncertainLastUsableValue" },
     o => o[0].payload.q === "uncertain");
-  await c("Bad status, no value -> v null, bad, not historised", { address: "T", value: null, sourceTimestamp: now + 2, status: "BadNoCommunication" },
-    o => o[0].payload.v === null && o[0].payload.q === "bad" && o[1] === null);
+  await c("Bad status, no value -> v null, bad; historian row with NULL and quality bad", { address: "T", value: null, sourceTimestamp: now + 2, status: "BadNoCommunication" },
+    o => o[0].payload.v === null && o[0].payload.q === "bad" && o[1].params[2] === null && o[1].params[3] === 2);
   await c("boolean -> true, stored as 1", { address: "B", value: true, sourceTimestamp: now },
     o => o[0].payload.v === true && o[1].params[2] === 1);
   await c("64-bit counter [hi,lo] -> number", { address: "N", value: [1, 5], sourceTimestamp: now },
@@ -53,4 +54,22 @@ module.exports.run = async function (t) {
     o => o[0] === null && o[3][0].topic === "ofm/_unmapped/src/ns=3;s=X_Y_1" && o[3][0].payload.addr === "ns=3;s=X/Y#1" && o[3][1].payload.unmapped === 1);
   await c("same unknown address again -> no new cache status", { address: "ns=3;s=X/Y#1", value: 2, sourceTimestamp: now },
     o => o[3].length === 1);
+
+  // Deadband 0.5 (ADR-0007, step 2.3)
+  await c("deadband: first value published", { address: "D", value: 10, sourceTimestamp: now + 10 },
+    o => o[0].payload.v === 10 && o[1].params[2] === 10);
+  await c("deadband: change of 0.3 not published (UNS or historian)", { address: "D", value: 10.3, sourceTimestamp: now + 11 },
+    o => o.every(x => x === null));
+  await c("deadband: measured from the last published value (10.4 is 0.4 from 10)", { address: "D", value: 10.4, sourceTimestamp: now + 12 },
+    o => o.every(x => x === null));
+  await c("deadband: change of 0.6 published", { address: "D", value: 10.6, sourceTimestamp: now + 13 },
+    o => o[0].payload.v === 10.6);
+  await c("deadband: quality change published even within the deadband", { address: "D", value: 10.7, sourceTimestamp: now + 14, status: "UncertainLastUsableValue" },
+    o => o[0].payload.q === "uncertain");
+  t.check("latest value kept for the heartbeat even when not published",
+    fn.global.ofm_values[11].latest.v === 10.7 && fn.global.ofm_values[11].sent.v === 10.7);
+  await c("deadband 0: every reported value published, even if equal", { address: "T", value: 100, sourceTimestamp: now + 20 },
+    o => o[0] !== null);
+  await c("deadband 0: same value again still published", { address: "T", value: 100, sourceTimestamp: now + 21 },
+    o => o[0] !== null);
 };

@@ -114,6 +114,28 @@ a matching `_meta` for every property. By hand:
 | M2 | In Mathesar change an `alarm_high` | Within about a second, only that property's `_meta` line is republished with the new limit |
 | M3 | `docker compose stop nodered`; in Mathesar rename a property; `docker compose start nodered` | After start-up, the old value and `_meta` topics are gone; the Node-RED log shows `start-up clean-up: cleared 2 stale topic(s)`; values arrive on the new name |
 
+**Step 2.3, deadband, heartbeat, `bad` on loss** (ADR-0007). Automated: the
+`flows` suite (deadband rules in `normalise`, the `heartbeat` file, polled
+sources sending only changes). By hand:
+
+| # | Do | Expected |
+|---|---|---|
+| H1 | In Mathesar set `deadband` of `chocolate_temp` to `1`, watch it; then back to `0.1` | With 1, a new value only when it has moved by 1 °C or more (far fewer lines); with 0.1, frequent again |
+| H2 | Watch a value that does not change — e.g. on the S7-1200 add a property mapped to an unused memory word, address `MI200` (reads 0) | It is republished every 60 s (its `max_publish_interval_ms`) with the current `ts` and `"tss":"gateway"`; a new historian row each time |
+| H3 | Unplug a PLC's network cable for 30 s, then plug it back in | Within seconds all its values are republished with their last value and `"q":"bad"`, and repeated `bad` every 60 s while it is out; Grafana shows the orange "not good" points from that moment; back online, values return with `"q":"good"` |
+
+**Step 2.4, no lost history; refused addresses visible.** Automated: the
+`flows` suite (`writer`: batching, disk queue, size limit, refused rows, save
+on stop; `polled`: refused addresses published bad); the `live` suite checks
+that the writer is `writing` with nothing queued or dropped. By hand, with
+`ofm/_system/historian/#` watched (README step 12b command with that topic):
+
+| # | Do | Expected |
+|---|---|---|
+| S1 | In Mathesar set the address of a bench tag to one the PLC does not have (S7: `DB99,REAL0`; CompactLogix: `No_Such_Tag`) | Within about a second the property shows `"v":null,"q":"bad"` on the broker, and in Grafana's *Latest values* an empty value with quality `bad`; the log names the address; set it back and good values return |
+| S2 | `docker compose stop timescaledb`, wait 2 minutes, `docker compose start timescaledb` | `"state":"buffering"` with a growing `queueDepth`; live values keep flowing; after the start, `"state":"writing"`, `queueDepth` 0 — and Grafana's charts for those 2 minutes have **no gap** |
+| S3 | During S2's outage, also `docker compose restart nodered` | Rows up to the restart are kept (saved to the queue on stop, written later). After the restart, no values at all until the database is back: the runtime needs the model to start (known limitation, see STATUS) |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

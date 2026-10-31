@@ -91,6 +91,9 @@ const CASES = [
     { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES ('2026-01-01T00:00:00Z', $temp, 1, 0, 0) ON CONFLICT DO NOTHING" },
     { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES ('2026-01-01T00:00:00Z', $temp, 2, 0, 0) ON CONFLICT DO NOTHING" },
     { as: "ofm_reader", sql: "SELECT value FROM hist.measurement WHERE property_id = $temp", expect: r => r.length === 1 && r[0].value === 1 }] },
+  { name: "historian: a missing value is stored only with quality bad (migration 010)", steps: [
+    { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES (now(), $temp, NULL, 2, 1)" },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES (now() + interval '1 s', $temp, NULL, 0, 1)", expect: REFUSED_BY_RULE }] },
   { name: "historian: unknown quality code is refused", steps: [
     { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES (now(), $temp, 1, 3, 0)", expect: REFUSED_BY_RULE }] },
 

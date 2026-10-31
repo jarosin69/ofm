@@ -96,3 +96,10 @@ the controller answers with current values.
   for EtherNet/IP): reading, report by exception, wrong addresses skipped,
   connection loss and recovery. Real controllers: Jarek's bench tests, step 1.7.
 - Related: ADR-0003, ADR-0007, ADR-0016, ADR-0017.
+
+## Amendments
+
+- 2026-10-31: Republishing unchanged values at `max_publish_interval_ms`
+  (decision 4) moved to the runtime's central heartbeat (ADR-0007 amendment),
+  the same for every protocol. The polling component now sends a value only
+  when it changes, and every value after each (re)connection.

@@ -83,3 +83,28 @@ of its own.
   `ofm/_system/runtime/{runtime}` therefore carries no `ts`; consumers use the
   time they received it. `online` always carries `ts`. Payloads:
   `schemas/system-runtime.schema.json` and `schemas/system-source.schema.json`.
+- 2026-10-31: **As built (step 2.3), for every protocol alike.**
+  *Deadband:* absolute, in engineering units, for numbers only; a value is
+  published when it differs by at least `deadband` from the last published
+  value; a change of quality is always published; `deadband` 0 (the default)
+  publishes every value the source reports, which is what SPC properties
+  need (ADR-0011). *Heartbeat:* checked every second; the republished value
+  carries the current time and `tss: "gateway"`, because the gateway vouches
+  that it is still current; republished rows go to the historian too.
+  *Loss:* on a source's offline report, every property of that source is
+  republished at once with its last value, or `v: null` if it never had one;
+  while the source stays offline, heartbeats repeat `bad`; back online, fresh
+  values from acquisition restore quality (polled sources send all values
+  after every reconnection). Machine `unknown` states follow with Phase 3a.
+- 2026-10-31: **Refused addresses (step 2.4).** An address the source
+  refuses when the runtime connects (S7: no such data block or offset;
+  EtherNet/IP: no such tag; OPC UA: unknown node or namespace) is published as
+  `v: null, q: "bad"` with a warning in the runtime log, and repeated by the
+  heartbeat, so a configuration error is visible on the UNS and in Grafana,
+  not only in the log.
+- 2026-10-31: **"Bad, no value" in the historian (migration 010).** A
+  `v: null, q: "bad"` value is stored as a row with `value` NULL and quality
+  bad (allowed only together), so trends and the latest-values table show
+  the loss or refusal instead of the last good value. The *OFM · Live data*
+  table also shows quality `stale` when a property's newest row is older than
+  twice its `max_publish_interval_ms`.

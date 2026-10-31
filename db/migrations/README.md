@@ -50,3 +50,4 @@ docker compose run --rm migrate adduser jarek   # personal model-editing login
 | `007-reserve-foodsafety-topic.sql` | Machine name `foodsafety` reserved for food safety check topics (ADR-0015) |
 | `008-polled-plc-sources.sql` | Protocol `ethernetip`; S7 sources must state rack and slot; poll interval at least 100 ms (ADR-0018) |
 | `009-model-change-notify.sql` | Every configuration table notifies the runtime of changes (channel `model_changed`); `audit.fn_enable` attaches it to future tables (ADR-0001, step 2.1) |
+| `010-historian-bad-without-value.sql` | Historian rows may have no value, but only with quality bad (ADR-0007) |

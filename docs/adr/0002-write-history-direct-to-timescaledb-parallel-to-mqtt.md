@@ -93,3 +93,18 @@ a database transaction is the correct tool for the second.
   instance on `ofm/_system/historian/{runtime}`, together with the writer state
   and the count of rows dropped by the disk-full policy. Payload:
   `schemas/system-historian.schema.json`.
+- 2026-10-31: **Store-and-forward, as built (step 2.4).** One writer node
+  takes every historian row (values and heartbeat/loss rows). Batches: every
+  second, or at once at 500 rows, one multi-row `INSERT … SELECT FROM unnest`
+  per table, `ON CONFLICT DO NOTHING`. Database unreachable: the batch is
+  written as a gzip-compressed JSON file to the queue folder
+  (`/data/sfqueue` in the `nodered-data` volume); later batches queue behind
+  it; the queue is written oldest first, at most 2 s per tick, when the
+  database answers again (retry after 1, 2, 5, then every 10 s). Size limit
+  `OFM_SF_QUEUE_MAX_GB` in `.env`, default **10 GB** (decided by Jarek; at
+  100 values/s about 5 months, at 2,000 values/s about 8 days, compressed);
+  when full, the oldest files are dropped and counted in `droppedRows`. Rows
+  the database refuses as data (SQLSTATE class 22/23) are dropped one by one
+  with a warning, so they cannot block the queue. On stop or redeploy, rows
+  still in memory are saved to the queue; only a crash can lose them (at most
+  about one second).
