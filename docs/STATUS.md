@@ -2,10 +2,9 @@
 
 *Updated: 2026-10-31. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2, step 2.5 — historian housekeeping (compression,
-1-min/1-h averages, retention 1 year raw / 5 years averages); K1–K3 passed;
-chart correction delivered (gaps shown as breaks, min–max as a band), Jarek
-checks K2 again.** Next: step 2.6, runtime starts without the database.
+**▶ We are here: Phase 2, step 2.6 — the runtime starts from a saved copy
+of the model when the database is down; delivered, Jarek checks B1–B3.**
+Next: step 2.7, encryption (TLS).
 
 ## The plan in one view
 
@@ -17,7 +16,7 @@ publishing it as open source, runs alongside.
 ```
 Stage A  Foundations ............................. ✅ done
 Stage B  Phase 1   Live data path ................ ✅ v0.1.1 (2026-10-30)
-         Phase 2   Robust and editable ........... ▶ step 2.5 of 9
+         Phase 2   Robust and editable ........... ▶ step 2.6 of 9
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
          Phase 3b  OEE and efficiency KPIs ....... ⬜
@@ -103,8 +102,8 @@ decided): MQTT encrypted, PostgreSQL not yet (2.7).
 | 2.2 | `_meta` topics: each value's unit, limits, description and property ID published next to it, republished when they change; at start-up, stale retained topics left by renames while the runtime was stopped are cleared | ✅ 2026-10-31: on the laptop, tests and checks M1–M3 passed |
 | 2.3 | Deadband (opt-in per property; 0 = every value, for SPC) and heartbeat republish at the maximum publish interval; all values of a lost source republished `bad` at once — for OPC UA, S7 and EtherNet/IP alike (ADR-0007) | ✅ 2026-10-31: on the laptop, H1–H3 passed |
 | 2.4 | Batched historian writer with compressed store-and-forward disk queue (10 GB, `.env`), status on `ofm/_system/historian/…`; addresses a PLC refuses published `v: null, q: bad` (ADR-0002, ADR-0007) | ✅ 2026-10-31: on the laptop, S1–S3 passed (S1 after migration 010) |
-| 2.5 | Historian housekeeping: compression after 7 days; 1-minute and 1-hour averages (avg, min, max, worst quality); retention from `.env` (raw 1 year, averages 5 years); long-range charts read the averages (migration 011) | ▶ delivered 2026-10-31; Jarek checks |
-| 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3) | ⬜ |
+| 2.5 | Historian housekeeping: compression after 7 days; 1-minute and 1-hour averages (avg, min, max, worst quality); retention from `.env` (raw 1 year, averages 5 years); long-range charts read the averages (migration 011) | ✅ 2026-10-31: on the laptop, K1–K3 passed, all 227 checks pass |
+| 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3; ADR-0001 amendment) | ▶ delivered 2026-10-31; Jarek checks B1–B3 |
 | 2.7 | Broker encryption (TLS) | ⬜ |
 | 2.8 | Offline install bundle: all images and the repository for a network without internet | ⬜ |
 | 2.9 | Load test (2,000 values/s) and failure drills; release `v0.2` | ⬜ |
@@ -198,9 +197,9 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek installs step 2.5, runs the tests and checks K1–K3 (tests/README).
-2. Step 2.6: the runtime keeps a copy of the last model on disk and starts
-   from it when the database cannot be reached.
+1. Jarek installs step 2.6, runs the tests and checks B1–B3 (tests/README).
+2. Step 2.7: encryption (TLS) — decide first which links (broker, database)
+   and with which certificates.
 
 ## Open questions
 
@@ -311,9 +310,15 @@ Numbers are stable; answered questions are removed rather than renumbered.
 - Rows written late by store-and-forward appear in the averages at the next
   refresh if they are less than 30 days old; older late rows need a manual
   `CALL refresh_continuous_aggregate(…)`.
-- A runtime that **starts** while the database is down acquires nothing until
-  the database is back, because it loads the model from the database. A
-  copy of the last model on disk removes this: step 2.6.
+- Step 2.6 was tested on the local replica: with the database stopped and
+  Node-RED restarted, the runtime started from the saved copy 4 s after the
+  restart (cache `trigger: disk`, all three sources online, values flowing,
+  historian `buffering`); with the database started again, the model was
+  reloaded from it within 10 s (`trigger: startup`), the queue was written
+  and the minute of the outage was complete in the historian; the copy was
+  saved again. A brand-new runtime (no copy yet) still needs the database for
+  its first start, and `docker compose up` waits for the database on purpose
+  (migrations first); a Node-RED or server restart does not.
 - After a short OPC UA outage in which the session survives, a value that has
   not changed is not resent by the server; it returns to `good` with the next
   heartbeat (within its max publish interval), not immediately.

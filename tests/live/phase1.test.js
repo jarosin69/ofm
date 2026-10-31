@@ -110,6 +110,12 @@ module.exports.run = async function (t) {
     t.check("runtime loaded the whole model (" + model.length + " rows)",
             cache && cache.rows === model.length,
             cache ? "cache status says " + cache.rows + " rows - is the runtime's 'model change listener' node green?" : "no cache status");
+    t.check("runtime runs on the database's model, not on its saved copy (step 2.6)",
+            cache && cache.trigger !== "disk",
+            cache && cache.trigger === "disk"
+              ? "it started from the copy saved " + new Date(cache.savedAt).toISOString() +
+                " and has not reached the database since - see docker compose logs nodered"
+              : "no cache status");
 
     for (const p of model) {
       const v = payload(p.topic);

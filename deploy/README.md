@@ -625,6 +625,18 @@ The queue is limited to 10 GB (about 5 months at 100 values per second); set
 the oldest rows are dropped and counted in `droppedRows` — anything above 0
 needs attention.
 
+If Node-RED **restarts while the database is down** (e.g. the server was
+restarted and the database does not come up), the runtime starts from the
+copy of the model it saved at its last successful load, and values flow
+again within seconds. `ofm/_system/cache/ofm_runtime_01` then shows
+`"trigger":"disk"` and `savedAt`, the time of that copy; the log says
+`starting from the copy saved …`. Model edits made after that time are not
+in use until the database answers; the runtime retries every 10 s and then
+switches to the database's model by itself (`"trigger":"startup"`). The copy
+is `/data/model/ofm_runtime_01.json` in the Node-RED volume; it is rewritten
+after every model change, and needs no care. Only a brand-new runtime, which
+has never loaded a model, needs the database to start.
+
 **How long history is kept.** Raw values are kept 1 year, 1-minute and
 1-hour averages (average, min, max) 5 years; data older than 7 days is
 stored compressed. To change it, set `OFM_RAW_RETENTION_DAYS` and/or

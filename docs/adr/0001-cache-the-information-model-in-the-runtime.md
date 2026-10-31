@@ -105,3 +105,24 @@ completely different change rates and must not share a hot path.
   `(source, address)` and by topic, plus by property ID; a by-machine index
   follows with machine states (Phase 3a). Acquisition keeps connections whose
   source signature (protocol, endpoint, settings, addresses) is unchanged.
+- 2026-10-31: **Start without the database (step 2.6).** Consequence
+  "PostgreSQL can be restarted … without interrupting live data" held only
+  for a runtime already running: a runtime that started while the database
+  was down acquired nothing (found in check S3). Now every model loaded from
+  the database is also saved, as returned by `vw_runtime_model`, to
+  `<OFM_MODEL_COPY_DIR>/<runtime>.json` (`/data/model` in the Node-RED
+  volume; written to a temporary file, flushed and renamed, so never half
+  written). If the start-up load fails and the runtime has no model yet, it
+  starts from that copy: cache status `trigger: "disk"` with `savedAt`
+  (schemas/system-cache), a warning in the log, and the database retried
+  every 10 s; its model then replaces the copy like any reload. A copy that
+  is missing, damaged or belongs to another runtime is not used (the runtime
+  waits for the database, as before). The start-up clean-up of stale topics
+  (ADR-0004) runs only on a load from the database, because the copy may be
+  out of date. A copy is never used to replace a model already running.
+  Not covered: the very first start of a runtime, and `docker compose up`,
+  which still waits for the database on purpose so migrations run first;
+  covered: a restart of Node-RED or of its container, and a server restart,
+  where Docker starts the containers itself without waiting. The copy holds
+  exactly what `vw_runtime_model` returns, which has no passwords; it lives
+  only in the Node-RED volume, never in the repository.

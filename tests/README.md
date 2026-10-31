@@ -24,7 +24,7 @@ same command can later run automatically on every commit (CI).
 | Suite | Checks | Needs the stack |
 |---|---|---|
 | `schemas` | Every payload schema in `schemas/` is valid JSON Schema 2020-12; every example in `tests/schemas/<schema>/valid/` passes and every one in `invalid/` is rejected | no |
-| `flows` | The function code in `flows/ofm-runtime.json`, run outside Node-RED: scaling, validation and timestamp rules (ADR-0003), quarantine, model cache; S7 and EtherNet/IP polling against a stand-in PLC library (report by exception, wrong addresses skipped, connection loss and recovery); every payload the flow can produce matches its schema and topics follow the topic standard | no |
+| `flows` | The function code in `flows/ofm-runtime.json`, run outside Node-RED: scaling, validation and timestamp rules (ADR-0003), quarantine, model cache; S7 and EtherNet/IP polling against a stand-in PLC library (report by exception, wrong addresses skipped, connection loss and recovery); heartbeat, historian writer and its disk queue; the saved model copy and the start without the database; every payload the flow can produce matches its schema and topics follow the topic standard | no |
 | `database` | All migrations applied and unedited; UTC; hypertables; the model refuses bad names, reserved names, missing units, duplicate addresses; `vw_runtime_model` is right; every role can do exactly what Overview §13 says and no more; every model change is audited | yes |
 | `live` | The automated part of the Phase 1 exit check (below): runtime and sources online, the whole model loaded, a current value on the UNS for every property, every UNS message valid, recent rows in the historian, dashboard and Grafana datasource working, editors reachable | yes, with data flowing |
 
@@ -134,7 +134,7 @@ that the writer is `writing` with nothing queued or dropped. By hand, with
 |---|---|---|
 | S1 | In Mathesar set the address of a bench tag to one the PLC does not have (S7: `DB99,REAL0`; CompactLogix: `No_Such_Tag`) | Within about a second the property shows `"v":null,"q":"bad"` on the broker, and in Grafana's *Latest values* an empty value with quality `bad`; the log names the address; set it back and good values return |
 | S2 | `docker compose stop timescaledb`, wait 2 minutes, `docker compose start timescaledb` | `"state":"buffering"` with a growing `queueDepth`; live values keep flowing; after the start, `"state":"writing"`, `queueDepth` 0 — and Grafana's charts for those 2 minutes have **no gap** |
-| S3 | During S2's outage, also `docker compose restart nodered` | Rows up to the restart are kept (saved to the queue on stop, written later). After the restart, no values at all until the database is back: the runtime needs the model to start (known limitation, see STATUS) |
+| S3 | During S2's outage, also `docker compose restart nodered` | Rows up to the restart are kept (saved to the queue on stop, written later). From step 2.6 values return within seconds of the restart (check B1); before it, not until the database was back |
 
 **Step 2.5, historian housekeeping.** Automated: the `database` suite checks
 compression, refresh and retention policies and who may read the averages.
@@ -145,6 +145,20 @@ By hand:
 | K1 | `docker compose up -d`, then `docker compose logs migrate` | Last line: `Historian retention: raw data 365 days, 1-minute and 1-hour averages 5 years` |
 | K2 | In Grafana set the time range to *Last 7 days* (or longer) | Charts load quickly; the blue line is the average inside a light grey band from the lowest to the highest value; lines break where nothing was recorded (e.g. nights with the stack off); *Last 15 minutes* shows raw values again. The `live` suite checks that Grafana serves the dashboard file of the repository |
 | K3 | List the housekeeping jobs: `docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "SELECT job_id, proc_name, hypertable_name, config FROM timescaledb_information.jobs WHERE hypertable_schema = 'hist' ORDER BY 1"` | Two compression jobs (7 days), two refresh jobs, four retention jobs (365 days, 5 years) |
+
+**Step 2.6, start without the database** (ADR-0001). Automated: the `flows`
+suite (`modelcopy`: the copy is saved after every load from the database;
+a restart without the database starts from it; a missing, damaged or foreign
+copy is not used; the database's model replaces the copy when it answers);
+the `live` suite checks that the runtime is not still running on the copy.
+By hand, with `ofm/_system/#` watched (README step 12b command with that
+topic):
+
+| # | Do (from `C:\ofm\deploy`) | Expected |
+|---|---|---|
+| B1 | `docker compose stop timescaledb`, then `docker compose restart nodered`; wait 30 s | Within about 10 s of the restart: `ofm/_system/cache/ofm_runtime_01` shows `"trigger":"disk"` with `savedAt`; sources `online`; values flow on `acme/#`; historian `buffering`. `docker compose logs nodered` shows `starting from the copy saved …` |
+| B2 | `docker compose start timescaledb`; wait 30 s | Within about 10 s of the database being ready: cache `"trigger":"startup"` (no `savedAt`), historian `writing` with `queueDepth` 0; Grafana shows no gap for the outage; `docker compose run --rm test` passes |
+| B3 | With everything running, change an `alarm_high` in Mathesar; then repeat B1 and B2 | During B1 that property's `_meta` shows the **new** limit (after the restart every `_meta` is republished from the copy, and the copy is saved after every model change). `docker exec ofm-nodered ls -l /data/model` shows the copy with the time of your edit |
 
 ## Adding a test
 

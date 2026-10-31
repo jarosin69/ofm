@@ -122,6 +122,9 @@ services:
       # in the nodered-data volume while the database cannot be reached.
       OFM_SF_QUEUE_DIR: /data/sfqueue
       OFM_SF_QUEUE_MAX_GB: ${OFM_SF_QUEUE_MAX_GB:-10}
+      # Copy of the last model loaded from the database (step 2.6), in the
+      # same volume: lets the runtime start while the database is down.
+      OFM_MODEL_COPY_DIR: /data/model
     ports:
       - "127.0.0.1:1880:1880"
     volumes:

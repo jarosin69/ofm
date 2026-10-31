@@ -10,8 +10,16 @@
       "description": "Time of the last successful cache load."
     },
     "trigger": {
-      "description": "What caused the last load: startup (Phase 1) or a model_changed notification (Phase 2).",
-      "enum": ["startup", "notify"]
+      "description": "What caused the last load: startup (load from the database at start-up, also when the database answers after a start from the saved copy), notify (a model_changed notification, step 2.1), or disk (the database could not be reached at start-up, so the runtime started from its saved copy of the model, step 2.6).",
+      "enum": [
+        "startup",
+        "notify",
+        "disk"
+      ]
+    },
+    "savedAt": {
+      "$ref": "urn:ofm:schema:common:1#/$defs/ts",
+      "description": "Only with trigger disk: when the saved copy was written, i.e. the time of the model the runtime is running on."
     },
     "rows": {
       "description": "Number of rows loaded from vw_runtime_model.",
@@ -24,6 +32,30 @@
       "minimum": 0
     }
   },
-  "required": ["ts", "trigger", "rows", "unmapped"],
-  "additionalProperties": false
+  "required": [
+    "ts",
+    "trigger",
+    "rows",
+    "unmapped"
+  ],
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "trigger": {
+        "const": "disk"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "savedAt"
+    ]
+  },
+  "else": {
+    "not": {
+      "required": [
+        "savedAt"
+      ]
+    }
+  }
 }
