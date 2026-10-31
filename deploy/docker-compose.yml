@@ -5,9 +5,15 @@
 #
 # Image versions are pinned. An upgrade is a deliberate, committed change of a
 # version below, never a side effect of "docker compose pull".
-# Every port is bound to 127.0.0.1: services are reachable from this laptop
-# only. Containers still reach each other by service name, and Node-RED still
-# reaches PLCs (outbound connections are not affected).
+# Ports (ADR-0019): other computers reach OFM only through encrypted ports -
+# MQTT over TLS on 8883 and HTTPS for Grafana (3000), Mathesar (8080) and the
+# Node-RED editor (1880) through the "proxy" service. They listen on
+# OFM_LISTEN_ADDRESS from .env: 127.0.0.1 (default) = this computer only,
+# 0.0.0.0 = the network. The database (5432) and the OPC UA simulator (50000)
+# stay on 127.0.0.1 always. Containers reach each other by service name on
+# Docker's internal network, unencrypted (that traffic never leaves this
+# computer), and Node-RED still reaches PLCs (outbound connections are not
+# affected).
 name: ofm
 
 services:
@@ -66,6 +72,28 @@ services:
       timescaledb:
         condition: service_healthy
 
+  # One-shot: creates or renews the TLS certificates (ADR-0019, tools/certs.sh),
+  # then exits. Runs on every "docker compose up", before the broker and the
+  # proxy. Keys stay in the "certs" volume; only the public ofm-ca.crt, which
+  # clients must trust, is copied to deploy/certs/.
+  # Other commands: docker compose run --rm certs [show|import]
+  # Uses OFM's Node-RED image, which contains openssl: nothing to download.
+  certs:
+    image: ofm/node-red:4.1.16-ofm.3
+    pull_policy: never
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["sh", "/repo/tools/certs.sh"]
+    command: ["up"]
+    environment:
+      # How other computers reach this server (name and IP address,
+      # comma-separated); the certificate is valid for exactly these.
+      OFM_TLS_NAMES: ${OFM_TLS_NAMES:-}
+      OFM_LISTEN_ADDRESS: ${OFM_LISTEN_ADDRESS:-127.0.0.1}    # only reported in the log
+    volumes:
+      - certs:/certs
+      - ..:/repo                   # tools/certs.sh; writes deploy/certs/ofm-ca.crt
+
   mosquitto:
     image: eclipse-mosquitto:2.1.2-alpine
     container_name: ofm-mosquitto
@@ -85,16 +113,22 @@ services:
         mosquitto_passwd -c -b /mosquitto/secure/passwd ofm_runtime "$$OFM_MQTT_RUNTIME_PASSWORD"
         mosquitto_passwd -b /mosquitto/secure/passwd ofm_reader "$$OFM_MQTT_READER_PASSWORD"
         cp /mosquitto/config/acl /mosquitto/secure/acl
+        cp /certs/ca.crt /certs/server.crt /certs/server.key /mosquitto/secure/
         chown -R mosquitto:mosquitto /mosquitto/secure
         chmod 0700 /mosquitto/secure
-        chmod 0600 /mosquitto/secure/passwd /mosquitto/secure/acl
+        chmod 0600 /mosquitto/secure/*
         exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
     ports:
-      - "127.0.0.1:1883:1883"      # plain MQTT for the PoC; TLS (8883) in Phase 2
+      # MQTT over TLS for other computers. Plain MQTT (1883) is internal only.
+      - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:8883:8883"
     volumes:
       - ./mosquitto/config:/mosquitto/config:ro
+      - certs:/certs:ro
       - mosq-data:/mosquitto/data
       - mosq-log:/mosquitto/log
+    depends_on:
+      certs:
+        condition: service_completed_successfully
 
   nodered:
     # OFM's own image: official Node-RED plus pinned protocol and database
@@ -125,8 +159,7 @@ services:
       # Copy of the last model loaded from the database (step 2.6), in the
       # same volume: lets the runtime start while the database is down.
       OFM_MODEL_COPY_DIR: /data/model
-    ports:
-      - "127.0.0.1:1880:1880"
+    # No ports: the editor is reached through the proxy, https://<server>:1880
     volumes:
       - nodered-data:/data
       - ./nodered/settings.js:/data/settings.js:ro
@@ -150,8 +183,8 @@ services:
       OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD}   # used by the provisioned datasource
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /ofm/dashboards/ofm-live-data.json
       TZ: Australia/Melbourne      # display layer: local time lives here (ADR-0003)
-    ports:
-      - "127.0.0.1:3000:3000"
+      GF_SECURITY_COOKIE_SECURE: "true"   # login cookie only over HTTPS (via the proxy)
+    # No ports: reached through the proxy, https://<server>:3000
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -171,15 +204,17 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.production
       DEBUG: "false"
       SECRET_KEY: ${MATHESAR_SECRET_KEY:?run make-env.sh to add MATHESAR_SECRET_KEY to .env}
-      DOMAIN_NAME: http://localhost:8080
-      ALLOWED_HOSTS: localhost,127.0.0.1,mathesar   # mathesar: for the test runner
+      DOMAIN_NAME: https://localhost:8080
+      # Names Mathesar answers to: this computer, the test runner (mathesar),
+      # the proxy, and the server's names from .env. It trusts the proxy's
+      # "this was HTTPS" header (production settings), so logins work.
+      ALLOWED_HOSTS: localhost,127.0.0.1,mathesar,proxy,${OFM_TLS_NAMES:-}
       POSTGRES_HOST: mathesar-db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: mathesar_django
       POSTGRES_USER: mathesar
       POSTGRES_PASSWORD: ${MATHESAR_DB_PASSWORD:?run make-env.sh to add MATHESAR_DB_PASSWORD to .env}
-    ports:
-      - "127.0.0.1:8080:8000"
+    # No ports: reached through the proxy, https://<server>:8080
     volumes:
       - mathesar-static:/code/static
       - mathesar-media:/code/.media
@@ -187,6 +222,25 @@ services:
       mathesar-db:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+
+  # HTTPS front door for the web pages (ADR-0019): Grafana, Mathesar and the
+  # Node-RED editor keep their ports, now https:// with OFM's certificate.
+  # Starts without waiting for them; a page that is not up yet shows 502.
+  proxy:
+    image: caddy:2.11.7-alpine
+    container_name: ofm-proxy
+    restart: unless-stopped
+    ports:
+      - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:3000:3000"    # Grafana
+      - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:8080:8080"    # Mathesar
+      - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:1880:1880"    # Node-RED editor
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - certs:/certs:ro
+      - proxy-data:/data
+    depends_on:
+      certs:
         condition: service_completed_successfully
 
   # Mathesar's own settings database (its users and saved views; no plant
@@ -251,8 +305,10 @@ services:
       OFM_MQTT_READER_PASSWORD: ${OFM_MQTT_READER_PASSWORD}
       GRAFANA_USER: ${GRAFANA_USER}
       GRAFANA_PASSWORD: ${GRAFANA_PASSWORD}
+      OFM_TLS_NAMES: ${OFM_TLS_NAMES:-}
     volumes:
       - ..:/repo:ro
+      - certs:/certs:ro            # the public certificates, to check TLS
 
 volumes:
   tsdb-data:
@@ -263,3 +319,5 @@ volumes:
   mathesar-static:
   mathesar-media:
   mathesar-pgdata:
+  certs:                           # TLS keys and certificates (tools/certs.sh)
+  proxy-data:

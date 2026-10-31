@@ -2,9 +2,9 @@
 
 *Updated: 2026-10-31. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2, step 2.6 — the runtime starts from a saved copy
-of the model when the database is down; delivered, Jarek checks B1–B3.**
-Next: step 2.7, encryption (TLS).
+**▶ We are here: Phase 2, step 2.8 — offline install bundle (next).** Step
+2.7, encryption with OFM's own certificate authority (ADR-0019), passed
+T1–T4 on the laptop, including Grafana opened from a second laptop.
 
 ## The plan in one view
 
@@ -16,7 +16,7 @@ publishing it as open source, runs alongside.
 ```
 Stage A  Foundations ............................. ✅ done
 Stage B  Phase 1   Live data path ................ ✅ v0.1.1 (2026-10-30)
-         Phase 2   Robust and editable ........... ▶ step 2.6 of 9
+         Phase 2   Robust and editable ........... ▶ step 2.8 of 9
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
          Phase 3b  OEE and efficiency KPIs ....... ⬜
@@ -93,8 +93,10 @@ quality, no lost history, encrypted traffic. Decided (2026-10-31): disk
 queue limit 10 GB, compressed, configurable in `.env`, oldest dropped and
 reported when full (2.4); retention raw data 1 year, 1-min/1-h averages
 5 years, configurable in `.env` (2.5; to be confirmed against food-safety
-record requirements with QA). Still open, with its default (assumption until
-decided): MQTT encrypted, PostgreSQL not yet (2.7).
+record requirements with QA); encryption for every connection from another
+computer — MQTT over TLS and HTTPS for the three web pages, the database
+local to the server — with certificates from OFM's own certificate
+authority, plant IT certificates as a drop-in (2.7, ADR-0019).
 
 | Step | What | Status |
 |---|---|---|
@@ -103,8 +105,8 @@ decided): MQTT encrypted, PostgreSQL not yet (2.7).
 | 2.3 | Deadband (opt-in per property; 0 = every value, for SPC) and heartbeat republish at the maximum publish interval; all values of a lost source republished `bad` at once — for OPC UA, S7 and EtherNet/IP alike (ADR-0007) | ✅ 2026-10-31: on the laptop, H1–H3 passed |
 | 2.4 | Batched historian writer with compressed store-and-forward disk queue (10 GB, `.env`), status on `ofm/_system/historian/…`; addresses a PLC refuses published `v: null, q: bad` (ADR-0002, ADR-0007) | ✅ 2026-10-31: on the laptop, S1–S3 passed (S1 after migration 010) |
 | 2.5 | Historian housekeeping: compression after 7 days; 1-minute and 1-hour averages (avg, min, max, worst quality); retention from `.env` (raw 1 year, averages 5 years); long-range charts read the averages (migration 011) | ✅ 2026-10-31: on the laptop, K1–K3 passed, all 227 checks pass |
-| 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3; ADR-0001 amendment) | ▶ delivered 2026-10-31; Jarek checks B1–B3 |
-| 2.7 | Broker encryption (TLS) | ⬜ |
+| 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3; ADR-0001 amendment) | ✅ 2026-10-31: installed and pushed on the laptop |
+| 2.7 | Encryption (TLS) for every connection from another computer: MQTT on 8883, HTTPS for Grafana, Mathesar and the Node-RED editor through a Caddy front door; OFM's own certificate authority, renewed automatically; plant IT certificates importable; open to the network with one `.env` setting (ADR-0019) | ✅ 2026-11-01: on the laptop, T1–T4 passed (Grafana over HTTPS from a second laptop) |
 | 2.8 | Offline install bundle: all images and the repository for a network without internet | ⬜ |
 | 2.9 | Load test (2,000 values/s) and failure drills; release `v0.2` | ⬜ |
 
@@ -197,9 +199,8 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek installs step 2.6, runs the tests and checks B1–B3 (tests/README).
-2. Step 2.7: encryption (TLS) — decide first which links (broker, database)
-   and with which certificates.
+1. Step 2.8: offline install bundle — every pinned image (now including
+   Caddy) and the repository, for a plant network without internet.
 
 ## Open questions
 
@@ -225,12 +226,14 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 22 | Traceability: lot identification on the floor, tipping points, mass-balance tolerance, mixing-attribution rules (own ADR) | Phase 3e |
 | 23 | Modbus driver: every current `node-red-contrib-modbus` release downloads part of its code from a third-party package server; choose a driver when the first Modbus device needs it | First Modbus device |
 | 24 | S7 at the plant: is PUT/GET access acceptable to the PLC owners, or must S7-1200/1500 CPUs be read through their OPC UA server (S7-1200 from firmware 4.4, with runtime licence)? | Plant pilot |
+| 25 | Remote database access (Power BI, DBeaver or Python on another computer): when needed, PostgreSQL over TLS with the same certificates, read-only role `ofm_reader` (ADR-0019 follow-up) | First remote database client |
 
 ## Known gaps and notes
 
 - Pinned versions: TimescaleDB 2.30.2-pg16, Mosquitto 2.1.2-alpine, Grafana
   13.2.4 (`grafana/grafana`; `grafana-oss` is no longer updated), Mathesar
-  0.12.0, OPC PLC simulator 2.15.11, Node-RED 4.1.16 (Node 22) built as
+  0.12.0, OPC PLC simulator 2.15.11, Caddy 2.11.7-alpine (HTTPS front door),
+  Node-RED 4.1.16 (Node 22) built as
   `ofm/node-red:4.1.16-ofm.3` with node-opcua 2.160.0, @st-one-io/nodes7
   1.1.2, st-ethernet-ip 2.7.5, node-red-contrib-opcua 0.2.355,
   node-red-contrib-postgresql 0.16.2, node-red-contrib-s7 3.1.3,
@@ -310,6 +313,24 @@ Numbers are stable; answered questions are removed rather than renumbered.
 - Rows written late by store-and-forward appear in the averages at the next
   refresh if they are less than 30 days old; older late rows need a manual
   `CALL refresh_continuous_aggregate(…)`.
+- Step 2.7 was tested on the local replica (Mosquitto 2.0 with OFM's
+  configuration, Caddy 2.11.7, the certificate script under busybox, as in
+  the Alpine-based image): certificate authority and server certificate
+  created once, unchanged on the next run, reissued when the names change,
+  when renewal is due and after a new authority; a bad name refused; plant
+  IT import checked (wrong key refused, expiry warned, never replaced). All
+  11 `tls` checks pass and fail when they should (a name missing, the proxy
+  stopped); WebSockets through the proxy (Node-RED editor) work. Not tested
+  here: Grafana and Mathesar themselves behind the proxy (stand-ins only),
+  Docker Compose itself, and browsers on Windows — that is T1–T4. Mathesar's
+  login over HTTPS relies on its production settings trusting the proxy's
+  `X-Forwarded-Proto` header (read in its 0.12.0 source). On Jarek's laptop
+  (2026-11-01) T1–T3 passed at once, including saving in Mathesar over
+  HTTPS. T4 first failed with "connection refused": `.env` still had the
+  defaults (`127.0.0.1`, no names); after setting them, Grafana opened over
+  HTTPS from a second laptop. The `certs` log now states whether OFM is
+  reachable from this computer only or the network, and warns when it is
+  open to the network without `OFM_TLS_NAMES`.
 - Step 2.6 was tested on the local replica: with the database stopped and
   Node-RED restarted, the runtime started from the saved copy 4 s after the
   restart (cache `trigger: disk`, all three sources online, values flowing,

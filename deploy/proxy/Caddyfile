@@ -1,0 +1,38 @@
+# OFM HTTPS front door (ADR-0019, step 2.7): Caddy terminates TLS for the
+# three web pages and forwards to the containers over the internal Docker
+# network. Each page keeps its familiar port, now with https://.
+# Certificates come from the "certs" volume (tools/certs.sh); Caddy obtains
+# none itself and never contacts the internet.
+{
+	admin off
+	auto_https off
+	servers {
+		# An old http:// bookmark on an HTTPS port is redirected to https://.
+		listener_wrappers {
+			http_redirect
+			tls
+		}
+	}
+}
+
+(ofm_tls) {
+	tls /certs/server.crt /certs/server.key
+}
+
+# Grafana
+https://:3000 {
+	import ofm_tls
+	reverse_proxy grafana:3000
+}
+
+# Mathesar (model editor)
+https://:8080 {
+	import ofm_tls
+	reverse_proxy mathesar:8000
+}
+
+# Node-RED editor
+https://:1880 {
+	import ofm_tls
+	reverse_proxy nodered:1880
+}

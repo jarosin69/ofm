@@ -26,7 +26,7 @@ same command can later run automatically on every commit (CI).
 | `schemas` | Every payload schema in `schemas/` is valid JSON Schema 2020-12; every example in `tests/schemas/<schema>/valid/` passes and every one in `invalid/` is rejected | no |
 | `flows` | The function code in `flows/ofm-runtime.json`, run outside Node-RED: scaling, validation and timestamp rules (ADR-0003), quarantine, model cache; S7 and EtherNet/IP polling against a stand-in PLC library (report by exception, wrong addresses skipped, connection loss and recovery); heartbeat, historian writer and its disk queue; the saved model copy and the start without the database; every payload the flow can produce matches its schema and topics follow the topic standard | no |
 | `database` | All migrations applied and unedited; UTC; hypertables; the model refuses bad names, reserved names, missing units, duplicate addresses; `vw_runtime_model` is right; every role can do exactly what Overview §13 says and no more; every model change is audited | yes |
-| `live` | The automated part of the Phase 1 exit check (below): runtime and sources online, the whole model loaded, a current value on the UNS for every property, every UNS message valid, recent rows in the historian, dashboard and Grafana datasource working, editors reachable | yes, with data flowing |
+| `live` | The automated part of the Phase 1 exit check (below): runtime and sources online, the whole model loaded, a current value on the UNS for every property, every UNS message valid, recent rows in the historian, dashboard and Grafana datasource working, editors reachable; model reload; encryption (`tls`: certificates, MQTT over TLS, HTTPS for every page, checked as a client computer would) | yes, with data flowing |
 
 The `live` suite takes its list of properties from the model, not from a file:
 add a property in Mathesar, restart Node-RED, and it is checked too.
@@ -159,6 +159,21 @@ topic):
 | B1 | `docker compose stop timescaledb`, then `docker compose restart nodered`; wait 30 s | Within about 10 s of the restart: `ofm/_system/cache/ofm_runtime_01` shows `"trigger":"disk"` with `savedAt`; sources `online`; values flow on `acme/#`; historian `buffering`. `docker compose logs nodered` shows `starting from the copy saved …` |
 | B2 | `docker compose start timescaledb`; wait 30 s | Within about 10 s of the database being ready: cache `"trigger":"startup"` (no `savedAt`), historian `writing` with `queueDepth` 0; Grafana shows no gap for the outage; `docker compose run --rm test` passes |
 | B3 | With everything running, change an `alarm_high` in Mathesar; then repeat B1 and B2 | During B1 that property's `_meta` shows the **new** limit (after the restart every `_meta` is republished from the copy, and the copy is saved after every model change). `docker exec ofm-nodered ls -l /data/model` shows the copy with the time of your edit |
+
+**Step 2.7, encryption** (ADR-0019). Automated: the `live` suite (`tls`):
+the certificate is signed by OFM's authority, valid for more than 30 days and
+names every address clients use (including `OFM_TLS_NAMES`);
+`deploy/certs/ofm-ca.crt` is the authority in use; MQTT over TLS logs in as
+`ofm_reader` and refuses a wrong password and a client that does not trust
+OFM's authority; Grafana, Mathesar and the Node-RED editor answer over
+HTTPS; `http://` is redirected. By hand, after README step 8a:
+
+| # | Do | Expected |
+|---|---|---|
+| T1 | Open https://localhost:3000, https://localhost:8080 and https://localhost:1880; log in to each; in Mathesar change and save one value (e.g. a `description`) | A padlock and no warning on all three; logins work; Mathesar saves (its login and saving check that the page really came over HTTPS) |
+| T2 | Open http://localhost:3000 (plain) | Redirected to https://localhost:3000 |
+| T3 | MQTT Explorer: host `localhost`, port 8883, encryption on, validate certificate on, Advanced → Certificates → Server Certificate (CA) = `C:\ofm\deploy\certs\ofm-ca.crt`, user `ofm_reader`. Then the old connection, port 1883 without encryption | 8883: the `acme/…` tree as before. 1883: cannot connect (plain MQTT exists only inside the stack) |
+| T4 | From another computer on the same network. In `.env` edit the existing lines (each must appear once; the last one wins): `OFM_LISTEN_ADDRESS=0.0.0.0` and `OFM_TLS_NAMES=<laptop name>,<laptop IP>`; then `docker compose up -d` and `docker ps --format "table {{.Names}}\t{{.Ports}}"`; then follow deploy README section 6, *Reaching OFM from other computers* (firewall rule, `ofm-ca.crt` on the other computer) | `ofm-proxy` and `ofm-mosquitto` listen on `0.0.0.0:…`; `docker compose logs certs` says `reachable from: the network` and lists both names; `https://<laptop IP>:3000` on the other computer shows Grafana with a padlock ("refused" = still bound to 127.0.0.1; "timed out" = firewall). Afterwards set `OFM_LISTEN_ADDRESS=127.0.0.1` again if the laptop should not stay open |
 
 ## Adding a test
 

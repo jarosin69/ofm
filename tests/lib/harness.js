@@ -64,6 +64,11 @@ const stack = {
   grafanaUrl: process.env.OFM_TEST_GRAFANA_URL || "http://grafana:3000",
   noderedUrl: process.env.OFM_TEST_NODERED_URL || "http://nodered:1880",
   mathesarUrl: process.env.OFM_TEST_MATHESAR_URL || "http://mathesar:8000",
+  // TLS (step 2.7): the encrypted entrances other computers use.
+  mqttsUrl: process.env.OFM_TEST_MQTTS_URL || "mqtts://mosquitto:8883",
+  proxyHost: process.env.OFM_TEST_PROXY_HOST || "proxy",
+  certsDir: process.env.OFM_TEST_CERTS_DIR || "/certs",
+  tlsNames: (process.env.OFM_TLS_NAMES || "").split(",").map(n => n.trim().toLowerCase()).filter(Boolean),
   listenSeconds: Number(process.env.OFM_TEST_LISTEN_SECONDS || 15)
 };
 

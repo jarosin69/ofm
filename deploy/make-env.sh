@@ -51,6 +51,8 @@ add MATHESAR_ADMIN_PASSWORD    "$(pw)"
 add MATHESAR_DB_PASSWORD       "$(pw)"    "Mathesar's own settings database, and its session key"
 add MATHESAR_SECRET_KEY        "$(pw 50)"
 add COMPOSE_PROFILES           simulator  "Optional services to run. 'simulator' = the OPC UA simulator (development and demos; leave empty at a plant)"
+add OFM_LISTEN_ADDRESS         127.0.0.1  "Who can reach OFM's encrypted ports (MQTT 8883, web pages 3000/8080/1880): 127.0.0.1 = this computer only, 0.0.0.0 = the network"
+add OFM_TLS_NAMES              ""         "This server's network name(s) and IP address(es), comma-separated, e.g. ofm-server,192.168.10.20: the TLS certificate is valid for these (and localhost)"
 
 # On Linux, give the file to the owner of the folder rather than root.
 chown "$(stat -c %u:%g .)" .env 2>/dev/null || true
@@ -68,9 +70,10 @@ else
   exit 0
 fi
 echo
-echo "  Node-RED  http://localhost:1880  user: $(value NODERED_ADMIN_USER)  password: $(value NODERED_ADMIN_PASSWORD)"
-echo "  Grafana   http://localhost:3000  user: $(value GRAFANA_USER)  password: $(value GRAFANA_PASSWORD)"
-echo "  Mathesar  http://localhost:8080  user: $(value MATHESAR_ADMIN_USER)  password: $(value MATHESAR_ADMIN_PASSWORD)"
+echo "  Node-RED  https://localhost:1880  user: $(value NODERED_ADMIN_USER)  password: $(value NODERED_ADMIN_PASSWORD)"
+echo "  Grafana   https://localhost:3000  user: $(value GRAFANA_USER)  password: $(value GRAFANA_PASSWORD)"
+echo "  Mathesar  https://localhost:8080  user: $(value MATHESAR_ADMIN_USER)  password: $(value MATHESAR_ADMIN_PASSWORD)"
 echo
 echo "All passwords are in deploy/.env. Save a copy of it in a password manager."
+echo "Browsers trust these https:// pages once deploy/certs/ofm-ca.crt is installed (deploy/README.md)."
 echo "Next: docker compose up -d"

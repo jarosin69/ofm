@@ -1,0 +1,5 @@
+# Site-specific certificate files (tools/certs.sh, ADR-0019): never committed.
+# ofm-ca.crt is public, but belongs to one installation; import/ may hold
+# a private key from plant IT for a moment.
+*
+!.gitignore

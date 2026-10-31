@@ -80,14 +80,32 @@ The kit is hardened for a single laptop (Architecture Overview §13):
    ```
    The first start downloads the images and builds OFM's Node-RED image
    (`nodered/Dockerfile`: Node-RED plus its OPC UA, S7, PostgreSQL and
-   dashboard nodes) — several minutes, and the only time internet is needed. Seven services
+   dashboard nodes) — several minutes, and the only time internet is needed. Eight services
    should then be "running": `timescaledb`, `mosquitto`, `nodered`, `grafana`,
-   `mathesar`, `mathesar-db` and `opcplc` (the simulator; it runs because
-   `.env` contains `COMPOSE_PROFILES=simulator` — leave that empty at a plant).
-   One more, `migrate`, runs once at every start to apply database migrations
-   and set the database passwords, then stops: `docker compose ps -a` shows
-   it as "Exited (0)", which is correct. With any other exit code, Node-RED
-   and Mathesar do not start: see `docker compose logs migrate`.
+   `mathesar`, `mathesar-db`, `proxy` (the HTTPS entrance for the web pages)
+   and `opcplc` (the simulator; it runs because `.env` contains
+   `COMPOSE_PROFILES=simulator` — leave that empty at a plant).
+   Two more run once at every start and then stop: `certs` creates or renews
+   the encryption certificates, `migrate` applies database migrations and
+   sets the database passwords. `docker compose ps -a` shows both as
+   "Exited (0)", which is correct. With any other exit code see
+   `docker compose logs certs` or `docker compose logs migrate`.
+8a. **Trust OFM's certificate** (once per computer and browser). Every page
+   and the MQTT broker are encrypted (ADR-0019) with a certificate that OFM
+   made itself at the first start. Browsers trust it once they trust OFM's
+   *certificate authority* — the stamp that signed it — whose public file is
+   `C:\ofm\deploy\certs\ofm-ca.crt` (not secret). Install it for your
+   Windows user:
+   ```powershell
+   Import-Certificate -FilePath C:\ofm\deploy\certs\ofm-ca.crt -CertStoreLocation Cert:\CurrentUser\Root
+   ```
+   Windows asks "Do you want to install this certificate?" for *OFM
+   certificate authority …*: answer **Yes**. Close and reopen the browser.
+   Edge and Chrome then show the padlock without a warning. (Firefox, if it
+   still warns: Settings → Privacy & Security → View Certificates →
+   Authorities → Import → `ofm-ca.crt`, tick "trust this CA to identify
+   websites".) Until you do this, browsers show "Your connection isn't
+   private": do not click through it, install the file instead.
 
 That is the whole installation. On every start the stack creates or updates
 the database structure, the passwords, the MQTT users and the Grafana
@@ -104,10 +122,13 @@ docker compose run --rm migrate example
 
 9. **Logins** (users and passwords were printed by step 7; they are also in
    `.env`):
-   - **Node-RED** — http://localhost:1880 must ask for a login.
-   - **Grafana** — http://localhost:3000. Then Connections → Data sources →
+   - **Node-RED** — https://localhost:1880 must ask for a login.
+   - **Grafana** — https://localhost:3000. Then Connections → Data sources →
      **OFM historian** → **Test** must report success.
-   - **Mathesar** — http://localhost:8080; the first visit is described in steps 16–17.
+   - **Mathesar** — https://localhost:8080; the first visit is described in steps 16–17.
+
+   All three show a padlock (step 8a). An old `http://` bookmark is
+   redirected to `https://` automatically.
 10. **Database** — roles exist and every migration is applied:
     ```powershell
     docker exec ofm-timescaledb psql -U ofm_admin -d ofm -c "\du"
@@ -175,7 +196,7 @@ docker compose run --rm migrate example
     Row counts grow every second. (`ts` is UTC, ADR-0003; Grafana shows
     Melbourne time.)
 
-12c. **First dashboard** — open Grafana (http://localhost:3000). The home page
+12c. **First dashboard** — open Grafana (https://localhost:3000). The home page
     is now **OFM · Live data**: properties reporting, values per minute,
     values not good, a table of the latest value of every property, and one
     chart per property. Times are Melbourne time. Orange points mark values
@@ -208,10 +229,14 @@ docker compose run --rm migrate example
     endpoint, settings or address list changed are reconnected.
 14. **Container-to-container addresses.** Inside flows and datasources, use
     Compose service names, never `localhost`:
-    - MQTT broker host: `mosquitto`, port 1883
+    - MQTT broker host: `mosquitto`, port 1883 (plain MQTT, which exists only
+      inside the stack)
     - PostgreSQL host: `timescaledb`, port 5432, database `ofm`
 
-    `localhost` works only from Windows itself (your browser, MQTT Explorer).
+    From Windows itself (your browser, MQTT Explorer, DBeaver) the addresses
+    are `https://localhost:…` for the pages, `localhost` port **8883 with
+    TLS** for MQTT (section 6, *Reaching OFM from other computers*) and
+    `localhost:5432` for the database.
 15. **Node-RED nodes and passwords in flows.** OFM's Node-RED image comes with
     the OPC UA, S7, PostgreSQL and dashboard nodes built in at pinned versions
     (`nodered/Dockerfile`), so nothing is installed from the internet. Do not
@@ -222,7 +247,7 @@ docker compose run --rm migrate example
     them as `${OFM_RUNTIME_DB_PASSWORD}` instead of storing the password.
     The exact use is set up with the first Phase 1 flow.
 16. **Mathesar, first visit** (the model editor, ADR-0013). Open
-    http://localhost:8080. Mathesar asks once for an administrator account:
+    https://localhost:8080. Mathesar asks once for an administrator account:
     enter `MATHESAR_ADMIN_USER` and `MATHESAR_ADMIN_PASSWORD` from `.env`. This
     account is local to Mathesar on this machine; nothing is sent anywhere.
 17. **Connect Mathesar to the model.** In Mathesar, connect an existing
@@ -698,6 +723,51 @@ Restoring is rehearsed as part of Phase 3b (Architecture Overview §16).
 - *`NODE_RED_CREDENTIAL_SECRET`:* never change it; stored Node-RED
   credentials would become unreadable.
 
+**Reaching OFM from other computers** (ADR-0019). Other computers reach OFM
+only through encrypted entrances: the web pages over `https://` and MQTT
+over TLS on port 8883. Plain MQTT (1883) exists only inside the stack; the
+database (5432) stays reachable from this computer only.
+1. In `.env` set `OFM_LISTEN_ADDRESS=0.0.0.0` (the default `127.0.0.1` means
+   this computer only), and `OFM_TLS_NAMES` to the name(s) and IP
+   address(es) other computers use for this server, comma-separated, e.g.
+   `OFM_TLS_NAMES=ofm-server,192.168.10.20` (`hostname` and `ipconfig` in
+   PowerShell show them).
+2. Apply it:
+   ```powershell
+   docker compose up -d
+   docker compose restart mosquitto proxy
+   docker compose logs certs
+   ```
+   The log lists the names the certificate now covers.
+3. Allow the ports in the Windows firewall (PowerShell as administrator,
+   once):
+   ```powershell
+   New-NetFirewallRule -DisplayName "OFM" -Direction Inbound -Protocol TCP -LocalPort 3000,8080,1880,8883 -Action Allow
+   ```
+4. On each client computer install `ofm-ca.crt` as in step 8a, then open
+   `https://ofm-server:3000` (with your server's name). A browser warning
+   about the *name* means that name is missing from `OFM_TLS_NAMES`.
+
+*MQTT clients* (MQTT Explorer, SCADA, other systems): host = the server's
+name (or `localhost` on this computer), port **8883**, encryption/TLS **on**,
+certificate validation **on**, with `ofm-ca.crt` as the server or CA
+certificate (MQTT Explorer: Advanced → Certificates → Server Certificate
+(CA)), and an MQTT user such as `ofm_reader`. A client that offers "accept
+any certificate" must not use it: that would let any machine pose as the
+broker.
+
+*Certificates* are renewed by `docker compose up -d` when less than 30 days
+remain (they last 825 days); then run `docker compose restart mosquitto
+proxy`. `docker compose run --rm certs show` prints what is installed. The
+keys live in the Docker volume `certs`, never in this folder. If that
+volume is deleted (`docker compose down -v`), a new certificate authority is
+made at the next start, and every client must install the new `ofm-ca.crt`.
+*Certificates from plant IT* replace OFM's own: put `server.crt` (with any
+intermediate certificate appended), `server.key` and IT's `ca.crt` into
+`deploy\certs\import\`, run `docker compose run --rm certs import`, delete
+`server.key` from that folder, then `docker compose restart mosquitto proxy`.
+Their certificate must name the server as clients reach it (`OFM_TLS_NAMES`).
+
 ## Installing without internet (plant LAN)
 
 Most plant installations have no internet access. Once its images are on the
@@ -713,7 +783,7 @@ pilot (`docs/STATUS.md`, Stage C).
   `tsdb-data` volume is empty and creates only the roles and schemas. All
   structure after that is in `db/migrations/`, which must never be edited
   once applied (the runner refuses; see `db/migrations/README.md`).
-- **Line endings.** `make-env.sh` and `db/init/001-init.sh` must keep Linux
+- **Line endings.** `make-env.sh`, `db/init/001-init.sh` and `tools/*.sh` must keep Linux
   (LF) line endings or they fail inside a container. `.gitattributes` enforces this for Git; do not
   re-save it from an editor set to Windows line endings.
 - **Operator dashboards are not covered by the editor login.** Node-RED
@@ -722,9 +792,10 @@ pilot (`docs/STATUS.md`, Stage C).
   writes `flows/` on Deploy; on a Linux host that folder must be writable by
   uid 1000 (`chown -R 1000:1000 flows`). Docker Desktop on Windows needs
   nothing.
-- **Access from other devices** is deliberately impossible while ports are
-  bound to `127.0.0.1`. Opening a service to the network is a security
-  decision (Architecture Overview §13), not a configuration tweak.
+- **Access from other devices** is impossible while `OFM_LISTEN_ADDRESS` is
+  `127.0.0.1` (the default). Opening OFM to the network is a security
+  decision (Architecture Overview §13): do it as described in section 6,
+  and only on a segmented plant network.
 - **Port collisions.** If a port is taken on Windows, change only the host
   port in `docker-compose.yml` (e.g. `"127.0.0.1:15432:5432"`).
 - **Clock discipline (ADR-0003).** If timestamps drift after sleep/resume,
