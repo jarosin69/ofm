@@ -780,8 +780,10 @@ internet by itself** (Node-RED telemetry and update checks, Grafana update
 checks and news, and TimescaleDB usage reports are switched off; Caddy never
 fetches certificates). Mathesar asks on its first visit (step 16) whether to
 send an installation confirmation and daily usage data: **untick both boxes**.
-On an existing installation: Mathesar → *Administration* → *Settings* →
-*Usage Data Collection*: off.
+On an existing installation: in Mathesar, open the menu at the top right
+(your user name) → *Administration* → *Settings* (left) → *Usage Data
+Collection*: untick *Enable anonymous usage data collection* (or go straight
+to https://localhost:8080/administration/settings/).
 
 The installation is carried over as one folder, the **offline bundle**: every
 image at the pinned versions, the repository at one commit (committed files

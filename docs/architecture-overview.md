@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.6.10 (2026-11-01) — offline install bundle; no component contacts the internet by itself (§13, §14, step 2.8) |
+| **Version** | 0.6.11 (2026-11-01) — §13.1 encryption and certificates explained, with figures; which devices need `ofm-ca.crt` |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -342,7 +342,64 @@ Substitution points are deliberate: EMQX can replace Mosquitto if clustering is 
 
 OFM assumes a segmented OT network and adds application-layer controls on top; it never substitutes for network segmentation. The runtime host sits in the OT/IT DMZ pattern: plant protocols (S7, EtherNet/IP, Modbus, OPC UA) terminate at the runtime and are never routed north; only encrypted connections cross upward — MQTT over TLS and HTTPS for the web pages (ADR-0019); PostgreSQL stays local to the server until a remote client needs it, and then crosses over TLS too. Modbus, S7 and EtherNet/IP have no native security (S7 additionally needs PUT/GET access enabled on S7-1200/1500), so their segments are isolated at the network layer; OPC UA connections use signed-and-encrypted mode with certificates where the controller supports it.
 
-Mosquitto runs with TLS for every client outside the stack (port 8883; plain MQTT exists only on Docker's internal network), no anonymous access, and per-role ACLs: acquisition credentials may publish telemetry but not `_cmd`; applications may subscribe broadly but publish nothing; only the command flow's credential may publish `_cmd`, and only operator-facing services may trigger it. PostgreSQL follows the same least-privilege split — `ofm_runtime` (SELECT on model; SELECT and INSERT on historian, never UPDATE or DELETE), `ofm_config` (DML on configuration schema; held by the model editor's role `ofm_mathesar` and by personal editing logins), `ofm_reader` (Grafana/analytics, read-only) — so a compromised dashboard cannot alter the model and a compromised runtime cannot rewrite history. Secrets — including database role passwords — live in the deployment environment (Compose env files with restricted permissions in v1), never in flows or the repository. The Node-RED editor is protected by `adminAuth`, because anyone who can reach an unprotected editor can deploy code that runs next to the PLCs. In the single-laptop proof of concept, all service ports are bound to the loopback interface. Every component runs offline, with no dependency on external services at run time; most plant installations sit on automation networks without internet access.
+Mosquitto runs with TLS for every client outside the stack (port 8883; plain MQTT exists only on Docker's internal network), no anonymous access, and per-role ACLs: acquisition credentials may publish telemetry but not `_cmd`; applications may subscribe broadly but publish nothing; only the command flow's credential may publish `_cmd`, and only operator-facing services may trigger it. PostgreSQL follows the same least-privilege split — `ofm_runtime` (SELECT on model; SELECT and INSERT on historian, never UPDATE or DELETE), `ofm_config` (DML on configuration schema; held by the model editor's role `ofm_mathesar` and by personal editing logins), `ofm_reader` (Grafana/analytics, read-only) — so a compromised dashboard cannot alter the model and a compromised runtime cannot rewrite history. Secrets — including database role passwords — live in the deployment environment (Compose env files with restricted permissions in v1), never in flows or the repository. The Node-RED editor is protected by `adminAuth`, because anyone who can reach an unprotected editor can deploy code that runs next to the PLCs. By default every port is bound to the loopback interface (this computer only); one setting, `OFM_LISTEN_ADDRESS`, opens the encrypted entrances — and only those — to the network (section 13.1). Every component runs offline, with no dependency on external services at run time; most plant installations sit on automation networks without internet access.
+
+### 13.1 Encryption and certificates
+
+Every connection that crosses the network is encrypted with TLS (ADR-0019); traffic between OFM's own containers stays on Docker's internal network inside the server and is not. Web pages reach Grafana, Mathesar and the Node-RED editor through one front door, Caddy (`proxy`), which keeps each page on its familiar port; MQTT clients use the broker's TLS port 8883. Plain MQTT (1883) and the services' own ports are not published at all; the database stays reachable from the server only.
+
+*Figure 3 — Encrypted entrances. Green: TLS across the network. Grey: unencrypted, but only inside the server. PLC protocols stay on their own segment and are unchanged.*
+
+```mermaid
+flowchart LR
+  subgraph CLIENTS["Client devices · plant network"]
+    BR["Browser<br/>Grafana · Mathesar · Node-RED editor"]
+    MC["MQTT client<br/>SCADA · MQTT Explorer"]
+  end
+  subgraph SRV["OFM server · Docker"]
+    PX["proxy (Caddy)<br/>HTTPS 3000 · 8080 · 1880"]
+    MQ["mosquitto<br/>TLS 8883 · plain 1883 inside"]
+    APPS["Grafana · Mathesar · Node-RED"]
+    DB[("TimescaleDB<br/>server only")]
+  end
+  PLC["PLCs · own segment<br/>S7 · EtherNet/IP · OPC UA"]
+  BR == "HTTPS" ==> PX
+  MC == "MQTT over TLS" ==> MQ
+  PX -.-> APPS
+  APPS -.-> MQ
+  APPS -.-> DB
+  PLC -.-> APPS
+  linkStyle 0,1 stroke:#3B6D11,stroke-width:3px
+```
+
+**The certificates.** A certificate is a server's ID card; a *certificate authority* (CA) is the stamp that signs it. A client trusts the server because it trusts the stamp, so it never needs the ID card itself. OFM makes its own stamp at the first start (`tools/certs.sh`, run by the one-shot `certs` service at every start); a plant whose IT department issues certificates can use those instead.
+
+| Item | What it is | Valid for | Where it lives | Renewed |
+|---|---|---|---|---|
+| CA key | The stamp itself — signs server certificates | 10 years | `certs` volume only; never leaves the server | Never; a new one only if the volume is deleted |
+| CA certificate `ofm-ca.crt` | The public picture of the stamp; clients compare against it | 10 years | `certs` volume, copied to `deploy/certs/` for client devices; not secret | With the CA key |
+| Server certificate | The server's ID card, naming every address clients use (`OFM_TLS_NAMES`) | 825 days | `certs` volume; shown to clients by the broker and the proxy | Automatically at a start when fewer than 30 days remain, or when the names change; clients notice nothing |
+| Server key | Proves the server owns its ID card | with the certificate | `certs` volume only | With the certificate |
+
+*Figure 4 — Who needs what. Client devices receive one public file, once; renewing the server certificate involves no client.*
+
+```mermaid
+flowchart LR
+  CS["certs script<br/>every start"] --> CA["OFM CA<br/>10 years"]
+  CA -->|"signs"| SC["server certificate<br/>825 days, renewed by itself"]
+  SC --> SV["broker · proxy<br/>show it to clients"]
+  CA -->|"public copy<br/>ofm-ca.crt"| DEV["each client device<br/>trusts it once"]
+  SV -->|"TLS: client checks the stamp"| DEV
+```
+
+**Which devices need `ofm-ca.crt`, and when.** Trust belongs to a *device* (its browser or its MQTT client), not to a person or a login: every computer, tablet or panel that opens an OFM page or connects to the broker trusts `ofm-ca.crt` once, and then works for all its users and all logins for up to 10 years. Without it the page still opens after a warning ("Your connection isn't private"), but clicking through gives up the check that the page really comes from OFM, and teaches users to ignore a warning that matters — so it is not an option. Devices that only talk to OFM indirectly (PLCs, the database) need nothing. The file has to be distributed again only when the CA changes: after 10 years, after the `certs` volume is deleted, or never, if the plant's own certificates are used. The usual routes:
+
+- **A few devices** (engineering PCs, the development laptop): install the file by hand (`deploy/README.md` step 8a).
+- **Many devices on a managed network:** plant IT pushes `ofm-ca.crt` to every managed PC (in a Windows domain, by group policy) — one action.
+- **Plant IT issues certificates:** import them (`certs import`); the company's CA is usually trusted on every managed device already, so nothing is copied anywhere. This is the preferred route for a plant with many viewers, tablets or operator panels.
+- **MQTT clients** (SCADA, MQTT Explorer) usually do not use the Windows certificate store: give each its CA file in its own TLS settings.
+
+Operating details — opening OFM to the network, firewall, renewal, importing plant certificates — are in `deploy/README.md` section 6.
 
 ## 14. Deployment architecture
 
@@ -416,4 +473,4 @@ Where the details live, by concern: contested decisions and their alternatives �
 
 ---
 
-*End of Architecture Overview v0.6.10. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.6.11. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

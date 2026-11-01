@@ -2,9 +2,9 @@
 
 *Updated: 2026-10-31. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2, step 2.8 — offline install bundle and no outbound
-connections; delivered, Jarek checks O1–O4.** Next: step 2.9, load test and
-failure drills, release v0.2.
+**▶ We are here: Phase 2, step 2.9 — load test and failure drills, then
+release v0.2 (next).** Step 2.8, the offline install bundle, passed O1–O3 on
+the laptop, including a full offline reinstall of all eight images.
 
 ## The plan in one view
 
@@ -16,7 +16,7 @@ publishing it as open source, runs alongside.
 ```
 Stage A  Foundations ............................. ✅ done
 Stage B  Phase 1   Live data path ................ ✅ v0.1.1 (2026-10-30)
-         Phase 2   Robust and editable ........... ▶ step 2.8 of 9
+         Phase 2   Robust and editable ........... ▶ step 2.9 of 9
 Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
 Stage B  Phase 3a  Production context ............ ⬜
          Phase 3b  OEE and efficiency KPIs ....... ⬜
@@ -107,7 +107,7 @@ authority, plant IT certificates as a drop-in (2.7, ADR-0019).
 | 2.5 | Historian housekeeping: compression after 7 days; 1-minute and 1-hour averages (avg, min, max, worst quality); retention from `.env` (raw 1 year, averages 5 years); long-range charts read the averages (migration 011) | ✅ 2026-10-31: on the laptop, K1–K3 passed, all 227 checks pass |
 | 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3; ADR-0001 amendment) | ✅ 2026-10-31: installed and pushed on the laptop |
 | 2.7 | Encryption (TLS) for every connection from another computer: MQTT on 8883, HTTPS for Grafana, Mathesar and the Node-RED editor through a Caddy front door; OFM's own certificate authority, renewed automatically; plant IT certificates importable; open to the network with one `.env` setting (ADR-0019) | ✅ 2026-11-01: on the laptop, T1–T4 passed (Grafana over HTTPS from a second laptop) |
-| 2.8 | Offline install bundle (`tools/make-bundle.ps1`): every pinned image, the repository at one commit, checksums, load scripts for Windows and Linux; no component contacts the internet by itself (Node-RED, Grafana, TimescaleDB telemetry off; Mathesar's usage data unticked); `deploy` test suite | ▶ delivered 2026-11-01; Jarek checks O1–O4 |
+| 2.8 | Offline install bundle (`tools/make-bundle.ps1`): every pinned image, the repository at one commit, checksums, load scripts for Windows and Linux; no component contacts the internet by itself (Node-RED, Grafana, TimescaleDB telemetry off; Mathesar's usage data unticked); `deploy` test suite | ✅ 2026-11-01: on the laptop, O1–O3 passed (offline reinstall: images identical, data kept) |
 | 2.9 | Load test (2,000 values/s) and failure drills; release `v0.2` | ⬜ |
 
 ## Stage C — Plant pilot ⬜ (after Phase 2)
@@ -199,8 +199,9 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek installs step 2.8, switches Mathesar's usage data collection off,
-   runs the tests and checks O1–O4 (tests/README).
+1. Jarek switches Mathesar's usage data collection off (check O4).
+   Overview §13.1 (v0.6.11) now explains encryption and certificates with
+   figures, including which devices need `ofm-ca.crt`.
 2. Step 2.9: load test (2,000 values/s) and failure drills; release v0.2.
 
 ## Open questions
@@ -327,7 +328,12 @@ Numbers are stable; answered questions are removed rather than renumbered.
   everything 5.1 lacks. TimescaleDB accepted `telemetry_level=off` at start.
   Found while checking outbound connections: Mathesar's first-visit page
   ticks "installation confirmation" and "usage data" by default (README
-  step 16 said nothing was sent; corrected).
+  step 16 said nothing was sent; corrected). On Jarek's laptop
+  (2026-11-01): O1 bundle built; O2 damaged and missing files refused; O3
+  with the network disconnected: all eight images removed and loaded from
+  the bundle, image IDs identical, volumes and history kept, stack started
+  without downloading, all checks passed except those of the bench PLCs,
+  which were disconnected with the network (expected).
 - Step 2.7 was tested on the local replica (Mosquitto 2.0 with OFM's
   configuration, Caddy 2.11.7, the certificate script under busybox, as in
   the Alpine-based image): certificate authority and server certificate

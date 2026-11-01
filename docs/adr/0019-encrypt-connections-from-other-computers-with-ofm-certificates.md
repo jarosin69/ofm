@@ -85,3 +85,14 @@ database yet.
 - Mathesar trusts the proxy's `X-Forwarded-Proto` (its production settings),
   so its login works behind Caddy; its `ALLOWED_HOSTS` include `OFM_TLS_NAMES`.
 - Related: Overview §13 (security), §14 (deployment); ADR-0013 (Mathesar).
+
+## Amendments
+
+- 2026-11-01: **Explained, with figures, in Architecture Overview §13.1.**
+  Clarified: trust in `ofm-ca.crt` belongs to a client *device* (browser or
+  MQTT client), not to a user or login, and is installed once per device for
+  the life of the CA; renewing the server certificate never involves clients.
+  For a plant with many viewing devices (PCs, tablets, operator panels),
+  plant IT certificates (decision 4) or distributing `ofm-ca.crt` through
+  IT's device management are the practical routes; installing by hand suits
+  a few engineering PCs.
