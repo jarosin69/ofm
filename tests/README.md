@@ -4,8 +4,8 @@ Every automated test runs with one command, from `C:\ofm\deploy`:
 
 ```powershell
 docker compose run --rm test            # everything (the stack must be running)
-docker compose run --rm test offline    # schemas and flow only; no stack needed
-docker compose run --rm test live       # one suite: schemas, flows, database or live
+docker compose run --rm test offline    # schemas, flow and deployment files; no stack needed
+docker compose run --rm test live       # one suite: schemas, flows, deploy, database or live
 ```
 
 The tests run in a throw-away container made from OFM's own Node-RED image,
@@ -19,12 +19,13 @@ Each check prints one line, `PASS`, `FAIL` (with the reason underneath) or
 `SOME CHECKS FAILED`. The exit code is 0 only when everything passed, so the
 same command can later run automatically on every commit (CI).
 
-## The four suites
+## The five suites
 
 | Suite | Checks | Needs the stack |
 |---|---|---|
 | `schemas` | Every payload schema in `schemas/` is valid JSON Schema 2020-12; every example in `tests/schemas/<schema>/valid/` passes and every one in `invalid/` is rejected | no |
 | `flows` | The function code in `flows/ofm-runtime.json`, run outside Node-RED: scaling, validation and timestamp rules (ADR-0003), quarantine, model cache; S7 and EtherNet/IP polling against a stand-in PLC library (report by exception, wrong addresses skipped, connection loss and recovery); heartbeat, historian writer and its disk queue; the saved model copy and the start without the database; every payload the flow can produce matches its schema and topics follow the topic standard | no |
+| `deploy` | The deployment files: every image pinned to a version and OFM's own never pulled; only the encrypted ports may be opened to the network, the database never; no password written into `docker-compose.yml`; every component's telemetry and update checks off; the offline bundle covers every image | no |
 | `database` | All migrations applied and unedited; UTC; hypertables; the model refuses bad names, reserved names, missing units, duplicate addresses; `vw_runtime_model` is right; every role can do exactly what Overview §13 says and no more; every model change is audited | yes |
 | `live` | The automated part of the Phase 1 exit check (below): runtime and sources online, the whole model loaded, a current value on the UNS for every property, every UNS message valid, recent rows in the historian, dashboard and Grafana datasource working, editors reachable; model reload; encryption (`tls`: certificates, MQTT over TLS, HTTPS for every page, checked as a client computer would) | yes, with data flowing |
 
@@ -174,6 +175,17 @@ HTTPS; `http://` is redirected. By hand, after README step 8a:
 | T2 | Open http://localhost:3000 (plain) | Redirected to https://localhost:3000 |
 | T3 | MQTT Explorer: host `localhost`, port 8883, encryption on, validate certificate on, Advanced → Certificates → Server Certificate (CA) = `C:\ofm\deploy\certs\ofm-ca.crt`, user `ofm_reader`. Then the old connection, port 1883 without encryption | 8883: the `acme/…` tree as before. 1883: cannot connect (plain MQTT exists only inside the stack) |
 | T4 | From another computer on the same network. In `.env` edit the existing lines (each must appear once; the last one wins): `OFM_LISTEN_ADDRESS=0.0.0.0` and `OFM_TLS_NAMES=<laptop name>,<laptop IP>`; then `docker compose up -d` and `docker ps --format "table {{.Names}}\t{{.Ports}}"`; then follow deploy README section 6, *Reaching OFM from other computers* (firewall rule, `ofm-ca.crt` on the other computer) | `ofm-proxy` and `ofm-mosquitto` listen on `0.0.0.0:…`; `docker compose logs certs` says `reachable from: the network` and lists both names; `https://<laptop IP>:3000` on the other computer shows Grafana with a padlock ("refused" = still bound to 127.0.0.1; "timed out" = firewall). Afterwards set `OFM_LISTEN_ADDRESS=127.0.0.1` again if the laptop should not stay open |
+
+**Step 2.8, offline install bundle.** Automated: the `deploy` suite (images
+pinned, bundle covers every image, telemetry off in the files) and the
+`database` suite (TimescaleDB telemetry really off). By hand, on the laptop:
+
+| # | Do | Expected |
+|---|---|---|
+| O1 | Commit everything, then `powershell -ExecutionPolicy Bypass -File C:\ofm\tools\make-bundle.ps1` | Ends with `Bundle: C:\ofm-bundles\ofm-<version> (… GB, 8 images)`; `MANIFEST.txt` lists 8 images, all `linux/amd64` |
+| O2 | Damage a copy of the bundle: `Copy-Item -Recurse <bundle> C:\ofm-bundles\damaged`, open `damaged\images.txt` in Notepad, add a space, save; run `damaged\offline-load.ps1`; then delete `damaged` | `DAMAGED  images.txt` and "copy the bundle again"; nothing is loaded |
+| O3 | **Offline reinstall** of the laptop's images: unplug the network (Wi-Fi off); in `C:\ofm\deploy`: `docker compose down`, then `Get-Content <bundle>\images.txt \| ForEach-Object { docker image rm $_ }`, then `<bundle>\offline-load.ps1`, then `docker compose up -d` (no `--build`) and `docker compose run --rm test` | All images load from the bundle without network; the stack starts with its data (volumes are kept); tests pass; Grafana shows the history. Network back on afterwards. (If anything fails here, `docker compose up -d --build` with the network on restores the images) |
+| O4 | Mathesar → *Administration* → *Settings* | *Usage Data Collection* is off (switch it off if it was on) |
 
 ## Adding a test
 

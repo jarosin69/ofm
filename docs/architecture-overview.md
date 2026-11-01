@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.6.9 (2026-10-31) — encryption: MQTT over TLS and HTTPS through a front-door proxy, OFM's own certificate authority (§13, §14, step 2.7) |
+| **Version** | 0.6.10 (2026-11-01) — offline install bundle; no component contacts the internet by itself (§13, §14, step 2.8) |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -346,7 +346,7 @@ Mosquitto runs with TLS for every client outside the stack (port 8883; plain MQT
 
 ## 14. Deployment architecture
 
-The reference deployment is a single Docker Compose stack on one industrial-grade Linux host at the site: `timescaledb`, the one-shot `migrate` service (ADR-0012), the one-shot `certs` service and the HTTPS front door `proxy` (ADR-0019), `mosquitto`, `nodered`, `grafana`, `mathesar` with its small settings database `mathesar-db`, and — for development and demos only — the OPC UA simulator `opcplc`, plus named volumes for each stateful service and the store-and-forward queue directory. Optional services are switched on by Compose profiles in `.env`. The Compose file in the repository *is* the deployment documentation. Installation on a network without internet uses an offline bundle: the pinned images saved with `docker save` and loaded on the target, prepared before the plant pilot. For the same reason the Node-RED image is built with its protocol nodes included, rather than installing them from the internet.
+The reference deployment is a single Docker Compose stack on one industrial-grade Linux host at the site: `timescaledb`, the one-shot `migrate` service (ADR-0012), the one-shot `certs` service and the HTTPS front door `proxy` (ADR-0019), `mosquitto`, `nodered`, `grafana`, `mathesar` with its small settings database `mathesar-db`, and — for development and demos only — the OPC UA simulator `opcplc`, plus named volumes for each stateful service and the store-and-forward queue directory. Optional services are switched on by Compose profiles in `.env`. The Compose file in the repository *is* the deployment documentation. Installation on a network without internet uses an offline bundle: the pinned images saved with `docker save` and loaded on the target, prepared before the plant pilot. For the same reason the Node-RED image is built with its protocol nodes included, rather than installing them from the internet. Plant installations are made from an **offline bundle** (`tools/make-bundle.ps1`): every pinned image, the repository at one commit (committed files only), checksums and load scripts, so the plant server never needs the internet, and every component's telemetry and update checks are switched off, so OFM makes no outbound connections of its own.
 
 Placement matters more than orchestration at this scale: the runtime must be network-close to the PLCs (polling latency, broadcast domains), and the historian benefits from local SSD. A second host can split the stack (runtime at the edge; database, Grafana and Mathesar on a server VM) with no architectural change — every arrow between containers is already TCP with TLS. Kubernetes is explicitly not used in v1; the operational cost is not justified for a single-site, restart-tolerant posture. The home-lab and the plant run the identical Compose file with different `.env` values, which keeps the development environment honest. The proof of concept runs on Windows 11 with Docker on WSL2. Docker Desktop is free only for personal use, education and small businesses; for use within a larger organisation, either licence it or run the free Docker Engine directly inside a WSL2 Linux distribution — the Compose file is identical either way.
 
@@ -416,4 +416,4 @@ Where the details live, by concern: contested decisions and their alternatives �
 
 ---
 
-*End of Architecture Overview v0.6.9. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.6.10. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

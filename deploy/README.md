@@ -249,7 +249,11 @@ docker compose run --rm migrate example
 16. **Mathesar, first visit** (the model editor, ADR-0013). Open
     https://localhost:8080. Mathesar asks once for an administrator account:
     enter `MATHESAR_ADMIN_USER` and `MATHESAR_ADMIN_PASSWORD` from `.env`. This
-    account is local to Mathesar on this machine; nothing is sent anywhere.
+    account is local to Mathesar on this machine. On the same page, under
+    *Support Mathesar's Growth*, **untick both boxes** (installation
+    confirmation and anonymous usage data): they are ticked by default and
+    would send reports to Mathesar's developers (section *Installing without
+    internet*).
 17. **Connect Mathesar to the model.** In Mathesar, connect an existing
     database with:
     - host `timescaledb`, port `5432`, database `ofm`
@@ -770,12 +774,68 @@ Their certificate must name the server as clients reach it (`OFM_TLS_NAMES`).
 
 ## Installing without internet (plant LAN)
 
-Most plant installations have no internet access. Once its images are on the
-machine, OFM needs none: every service runs offline. Only the installation
-needs the images brought in — saved with `docker save` on a PC that has
-internet, carried over, and loaded with `docker load` (or pulled from an
-internal registry). A packaged offline bundle is prepared before the plant
-pilot (`docs/STATUS.md`, Stage C).
+Most plant networks have no internet. OFM needs none once its images are on
+the server: every service runs offline, and **no component contacts the
+internet by itself** (Node-RED telemetry and update checks, Grafana update
+checks and news, and TimescaleDB usage reports are switched off; Caddy never
+fetches certificates). Mathesar asks on its first visit (step 16) whether to
+send an installation confirmation and daily usage data: **untick both boxes**.
+On an existing installation: Mathesar → *Administration* → *Settings* →
+*Usage Data Collection*: off.
+
+The installation is carried over as one folder, the **offline bundle**: every
+image at the pinned versions, the repository at one commit (committed files
+only — never `.env`, certificates or keys), checksums and two load scripts.
+
+**1. Make the bundle** on a computer with Docker and internet (the
+development laptop), from a committed, tested state:
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\ofm\tools\make-bundle.ps1
+```
+It builds OFM's Node-RED image if needed, downloads any missing image, and
+writes `C:\ofm-bundles\ofm-<version>\` (a few GB; the version comes from
+the last Git tag, e.g. `v0.2` or `v0.1.1-14-g3f2a9c1`). It refuses to run with
+uncommitted changes, so a bundle always matches a commit.
+`MANIFEST.txt` in the folder lists the images and their IDs.
+
+**2. On the plant server** (64-bit x86, Docker Engine or Docker Desktop
+already installed — installing Docker itself is the plant IT's step, open
+question 2 in `docs/STATUS.md`): copy the folder over (USB drive, file share),
+then check and load it. Windows:
+```powershell
+cd D:\ofm-v0.2                                   # wherever the folder is
+powershell -ExecutionPolicy Bypass -File .\offline-load.ps1
+tar -xzf ofm-repo.tar.gz -C C:\                   # creates C:\ofm
+cd C:\ofm\deploy
+```
+Linux:
+```sh
+cd /media/usb/ofm-v0.2
+sh offline-load.sh
+sudo tar -xzf ofm-repo.tar.gz -C /opt             # creates /opt/ofm
+cd /opt/ofm/deploy
+```
+`offline-load` stops with "missing or damaged" if any file differs from its
+checksum: copy the bundle again.
+
+**3. Install** as in section 2, steps 7–8, with three differences:
+- after `make-env.sh`, edit `.env`: `COMPOSE_PROFILES=` (empty: no
+  simulator at a plant), and for access from other computers
+  `OFM_LISTEN_ADDRESS=0.0.0.0` and `OFM_TLS_NAMES=<server name>,<IP>`
+  (section 6, *Reaching OFM from other computers*);
+- start with `docker compose up -d` **without `--build`** (building needs the
+  internet; the image is already loaded);
+- then `docker compose run --rm test`, which also runs offline.
+
+**Upgrading a plant installation** with a newer bundle: back up the model
+(section 6), run step 2 (loading and unpacking over the existing folder keeps
+`.env`, which is not in the archive; local changes to repository files are
+replaced, as with `git pull`), then:
+```powershell
+docker run --rm -v "${PWD}:/work" -w /work alpine:3.22 sh make-env.sh
+docker compose up -d
+docker compose run --rm test
+```
 
 ## Gotchas worth knowing
 

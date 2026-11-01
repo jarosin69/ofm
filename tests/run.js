@@ -14,10 +14,11 @@ const { Results } = require("./lib/harness");
 const SUITES = [
   { name: "schemas",  title: "Payload contracts (schemas/ and their examples)", dir: "schemas" },
   { name: "flows",    title: "Runtime flow, unit tests (flows/ofm-runtime.json)", dir: "flows" },
+  { name: "deploy",   title: "Deployment: pinned images, open ports, secrets, no outbound connections (deploy/)", dir: "deploy" },
   { name: "database", title: "Database: model rules, runtime view, permissions, audit", dir: "database" },
   { name: "live",     title: "Live stack: end to end (exit checks)", dir: "live" }
 ];
-const GROUPS = { all: SUITES.map(s => s.name), offline: ["schemas", "flows"] };
+const GROUPS = { all: SUITES.map(s => s.name), offline: ["schemas", "flows", "deploy"] };
 
 async function main() {
   const args = process.argv.slice(2);

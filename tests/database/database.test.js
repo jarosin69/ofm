@@ -201,6 +201,9 @@ module.exports.run = async function (t) {
 
     const tz = (await db.query("SHOW timezone")).rows[0].TimeZone;
     t.check("database works in UTC (ADR-0003)", tz === "UTC" || tz === "Etc/UTC", "timezone is " + tz);
+    const tel = (await db.query("SHOW timescaledb.telemetry_level")).rows[0]["timescaledb.telemetry_level"];
+    t.check("TimescaleDB sends no usage reports (telemetry_level off, step 2.8)", tel === "off",
+            "telemetry_level is " + tel + " - docker compose up -d applies the setting in docker-compose.yml");
 
     let hyper = [];
     try {

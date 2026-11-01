@@ -22,6 +22,9 @@ services:
     image: timescale/timescaledb:2.30.2-pg16
     container_name: ofm-timescaledb
     restart: unless-stopped
+    # No outbound connections (step 2.8): TimescaleDB's anonymous usage
+    # reports and version checks off, at every start, for old and new volumes.
+    command: ["postgres", "-c", "timescaledb.telemetry_level=off"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -179,7 +182,11 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:?set GRAFANA_USER in .env}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
+      # No outbound connections (step 2.8): no usage reports, update checks or news.
       GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
       OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD}   # used by the provisioned datasource
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /ofm/dashboards/ofm-live-data.json
       TZ: Australia/Melbourne      # display layer: local time lives here (ADR-0003)
@@ -249,6 +256,7 @@ services:
     image: timescale/timescaledb:2.30.2-pg16
     container_name: ofm-mathesar-db
     restart: unless-stopped
+    command: ["postgres", "-c", "timescaledb.telemetry_level=off"]   # as timescaledb
     environment:
       POSTGRES_DB: mathesar_django
       POSTGRES_USER: mathesar

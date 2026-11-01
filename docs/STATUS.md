@@ -2,9 +2,9 @@
 
 *Updated: 2026-10-31. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2, step 2.8 — offline install bundle (next).** Step
-2.7, encryption with OFM's own certificate authority (ADR-0019), passed
-T1–T4 on the laptop, including Grafana opened from a second laptop.
+**▶ We are here: Phase 2, step 2.8 — offline install bundle and no outbound
+connections; delivered, Jarek checks O1–O4.** Next: step 2.9, load test and
+failure drills, release v0.2.
 
 ## The plan in one view
 
@@ -107,7 +107,7 @@ authority, plant IT certificates as a drop-in (2.7, ADR-0019).
 | 2.5 | Historian housekeeping: compression after 7 days; 1-minute and 1-hour averages (avg, min, max, worst quality); retention from `.env` (raw 1 year, averages 5 years); long-range charts read the averages (migration 011) | ✅ 2026-10-31: on the laptop, K1–K3 passed, all 227 checks pass |
 | 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3; ADR-0001 amendment) | ✅ 2026-10-31: installed and pushed on the laptop |
 | 2.7 | Encryption (TLS) for every connection from another computer: MQTT on 8883, HTTPS for Grafana, Mathesar and the Node-RED editor through a Caddy front door; OFM's own certificate authority, renewed automatically; plant IT certificates importable; open to the network with one `.env` setting (ADR-0019) | ✅ 2026-11-01: on the laptop, T1–T4 passed (Grafana over HTTPS from a second laptop) |
-| 2.8 | Offline install bundle: all images and the repository for a network without internet | ⬜ |
+| 2.8 | Offline install bundle (`tools/make-bundle.ps1`): every pinned image, the repository at one commit, checksums, load scripts for Windows and Linux; no component contacts the internet by itself (Node-RED, Grafana, TimescaleDB telemetry off; Mathesar's usage data unticked); `deploy` test suite | ▶ delivered 2026-11-01; Jarek checks O1–O4 |
 | 2.9 | Load test (2,000 values/s) and failure drills; release `v0.2` | ⬜ |
 
 ## Stage C — Plant pilot ⬜ (after Phase 2)
@@ -199,8 +199,9 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 2.8: offline install bundle — every pinned image (now including
-   Caddy) and the repository, for a plant network without internet.
+1. Jarek installs step 2.8, switches Mathesar's usage data collection off,
+   runs the tests and checks O1–O4 (tests/README).
+2. Step 2.9: load test (2,000 values/s) and failure drills; release v0.2.
 
 ## Open questions
 
@@ -220,7 +221,6 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 12 | Verify KPI terminology against ISO 22400-2 (ADR-0008) | Going public |
 | 13 | Schemas still to write: machine state (3a), line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
 | 14 | First SPC characteristics and their plans (pack weight, temper index?); how lab results arrive (manual entry or instrument interface) | Phase 3c |
-| 19 | Offline install bundle: script that saves all pinned images and the repository for transfer to an isolated network | Phase 2 |
 | 20 | Phase 3a must build `config.material` (with `material_type`), not `product` (ADR-0014) | Phase 3a |
 | 21 | Food safety: which checks first; who verifies; electronic records replacing or accompanying paper under the site's certification scheme | Phase 3d |
 | 22 | Traceability: lot identification on the floor, tipping points, mass-balance tolerance, mixing-attribution rules (own ADR) | Phase 3e |
@@ -232,7 +232,8 @@ Numbers are stable; answered questions are removed rather than renumbered.
 
 - Pinned versions: TimescaleDB 2.30.2-pg16, Mosquitto 2.1.2-alpine, Grafana
   13.2.4 (`grafana/grafana`; `grafana-oss` is no longer updated), Mathesar
-  0.12.0, OPC PLC simulator 2.15.11, Caddy 2.11.7-alpine (HTTPS front door),
+  0.12.0, OPC PLC simulator 2.15.11, Caddy 2.11.7-alpine (HTTPS front door), Alpine 3.22 (runs
+  `make-env.sh`; in the offline bundle),
   Node-RED 4.1.16 (Node 22) built as
   `ofm/node-red:4.1.16-ofm.3` with node-opcua 2.160.0, @st-one-io/nodes7
   1.1.2, st-ethernet-ip 2.7.5, node-red-contrib-opcua 0.2.355,
@@ -313,6 +314,20 @@ Numbers are stable; answered questions are removed rather than renumbered.
 - Rows written late by store-and-forward appear in the averages at the next
   refresh if they are less than 30 days old; older late rows need a manual
   `CALL refresh_continuous_aggregate(…)`.
+- Step 2.8 was tested on the local replica with Docker Engine 29.8 and
+  Compose 5.5: the compose file validated by Compose itself (also the first
+  validation of the step 2.7 changes); the bundle built by
+  `make-bundle.ps1` under PowerShell 7.4 from a Git copy of the repository
+  (uncommitted changes refused; `.env` not in the archive), then loaded by
+  both `offline-load.ps1` and `offline-load.sh` after removing every image; a
+  damaged file stopped both. The images were stand-ins tagged with the real
+  names (Docker Hub is not reachable from the replica), so the real bundle
+  size and `docker save`/`load` of the real images are checked in O1 and O3.
+  Windows PowerShell 5.1 itself was not available; the scripts avoid
+  everything 5.1 lacks. TimescaleDB accepted `telemetry_level=off` at start.
+  Found while checking outbound connections: Mathesar's first-visit page
+  ticks "installation confirmation" and "usage data" by default (README
+  step 16 said nothing was sent; corrected).
 - Step 2.7 was tested on the local replica (Mosquitto 2.0 with OFM's
   configuration, Caddy 2.11.7, the certificate script under busybox, as in
   the Alpine-based image): certificate authority and server certificate

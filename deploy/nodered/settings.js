@@ -79,6 +79,13 @@ module.exports = {
         projects: { enabled: false }
     },
 
+    // No outbound connections (step 2.8): no usage reports, no update checks,
+    // and the editor does not ask. Plant networks often have no internet.
+    telemetry: {
+        enabled: false,
+        updateNotification: false
+    },
+
     logging: {
         console: { level: "info", metrics: false, audit: false }
     }
