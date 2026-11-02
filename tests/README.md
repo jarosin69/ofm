@@ -19,7 +19,7 @@ Each check prints one line, `PASS`, `FAIL` (with the reason underneath) or
 `SOME CHECKS FAILED`. The exit code is 0 only when everything passed, so the
 same command can later run automatically on every commit (CI).
 
-## The five suites
+## The suites
 
 | Suite | Checks | Needs the stack |
 |---|---|---|
@@ -27,6 +27,7 @@ same command can later run automatically on every commit (CI).
 | `flows` | The function code in `flows/ofm-runtime.json`, run outside Node-RED: scaling, validation and timestamp rules (ADR-0003), quarantine, model cache; S7 and EtherNet/IP polling against a stand-in PLC library (report by exception, wrong addresses skipped, connection loss and recovery); heartbeat, historian writer and its disk queue; the saved model copy and the start without the database; every payload the flow can produce matches its schema and topics follow the topic standard | no |
 | `deploy` | The deployment files: every image pinned to a version and OFM's own never pulled; only the encrypted ports may be opened to the network, the database never; no password written into `docker-compose.yml`; every component's telemetry and update checks off; the offline bundle covers every image | no |
 | `database` | All migrations applied and unedited; UTC; hypertables; the model refuses bad names, reserved names, missing units, duplicate addresses; `vw_runtime_model` is right; every role can do exactly what Overview §13 says and no more; every model change is audited | yes |
+| `load`, `watch` | **Opt-in, never part of `all`.** The Phase 2 load test and the drill recorder (step 2.9, below); they run for minutes and need the load-test line | yes, with the load-test line |
 | `live` | The automated part of the Phase 1 exit check (below): runtime and sources online, the whole model loaded, a current value on the UNS for every property, every UNS message valid, recent rows in the historian, dashboard and Grafana datasource working, editors reachable; model reload; encryption (`tls`: certificates, MQTT over TLS, HTTPS for every page, checked as a client computer would) | yes, with data flowing |
 
 The `live` suite takes its list of properties from the model, not from a file:
@@ -186,6 +187,68 @@ pinned, bundle covers every image, telemetry off in the files) and the
 | O2 | Damage a copy of the bundle: `Copy-Item -Recurse <bundle> C:\ofm-bundles\damaged`, open `damaged\images.txt` in Notepad, add a space, save; run `damaged\offline-load.ps1`; then delete `damaged` | `DAMAGED  images.txt` and "copy the bundle again"; nothing is loaded |
 | O3 | **Offline reinstall** of the laptop's images: unplug the network (Wi-Fi off); in `C:\ofm\deploy`: `docker compose down`, then `Get-Content <bundle>\images.txt \| ForEach-Object { docker image rm $_ }`, then `<bundle>\offline-load.ps1`, then `docker compose up -d` (no `--build`) and `docker compose run --rm test` | All images load from the bundle without network; the stack starts with its data (volumes are kept); tests pass; Grafana shows the history. If the bench PLCs share the disconnected network, their checks fail too (sources offline) — expected. Network back on afterwards. (If anything fails here, `docker compose up -d --build` with the network on restores the images) |
 | O4 | In Mathesar: menu at the top right (your user name) → *Administration* → *Settings*, or https://localhost:8080/administration/settings/ | Under *Usage Data Collection*, *Enable anonymous usage data collection* is unticked (untick it if it was ticked) |
+
+**Step 2.9, load test and failure drills — the Phase 2 exit check.** Exit
+criterion (Overview §18): *model edit visible in the runtime within a second;
+broker-kill and PLC-disconnect drills pass; 2,000 values per second
+sustained.* The load comes from a second OPC PLC simulator, `opcplc-load`,
+whose 2,000 values change every second, read into a separate test line
+(`ofmload/lab/loadtest/loadline01`) — it never touches the bench PLCs or the
+example plant. Set up once, from `C:\ofm\deploy`:
+
+```powershell
+docker compose --profile loadtest up -d
+docker compose run --rm migrate loadtest
+```
+
+Within a second the runtime adds 2,000 properties (no restart). In Grafana,
+the *Line* list now also offers `ofmload/lab/loadtest/loadline01` (20
+machines of 100 properties; pick a *Machine* before looking at charts), and
+*Values stored per minute* shows about 120,000.
+
+| # | Do | Expected |
+|---|---|---|
+| L1 | `docker compose run --rm -e OFM_LOAD_MINUTES=10 test load` (10 minutes) | Every 10 s a line like `UNS 2000 values/s (100%), historian 2000 rows/s, writer writing`; at the end `ALL CHECKS PASSED`: rate held, 95 % of values on the UNS within 2.5 s of their device time, every UNS value in the historian, nothing buffered or dropped, all values good |
+| L2 | During L1, in a second window: `docker stats --no-stream` (twice, a minute apart) | Note *CPU %* and *MEM USAGE* of `ofm-nodered`, `ofm-mosquitto`, `ofm-timescaledb`: the figures for STATUS. Node-RED uses one CPU core at most, so its CPU % shows the headroom (100 % = one core full) |
+| L3 | *Optional, the ceiling:* in `.env` set `OFM_LOAD_VALUES=4000`, then `docker compose --profile loadtest up -d`, `docker compose run --rm migrate loadtest 4000`, then `docker compose run --rm -e OFM_LOAD_MINUTES=5 test load`; repeat with 6000, 8000 … | The highest number that still passes is what this computer can carry. Set `OFM_LOAD_VALUES=2000` and `migrate loadtest` back afterwards |
+
+**Drills under load.** **One drill per recording:** start the recorder in
+one window, wait for its first two lines (about 20 s), run *one* drill's
+commands in a second window, then leave everything alone until the REPORT
+appears. The recorder runs 3 minutes, then prints a REPORT: the events it
+saw, gaps on the UNS, gaps in the historian, and values that reached the UNS
+but are missing from the historian. Two drills in one recording mix their
+effects, and the report can no longer be judged.
+
+```powershell
+docker compose run --rm -e OFM_WATCH_MINUTES=3 test watch
+```
+
+| # | Drill (second window) | Expected REPORT |
+|---|---|---|
+| X1 | **Broker down:** `docker compose stop mosquitto`, wait 20 s, `docker compose start mosquitto` | UNS gap ≈ 20 s; **historian gaps: none**; lost 0 (history does not go through the broker, ADR-0002) |
+| X2 | **Database down:** `docker compose stop timescaledb`, wait 60 s, `docker compose start timescaledb` | Writer `buffering`, then `writing`; UNS gaps: none; **historian gaps: none**; lost 0 |
+| X3 | **Runtime crash:** `docker compose kill nodered`, wait 15 s, `docker compose start nodered` | `runtime offline`, then `online`; UNS and historian gap ≈ 20–30 s (down time plus start-up); lost **at most 2,000** — the last second in the writer's memory, the one loss a crash can cause |
+| X4 | **Runtime restart:** `docker compose restart nodered` | Gaps of about 10–20 s; lost **0** (the writer saves its memory to the disk queue on stop) |
+| X5 | **PLC lost:** `docker compose --profile loadtest stop opcplc-load`, wait 20 s, `docker compose --profile loadtest start opcplc-load` | `load source offline` within seconds, `online` after the start; values return by themselves; lost 0 |
+| X6 | **Data path restart:** `docker compose restart timescaledb mosquitto nodered` | Everything returns without any manual step; gaps of about the restart time; lost 0 |
+
+**Afterwards**, remove the test line with all its history, and stop its
+simulator:
+
+```powershell
+docker compose run --rm migrate loadtest-remove
+docker compose --profile loadtest stop opcplc-load
+```
+
+**Release.** When `docker compose run --rm test` passes and L1, X1–X6 behave
+as expected, record the results in `docs/STATUS.md`, commit, and tag the
+release from `C:\ofm`:
+
+```powershell
+git tag -a v0.2 -m "Phase 2: robust and editable"
+git push origin v0.2
+```
 
 ## Adding a test
 

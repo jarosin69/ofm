@@ -10,6 +10,8 @@
 #   docker compose run --rm migrate example      load or refresh the example plant (db/examples/acme.sql)
 #   docker compose run --rm migrate erd          regenerate docs/generated/erd.md
 #   docker compose run --rm migrate adduser NAME create a personal model-editing login
+#   docker compose run --rm migrate loadtest [N] add the load-test line, N values/s (step 2.9)
+#   docker compose run --rm migrate loadtest-remove   remove it and all its history
 #
 # The stack also runs "up" automatically on every "docker compose up".
 # After applying migrations, "up" sets the passwords of the platform roles
@@ -182,6 +184,32 @@ cmd_example() {
   sql -At -c "SELECT '  ' || topic || COALESCE(chr(10) || '      <- ' || cache_key, '') FROM config.vw_runtime_model WHERE topic LIKE 'acme/%' ORDER BY topic"
 }
 
+# Load test (step 2.9): the synthetic line of db/examples/loadtest.sql.
+cmd_loadtest() {
+  n=${1:-2000}
+  case "$n" in ''|*[!0-9]*) echo "Usage: migrate loadtest [N]   (N = number of values per second, 1-9999)" >&2; exit 2 ;; esac
+  if [ "$n" -lt 1 ] || [ "$n" -gt 9999 ]; then echo "N must be between 1 and 9999" >&2; exit 2; fi
+  { echo "BEGIN;"; cat "$REPO/db/examples/loadtest.sql"; echo; echo "COMMIT;"; } | sql -v n="$n"
+  active=$(sql -At -c "SELECT count(*) FROM config.vw_runtime_model WHERE topic LIKE 'ofmload/%' AND cache_key IS NOT NULL")
+  echo "Load-test line ready: $active properties on ofmload/lab/loadtest/loadline01, read from opcplc-load."
+  echo "The simulator must offer at least $n fast nodes: OFM_LOAD_VALUES=$n in .env (default 2000),"
+  echo "then: docker compose --profile loadtest up -d"
+}
+
+cmd_loadtest_remove() {
+  # First stop acquisition (the runtime reloads within a second) and let the
+  # historian writer flush its last second, so no row arrives for a property
+  # that no longer exists; then delete.
+  sql -c "UPDATE config.plc_mapping SET retired_at = now() WHERE retired_at IS NULL AND source_id IN (SELECT id FROM config.source WHERE name = 'opcplc_load')"
+  sleep 3
+  { echo "BEGIN;"; cat "$REPO/db/examples/loadtest-remove.sql"; echo; echo "COMMIT;"; } | sql
+  # The averages are refreshed for the last 30 days only; recompute them for the
+  # removed period now, so no averages of the test line remain (outside a transaction).
+  sql -c "CALL refresh_continuous_aggregate('hist.measurement_1m', now() - interval '30 days', now())"
+  sql -c "CALL refresh_continuous_aggregate('hist.measurement_1h', now() - interval '30 days', now())"
+  echo "Load-test line removed, with its history. Stop its simulator: docker compose --profile loadtest stop opcplc-load"
+}
+
 # Creates a personal login for editing the model. It has exactly the rights
 # of ofm_config, but the audit log and updated_by record the person's name.
 cmd_adduser() {
@@ -214,5 +242,7 @@ case "${1:-up}" in
   example) cmd_example ;;
   erd)     cmd_erd ;;
   adduser) cmd_adduser "${2:-}" ;;
-  *) echo "Usage: migrate [up|status|example|erd|adduser NAME]" >&2; exit 2 ;;
+  loadtest) cmd_loadtest "${2:-}" ;;
+  loadtest-remove) cmd_loadtest_remove ;;
+  *) echo "Usage: migrate [up|status|example|erd|adduser NAME|loadtest [N]|loadtest-remove]" >&2; exit 2 ;;
 esac

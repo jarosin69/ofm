@@ -33,6 +33,16 @@ module.exports.run = async function (t) {
   t.check("OFM's own image is built from deploy/nodered",
           own.some(([, s]) => s.build === "./nodered" || (s.build && s.build.context === "./nodered")));
 
+  // Drill X1 (step 2.9): a restarted broker container still has last start's
+  // password file, which Mosquitto 2.1's "mosquitto_passwd -c" will not overwrite.
+  const mq = JSON.stringify(services.mosquitto.command || "");
+  t.check("the broker starts again in the same container (stop/start, server restart): its private folder is emptied first",
+          mq.indexOf("rm -rf /mosquitto/secure") >= 0 && mq.indexOf("rm -rf /mosquitto/secure") < mq.indexOf("mosquitto_passwd -c"));
+
+  const load = services["opcplc-load"];
+  t.check("the load-test simulator only runs when asked for (profile loadtest) and publishes no port",
+          load && JSON.stringify(load.profiles) === '["loadtest"]' && !load.ports);
+
   // --- ports (ADR-0019) -------------------------------------------------------------------
   const NETWORK = { mosquitto: ["8883"], proxy: ["3000", "8080", "1880"] };
   const problems = [];

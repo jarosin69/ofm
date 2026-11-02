@@ -107,11 +107,15 @@ services:
     # At every start, build the password file from .env and copy the ACL into a
     # folder only the broker can read; then start the broker. .env stays the
     # single source of every password. ($$ passes a literal $ to the container.)
+    # The folder is emptied first: "docker compose stop/start" and a server
+    # restart reuse the container, and Mosquitto 2.1's mosquitto_passwd -c
+    # refuses to overwrite an existing file (found in drill X1, step 2.9).
     command:
       - sh
       - -c
       - |
         set -e
+        rm -rf /mosquitto/secure
         mkdir -p /mosquitto/secure
         mosquitto_passwd -c -b /mosquitto/secure/passwd ofm_runtime "$$OFM_MQTT_RUNTIME_PASSWORD"
         mosquitto_passwd -b /mosquitto/secure/passwd ofm_reader "$$OFM_MQTT_READER_PASSWORD"
@@ -286,6 +290,25 @@ services:
       - --ut                # allow unencrypted connections (simulator only)
     ports:
       - "127.0.0.1:50000:50000"
+
+  # Load-test data source (step 2.9): a second OPC PLC simulator with
+  # OFM_LOAD_VALUES fast nodes (FastUInt1 ... FastUIntN), each changing once a
+  # second, for the load-test line (docker compose run --rm migrate loadtest).
+  # Runs only with: docker compose --profile loadtest up -d
+  # Stop it afterwards: docker compose --profile loadtest stop opcplc-load
+  opcplc-load:
+    image: mcr.microsoft.com/iotedge/opc-plc:2.15.11
+    container_name: ofm-opcplc-load
+    hostname: opcplc-load
+    restart: "no"
+    profiles: ["loadtest"]
+    command:
+      - --pn=50000
+      - --autoaccept
+      - --ut
+      - --fn=${OFM_LOAD_VALUES:-2000}   # number of fast nodes = values per second
+      - --fr=1                          # each changes once a second
+      - --ft=uint
 
   # Automated tests (tests/README.md). Never started by "up"; run with
   #   docker compose run --rm test              all suites

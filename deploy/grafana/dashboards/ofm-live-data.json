@@ -17,6 +17,42 @@
   "templating": {
     "list": [
       {
+        "name": "line",
+        "label": "Line",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "ofm-historian"
+        },
+        "query": "-- One production line at a time: a plant (or a load test) can have thousands of\n-- properties, far too many for one page. The line is the first four topic levels.\nSELECT DISTINCT substring(p.topic from '^([^/]+/[^/]+/[^/]+/[^/]+)/') AS __text,\n       substring(p.topic from '^([^/]+/[^/]+/[^/]+/[^/]+)/') AS __value\nFROM config.vw_property_path p\nWHERE NOT p.is_retired\nORDER BY 1",
+        "definition": "-- One production line at a time: a plant (or a load test) can have thousands of\n-- properties, far too many for one page. The line is the first four topic levels.\nSELECT DISTINCT substring(p.topic from '^([^/]+/[^/]+/[^/]+/[^/]+)/') AS __text,\n       substring(p.topic from '^([^/]+/[^/]+/[^/]+/[^/]+)/') AS __value\nFROM config.vw_property_path p\nWHERE NOT p.is_retired\nORDER BY 1",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {},
+        "options": [],
+        "sort": 0,
+        "hide": 0
+      },
+      {
+        "name": "machine",
+        "label": "Machine",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "ofm-historian"
+        },
+        "query": "-- The machines of the selected line (fifth topic level). Charts show one\n-- machine's properties: a line can have hundreds, a machine has tens.\nSELECT DISTINCT substring(p.topic from '^[^/]+/[^/]+/[^/]+/[^/]+/([^/]+)/') AS __text,\n       substring(p.topic from '^[^/]+/[^/]+/[^/]+/[^/]+/([^/]+)/') AS __value\nFROM config.vw_property_path p\nWHERE NOT p.is_retired AND p.topic LIKE '${line}/%'\nORDER BY 1",
+        "definition": "-- The machines of the selected line (fifth topic level). Charts show one\n-- machine's properties: a line can have hundreds, a machine has tens.\nSELECT DISTINCT substring(p.topic from '^[^/]+/[^/]+/[^/]+/[^/]+/([^/]+)/') AS __text,\n       substring(p.topic from '^[^/]+/[^/]+/[^/]+/[^/]+/([^/]+)/') AS __value\nFROM config.vw_property_path p\nWHERE NOT p.is_retired AND p.topic LIKE '${line}/%'\nORDER BY 1",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false,
+        "current": {},
+        "options": [],
+        "sort": 0,
+        "hide": 0
+      },
+      {
         "name": "property",
         "label": "Property",
         "type": "query",
@@ -24,8 +60,8 @@
           "type": "grafana-postgresql-datasource",
           "uid": "ofm-historian"
         },
-        "query": "SELECT p.display_name || COALESCE(' [' || u.symbol || ']', '') || ' · ' || substring(p.topic from '([^/]+/[^/]+)$') AS __text,\n       p.property_id AS __value\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nWHERE NOT p.is_retired\nORDER BY p.topic",
-        "definition": "SELECT p.display_name || COALESCE(' [' || u.symbol || ']', '') || ' · ' || substring(p.topic from '([^/]+/[^/]+)$') AS __text,\n       p.property_id AS __value\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nWHERE NOT p.is_retired\nORDER BY p.topic",
+        "query": "SELECT p.display_name || COALESCE(' [' || u.symbol || ']', '') || ' · ' || substring(p.topic from '([^/]+/[^/]+)$') AS __text,\n       p.property_id AS __value\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nWHERE NOT p.is_retired AND p.topic LIKE '${line}/${machine}/%'\nORDER BY p.topic",
+        "definition": "SELECT p.display_name || COALESCE(' [' || u.symbol || ']', '') || ' · ' || substring(p.topic from '([^/]+/[^/]+)$') AS __text,\n       p.property_id AS __value\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nWHERE NOT p.is_retired AND p.topic LIKE '${line}/${machine}/%'\nORDER BY p.topic",
         "refresh": 2,
         "multi": true,
         "includeAll": true,
@@ -57,7 +93,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Everything on this dashboard comes from the model.** Properties, names, units and alarm limits are read from the database, so a property added in Mathesar appears here without editing the dashboard. Times are shown in Melbourne time; they are stored in UTC (ADR-0003). Orange points mark values that are *uncertain* or *bad*; red dashed lines are the alarm limits from the model."
+        "content": "**Everything on this dashboard comes from the model.** Choose the **Line** at the top (the table shows the whole line), then the **Machine** (the charts show its properties). Properties, names, units and alarm limits are read from the database, so a property added in Mathesar appears here without editing the dashboard. Times are shown in Melbourne time; they are stored in UTC (ADR-0003). Orange points mark values that are *uncertain* or *bad*; red dashed lines are the alarm limits from the model."
       }
     },
     {
@@ -225,12 +261,12 @@
     {
       "id": 5,
       "type": "table",
-      "title": "Latest values",
+      "title": "Latest values · ${line}",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "ofm-historian"
       },
-      "description": "Newest historian row of every property. Quality 'stale': nothing stored for more than twice the property's max publish interval (ADR-0007) - the source or the runtime is not delivering.",
+      "description": "The most recent stored value of every property on the selected line. 'Age' grows when values stop arriving; 'stale' means nothing for more than twice the property's max publish interval (ADR-0007).",
       "gridPos": {
         "h": 7,
         "w": 24,
@@ -247,7 +283,7 @@
           "editorMode": "code",
           "rawQuery": true,
           "format": "table",
-          "rawSql": "SELECT p.display_name AS \"Property\",\n       substring(p.topic from '([^/]+/[^/]+)$') AS \"Machine / property\",\n       m.value AS \"Value\",\n       u.symbol AS \"Unit\",\n       CASE WHEN extract(epoch FROM now() - m.ts) * 1000 > 2 * mp.max_publish_interval_ms THEN 'stale'\n            ELSE (ARRAY['good', 'uncertain', 'bad'])[m.quality + 1] END AS \"Quality\",\n       m.ts AS \"Time\",\n       extract(epoch FROM now() - m.ts)::int AS \"Age (s)\",\n       (ARRAY['device', 'gateway'])[m.ts_source + 1] AS \"Time source\"\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nJOIN LATERAL (SELECT * FROM hist.measurement h\n              WHERE h.property_id = p.property_id\n              ORDER BY h.ts DESC LIMIT 1) m ON true\nWHERE NOT p.is_retired\nORDER BY p.topic"
+          "rawSql": "SELECT p.display_name AS \"Property\",\n       substring(p.topic from '([^/]+/[^/]+)$') AS \"Machine / property\",\n       m.value AS \"Value\",\n       u.symbol AS \"Unit\",\n       CASE WHEN extract(epoch FROM now() - m.ts) * 1000 > 2 * mp.max_publish_interval_ms THEN 'stale'\n            ELSE (ARRAY['good', 'uncertain', 'bad'])[m.quality + 1] END AS \"Quality\",\n       m.ts AS \"Time\",\n       extract(epoch FROM now() - m.ts)::int AS \"Age (s)\",\n       (ARRAY['device', 'gateway'])[m.ts_source + 1] AS \"Time source\"\nFROM config.vw_property_path p\nLEFT JOIN config.machine_property mp ON mp.id = p.property_id\nLEFT JOIN config.engineering_unit u ON u.id = mp.engineering_unit_id\nJOIN LATERAL (SELECT * FROM hist.measurement h\n              WHERE h.property_id = p.property_id\n              ORDER BY h.ts DESC LIMIT 1) m ON true\nWHERE NOT p.is_retired AND p.topic LIKE '${line}/%'\nORDER BY p.topic"
         }
       ],
       "fieldConfig": {

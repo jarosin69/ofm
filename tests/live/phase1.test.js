@@ -77,9 +77,13 @@ module.exports.run = async function (t) {
     return;
   }
   try {
-    const model = (await db.query(
+    const fullModel = (await db.query(
       "SELECT property_id, topic, datatype, unit, is_historised, max_publish_interval_ms, source_name " +
       "FROM config.vw_runtime_model WHERE runtime_name = $1 ORDER BY topic", [runtime])).rows;
+    // The load-test line (step 2.9) has its own suite, "load"; checking its
+    // thousands of properties one by one here would only bury the plant's.
+    const model = fullModel.filter(r => !r.topic.startsWith("ofmload/"));
+    if (fullModel.length > model.length) t.note((fullModel.length - model.length) + " load-test properties (ofmload/...) left to the 'load' suite");
     if (!t.check("the model gives runtime " + runtime + " properties to acquire", model.length > 0,
                  "none - load the example plant: docker compose run --rm migrate example")) return;
     const sources = [...new Set(model.map(r => r.source_name))];
@@ -107,8 +111,8 @@ module.exports.run = async function (t) {
     t.check("historian writer is writing, nothing queued or dropped (step 2.4)",
             hist && hist.state === "writing" && hist.queueDepth === 0 && hist.droppedRows === 0, JSON.stringify(hist));
     const cache = payload("ofm/_system/cache/" + runtime);
-    t.check("runtime loaded the whole model (" + model.length + " rows)",
-            cache && cache.rows === model.length,
+    t.check("runtime loaded the whole model (" + fullModel.length + " rows)",
+            cache && cache.rows === fullModel.length,
             cache ? "cache status says " + cache.rows + " rows - is the runtime's 'model change listener' node green?" : "no cache status");
     t.check("runtime runs on the database's model, not on its saved copy (step 2.6)",
             cache && cache.trigger !== "disk",
@@ -170,9 +174,28 @@ module.exports.run = async function (t) {
 
     // --- 4. the dashboard ---------------------------------------------------------------------
     const dash = readJson(path.join(ROOT, "deploy", "grafana", "dashboards", "ofm-live-data.json"));
+    // The dashboard shows one line, and charts for one machine, at a time
+    // (step 2.9): Line, then Machine, then Property must together offer every
+    // acquired property.
+    const lineOf = topic => topic.split("/").slice(0, 4).join("/");
+    const machineOf = topic => topic.split("/")[4];
+    const lit = v => v.replace(/'/g, "''");
+    const withLine = (sql, line, machine) => sql.replace(/\$\{line\}|\$line\b/g, lit(line))
+                                                 .replace(/\$\{machine\}|\$machine\b/g, lit(machine || ""));
+    const lineVar = dash.templating.list.find(v => v.name === "line");
+    const lines = (await db.query(lineVar.query)).rows.map(r => r.__value);
+    t.check("dashboard Line list (from the model) offers every line with acquired properties",
+            model.every(p => lines.includes(lineOf(p.topic))), lines.join(", "));
+    const machineVar = dash.templating.list.find(v => v.name === "machine");
     const variable = dash.templating.list.find(v => v.name === "property");
-    const choices = (await db.query(variable.query)).rows;
-    t.check("dashboard property list (from the model) offers every acquired property",
+    let choices = [], machinesOk = true;
+    for (const line of lines) {
+      const machines = (await db.query(withLine(machineVar.query, line))).rows.map(r => r.__value);
+      machinesOk = machinesOk && model.filter(p => lineOf(p.topic) === line).every(p => machines.includes(machineOf(p.topic)));
+      for (const machine of machines) choices = choices.concat((await db.query(withLine(variable.query, line, machine))).rows);
+    }
+    t.check("dashboard Machine list, line by line, offers every machine with acquired properties", machinesOk);
+    t.check("dashboard Property list, machine by machine, offers every acquired property",
             model.every(p => choices.some(c => Number(c.__value) === p.property_id)),
             choices.length + " choices");
 
@@ -187,7 +210,9 @@ module.exports.run = async function (t) {
       .replace(/\$__timeFilter\(([^)]+)\)/g, (_, c) => c + " BETWEEN " + q(from) + " AND " + q(to))
       .replace(/\$__timeFrom\(\)/g, q(from)).replace(/\$__timeTo\(\)/g, q(to))
       .replace(/\$__interval_ms/g, String(ms))
-      .replace(/\$property/g, String(model[0].property_id));
+      .replace(/\$property/g, String(model[0].property_id))
+      .replace(/\$\{line\}|\$line\b/g, lineOf(model[0].topic))
+      .replace(/\$\{machine\}|\$machine\b/g, machineOf(model[0].topic));
     const failed = [];
     for (const panel of dash.panels || []) {
       for (const target of panel.targets || []) {
@@ -212,6 +237,29 @@ module.exports.run = async function (t) {
       t.check("the dashboard Grafana serves is the one in the repository (same queries)",
               d.status === 200 && queries(d.body.dashboard) === queries(dash),
               "Grafana has an older version - restart it: docker compose restart grafana");
+      // Grafana reads its home page (GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH)
+      // only when it starts, so after a dashboard change the home page can be
+      // an old copy even while the provisioned dashboard is current (step 2.9).
+      // Grafana 13 answers with a forward to the home dashboard's own address
+      // (e.g. /d/default-home-dashboard/home); older versions with the dashboard.
+      const home = await http(stack.grafanaUrl + "/api/dashboards/home", grafana);
+      let homeDash = home.body && home.body.dashboard, homeWhere = "the home page";
+      const fwd = home.body && home.body.redirectUri;
+      if (!homeDash && fwd) {
+        const uid = (/\/d\/([^/?]+)/.exec(fwd) || [])[1];
+        homeWhere = "the home page (" + fwd + ")";
+        if (uid) {
+          const target = await http(stack.grafanaUrl + "/api/dashboards/uid/" + encodeURIComponent(uid), grafana);
+          if (target.status === 200 && target.body) homeDash = target.body.dashboard;
+        }
+      }
+      if (homeDash) {
+        t.check("Grafana's home page is the repository's dashboard too (same queries)", queries(homeDash) === queries(dash),
+                homeWhere + " is an older copy - restart Grafana: docker compose restart grafana");
+      } else {
+        t.skip("Grafana's home page is the repository's dashboard too",
+               "Grafana answered " + home.status + " " + JSON.stringify(home.body).slice(0, 120) + " - check it in the browser: the Line selector must be there");
+      }
       const ds = await http(stack.grafanaUrl + "/api/datasources/uid/ofm-historian/health", grafana);
       t.check("Grafana reaches the historian as ofm_reader", ds.status === 200 && ds.body && ds.body.status === "OK",
               "HTTP " + ds.status + " " + JSON.stringify(ds.body));

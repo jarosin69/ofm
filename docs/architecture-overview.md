@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.6.11 (2026-11-01) — §13.1 encryption and certificates explained, with figures; which devices need `ofm-ca.crt` |
+| **Version** | 0.6.12 (2026-11-01) — load test and drill results (§3.2, §15, §17, step 2.9); dashboard shows one line at a time |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -63,10 +63,10 @@ These are engineering targets for a single site, not guarantees; they size the d
 |---|---|
 | Tag capacity | 5,000 mapped properties per Node-RED instance |
 | Ingest rate | 2,000 value changes/second sustained |
-| UNS latency (PLC change → MQTT publish) | < 250 ms typical |
+| UNS latency (PLC change → MQTT publish) | < 250 ms typical — set mostly by each source's poll or OPC UA subscription intervals (section 15) |
 | Model edit → runtime effect | < 1 s (cache reload via NOTIFY) |
 | Historian completeness | No loss across broker restarts or DB outages ≤ queue capacity |
-| Historian retention | Raw: 90 days; downsampled aggregates: 5 years (tunable per property class) |
+| Historian retention | Raw: 1 year; 1-minute and 1-hour aggregates: 5 years (configurable in `.env`, step 2.5) |
 | Recovery point objective | ≤ 24 h for the model; ≤ store-and-forward queue depth for telemetry |
 | Availability posture | Single-node, restart-tolerant; no HA clustering in v1 |
 | Network posture | Runs fully offline on an isolated automation network; internet access is never required after installation |
@@ -411,7 +411,7 @@ Placement matters more than orchestration at this scale: the runtime must be net
 
 The design scales in three independent dimensions. **Tags** scale by adding Node-RED instances partitioned by source ownership (section 7.3) — the cache, flows, and model are identical per instance. **Consumers** scale freely on the broker side; Mosquitto handles the realistic single-site subscriber count, and retained messages mean new consumers impose no replay load. **History** scales with TimescaleDB chunking, compression (~90 % typical on telemetry), and continuous aggregates that keep dashboard queries off raw data.
 
-Known ceilings, recorded so they are watched rather than discovered: Node-RED single-thread throughput (validated by Phase 2 load test against the 2,000 msg/s target); Mosquitto's single-node nature (no HA — acceptable per section 3.2's availability posture; a broker restart costs seconds of live-state visibility and zero history thanks to ADR-0002); and PostgreSQL insert throughput, which batching keeps far below limits at target rates. Each ceiling has a named escape hatch (more instances; EMQX; ingest via a queue) that is deliberately *not* built until measurement demands it.
+Known ceilings, recorded so they are watched rather than discovered: Node-RED single-thread throughput — measured in step 2.9 on the development replica: one instance carried 6,000 values/s from OPC UA through the UNS into the historian, every value stored, at about three-quarters of one CPU core, three times the 2,000/s target; each installation measures its own with the load test (section 17); Mosquitto's single-node nature (no HA — acceptable per section 3.2's availability posture; a broker restart costs seconds of live-state visibility and zero history thanks to ADR-0002); and PostgreSQL insert throughput, which batching keeps far below limits at target rates. Each ceiling has a named escape hatch (more instances; EMQX; ingest via a queue) that is deliberately *not* built until measurement demands it. **Latency** is dominated not by OFM but by how often a source is read: with OPC UA sampling every 0.5 s and publishing every 1 s (the example settings) values reach the UNS about 1.3 s after their device time; with 0.1 s for both, about 0.3 s. Faster settings cost load on the PLC, so they are chosen per source in the model.
 
 ## 16. Backup and disaster recovery
 
@@ -424,6 +424,8 @@ Broker state is deliberately expendable — retained messages regenerate from th
 The strategy leans on the model-driven design: because flows are generic, testing effort concentrates on a small pipeline instead of per-machine logic. Five tiers. **Schema tests** (table-driven SQL cases, each run as the relevant role in a transaction that is rolled back) verify constraints, permissions, auditing, the naming rules, `vw_runtime_model` and `vw_machine_state_interval` correctness, and NOTIFY triggers. **Pipeline tests** run the ingest flow against a simulated source — the open-source OPC PLC simulator (MIT licence, `mcr.microsoft.com/iotedge/opc-plc`), whose ramps, random values, sine waves with spikes and dips, cycling good/bad/uncertain status nodes and simulated boiler exercise normalisation, quality mapping and validation; later a Modbus simulator — and assert the exact UNS payloads and historian rows produced, including deadband, quality-flagging, and quarantine behaviour. **Failure drills** are scripted, not aspirational: kill the broker mid-stream (history must be complete afterwards), kill PostgreSQL (UNS must keep flowing; queue must drain on recovery), send an unmapped address, send a skewed timestamp, cut a PLC connection (source status and `bad` quality must appear, ADR-0007), restart the runtime (the correct `unknown` interval must be recorded, ADR-0006), and replay the store-and-forward queue twice (no duplicates). **KPI tests** feed scripted state, reason, count and work-order sequences through the classification and KPI views and assert the expected waterfall, including that every period closes (positions sum to Maximum Time) on both daylight-saving days. **Load tests** validate the section 3.2 targets before each phase exit. Every automated tier runs with one command, `docker compose run --rm test` (`tests/README.md`), inside OFM's own Node-RED image, so it needs no internet; each phase's exit check is an automated `live` suite plus scripted drills with expected results.
 
 The simulator doubles as the development environment and the Phase 1 data source: it runs as an optional container in the Compose stack, so anyone who clones OFM can run the full pipeline without PLC hardware. A real controller is simply a second `source` row, which is also how the home-lab-to-plant path stays credible.
+
+**Load and failure drills** (step 2.9) run against a synthetic line fed by a second simulator with thousands of fast-changing values, kept apart from any real plant and removable with its history. The load test measures rate, delay and historian completeness against the targets of section 3.2; the drill recorder watches the same line while the broker, the database, the runtime or the source is stopped, and reports gaps on the UNS, gaps in the historian and any value that reached the UNS but not the historian.
 
 ## 18. Roadmap
 
@@ -473,4 +475,4 @@ Where the details live, by concern: contested decisions and their alternatives �
 
 ---
 
-*End of Architecture Overview v0.6.11. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.6.12. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

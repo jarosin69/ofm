@@ -197,7 +197,9 @@ docker compose run --rm migrate example
     Melbourne time.)
 
 12c. **First dashboard** — open Grafana (https://localhost:3000). The home page
-    is now **OFM · Live data**: properties reporting, values per minute,
+    is now **OFM · Live data**. Choose the **Line** at the top (the table shows
+    the whole line) and the **Machine** (the charts show its properties), so a
+    plant with thousands of properties stays readable: properties reporting, values per minute,
     values not good, a table of the latest value of every property, and one
     chart per property. Times are Melbourne time. Orange points mark values
     that are not `good` (`hopper_level` shows this permanently, because the
@@ -858,6 +860,10 @@ docker compose run --rm test
   `127.0.0.1` (the default). Opening OFM to the network is a security
   decision (Architecture Overview §13): do it as described in section 6,
   and only on a segmented plant network.
+- **After a dashboard change, restart Grafana** (`docker compose restart
+  grafana`). The dashboard itself (`/d/ofm-live-data`) updates by itself
+  within seconds, but Grafana's *home page* copy of it is read only when
+  Grafana starts. The `live` suite checks both.
 - **Port collisions.** If a port is taken on Windows, change only the host
   port in `docker-compose.yml` (e.g. `"127.0.0.1:15432:5432"`).
 - **Clock discipline (ADR-0003).** If timestamps drift after sleep/resume,

@@ -16,9 +16,12 @@ const SUITES = [
   { name: "flows",    title: "Runtime flow, unit tests (flows/ofm-runtime.json)", dir: "flows" },
   { name: "deploy",   title: "Deployment: pinned images, open ports, secrets, no outbound connections (deploy/)", dir: "deploy" },
   { name: "database", title: "Database: model rules, runtime view, permissions, audit", dir: "database" },
-  { name: "live",     title: "Live stack: end to end (exit checks)", dir: "live" }
+  { name: "live",     title: "Live stack: end to end (exit checks)", dir: "live" },
+  // Opt-in, never in "all": they run for minutes and need the load-test line (step 2.9).
+  { name: "load",     title: "Load test: the load-test line through UNS and historian", dir: "load", optIn: true },
+  { name: "watch",    title: "Drill recorder: what a consumer sees while something is broken", dir: "watch", optIn: true }
 ];
-const GROUPS = { all: SUITES.map(s => s.name), offline: ["schemas", "flows", "deploy"] };
+const GROUPS = { all: SUITES.filter(s => !s.optIn).map(s => s.name), offline: ["schemas", "flows", "deploy"] };
 
 async function main() {
   const args = process.argv.slice(2);

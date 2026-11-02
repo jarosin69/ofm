@@ -1,10 +1,10 @@
 # OFM — Status and development plan
 
-*Updated: 2026-10-31. Update this file at the end of every working session.*
+*Updated: 2026-11-01. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2, step 2.9 — load test and failure drills, then
-release v0.2 (next).** Step 2.8, the offline install bundle, passed O1–O3 on
-the laptop, including a full offline reinstall of all eight images.
+**▶ We are here: Phase 2, step 2.9 — load test and failure drills;
+delivered, Jarek runs the Phase 2 exit check (L1–L3, X1–X6), then tags
+v0.2.** Next: Stage C, the plant pilot.
 
 ## The plan in one view
 
@@ -108,7 +108,27 @@ authority, plant IT certificates as a drop-in (2.7, ADR-0019).
 | 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3; ADR-0001 amendment) | ✅ 2026-10-31: installed and pushed on the laptop |
 | 2.7 | Encryption (TLS) for every connection from another computer: MQTT on 8883, HTTPS for Grafana, Mathesar and the Node-RED editor through a Caddy front door; OFM's own certificate authority, renewed automatically; plant IT certificates importable; open to the network with one `.env` setting (ADR-0019) | ✅ 2026-11-01: on the laptop, T1–T4 passed (Grafana over HTTPS from a second laptop) |
 | 2.8 | Offline install bundle (`tools/make-bundle.ps1`): every pinned image, the repository at one commit, checksums, load scripts for Windows and Linux; no component contacts the internet by itself (Node-RED, Grafana, TimescaleDB telemetry off; Mathesar's usage data unticked); `deploy` test suite | ✅ 2026-11-01: on the laptop, O1–O3 passed (offline reinstall: images identical, data kept) |
-| 2.9 | Load test (2,000 values/s) and failure drills; release `v0.2` | ⬜ |
+| 2.9 | Load test (2,000 values/s) and failure drills: a second OPC PLC simulator (`opcplc-load`, profile `loadtest`) feeding a removable test line (`migrate loadtest` / `loadtest-remove`); opt-in suites `load` (rate, delay, historian completeness) and `watch` (drill recorder); dashboard shows one line at a time; release `v0.2` | ▶ delivered 2026-11-01; Jarek runs the exit check below |
+
+### Phase 2 exit check
+
+Criterion (Overview §18): model edit visible in the runtime within a second;
+broker-kill and PLC-disconnect drills pass; 2,000 values per second
+sustained. Procedure: tests/README, step 2.9.
+
+| Check | Result |
+|---|---|
+| Automated: `docker compose run --rm test` | ⬜ (after removing the load-test line, before tagging) |
+| R1–R5, M1–M3, H1–H3, S1–S3, K1–K3, B1–B3, T1–T4, O1–O4 (steps 2.1–2.8) | ✅ 2026-10-30 … 2026-11-01 |
+| L1 2,000 values/s for 10 minutes (`test load`) | ✅ 2026-11-02: all 10 checks; median 2,000/s, worst 10 s 1,892/s; delay median 0.7 s, 99 % within 1.1 s; 1,132,000 UNS values = 1,132,000 historian rows |
+| L2 CPU and memory under load (`docker stats`) | ✅ 2026-11-02: Node-RED 35 % of one core, 427 MiB; Mosquitto 10 %, 8 MiB; TimescaleDB 10 %, 255 MiB; Grafana 1 %, 497 MiB; load simulator 3.5 % |
+| L3 ceiling (optional) | not run |
+| X1 broker down — no historian gap | ✅ 2026-11-02 (second run, after the broker fix): UNS gap 35 s, historian gaps none, lost 0. First run ❌: the broker did not come back (see notes) |
+| X2 database down — no gap anywhere | ✅ 2026-11-02: about 1.5 min down, 121,057 rows buffered and written, no gaps, lost 0 |
+| X3 runtime crash — loss at most one second | ✅ 2026-11-02: gap 32 s, lost 0 |
+| X4 runtime restart — no loss | ✅ 2026-11-02: gap 6 s, 513 rows saved on stop, lost 0 |
+| X5 PLC lost and back | ✅ 2026-11-02: source offline 35 s, back by itself, lost 0 |
+| X6 data path restart | ✅ 2026-11-02: gap 6 s, everything back by itself, lost 0 |
 
 ## Stage C — Plant pilot ⬜ (after Phase 2)
 
@@ -199,10 +219,12 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek switches Mathesar's usage data collection off (check O4).
-   Overview §13.1 (v0.6.11) now explains encryption and certificates with
-   figures, including which devices need `ofm-ca.crt`.
-2. Step 2.9: load test (2,000 values/s) and failure drills; release v0.2.
+1. Jarek installs step 2.9, runs the Phase 2 exit check (tests/README,
+   step 2.9), removes the load-test line, records the results here and tags
+   `v0.2`.
+2. Decide open question 26 (UNS latency target vs. source read intervals).
+3. Stage C: plant pilot — open questions 2 (Docker licensing), 24 (S7
+   PUT/GET) and the server first.
 
 ## Open questions
 
@@ -228,6 +250,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 23 | Modbus driver: every current `node-red-contrib-modbus` release downloads part of its code from a third-party package server; choose a driver when the first Modbus device needs it | First Modbus device |
 | 24 | S7 at the plant: is PUT/GET access acceptable to the PLC owners, or must S7-1200/1500 CPUs be read through their OPC UA server (S7-1200 from firmware 4.4, with runtime licence)? | Plant pilot |
 | 25 | Remote database access (Power BI, DBeaver or Python on another computer): when needed, PostgreSQL over TLS with the same certificates, read-only role `ofm_reader` (ADR-0019 follow-up) | First remote database client |
+| 26 | UNS latency target (Overview §3.2: < 250 ms typical) vs. how often sources are read: with the example OPC UA settings (sampling 0.5 s, publishing 1 s) values reach the UNS about 1.3 s after their device time; with 0.1 s about 0.3 s, at more load on the PLC. Keep 1 s as the default and relax the target to about 1–2 s for monitoring, or set faster intervals per source where needed? | Plant pilot |
 
 ## Known gaps and notes
 
@@ -315,6 +338,44 @@ Numbers are stable; answered questions are removed rather than renumbered.
 - Rows written late by store-and-forward appear in the averages at the next
   refresh if they are less than 30 days old; older late rows need a manual
   `CALL refresh_continuous_aggregate(…)`.
+- Step 2.9 was tested on the local replica (stand-in OPC UA server with the
+  real node names, Node-RED, Mosquitto, TimescaleDB 2.30.2 on 2 CPU cores):
+  2,000 values/s for 2 minutes and 6,000 values/s for 1 minute both passed
+  every check — every UNS value in the historian, nothing buffered, all
+  good; Node-RED at about 77 % of one core at 6,000/s. Delay device time →
+  UNS: median 1.3 s with OPC UA sampling 0.5 s / publishing 1 s, 0.3 s with
+  0.1 s / 0.1 s (open question 26). Drills under 2,000 values/s: broker down
+  10–15 s → UNS gap of that length, no historian gap, nothing lost; database
+  down 30 s → no gap anywhere, writer buffered and caught up; runtime killed
+  → 20 s gap, 350 values lost (the writer's memory, under one second);
+  runtime stopped gracefully → nothing lost (memory saved to the disk
+  queue). Found and fixed on the way: the dashboard drew one chart per
+  property for the whole plant (2,000 charts) — it now shows one line at a
+  time; the drill recorder first reported false one-second gaps (a 1 Hz
+  source drifting across second boundaries) — gaps are now judged on a
+  3-second average; removing the test line while it was being read produced
+  refused rows — removal now stops acquisition first. On Jarek's laptop
+  (2026-11-02) L1 and L2 passed (exit-check table). Found there: Grafana's
+  home page still showed the old dashboard (no Line selector) and struggled
+  to draw a chart for each of 2,015 properties — Grafana reads the home-page
+  copy only at start, while the provisioned dashboard had updated. Fixed by
+  restarting Grafana; the `live` suite now checks the home page too
+  (Grafana 13 answers with a forward to `/d/default-home-dashboard/…`; the
+  check follows it).
+  Drill X1 found a real fault: after `docker compose stop mosquitto` and
+  `start`, the broker restarted in a loop (`Error: Unable to open file
+  /mosquitto/secure/passwd for writing. File exists`). Mosquitto 2.1's
+  `mosquitto_passwd -c` no longer overwrites an existing file (it opens with
+  O_EXCL, although its help text still says it overwrites), and a stopped and
+  started container keeps last start's file. Until then the broker had only
+  ever been started as a new container, so a server restart would have hit
+  the same fault. Fixed: the start script empties the folder first; the
+  `deploy` suite checks it. Node-RED kept retrying every 10 s throughout and
+  needed nothing. With the load line selected, Grafana froze: the Property
+  selector kept "All", i.e. a chart for each of the line's 2,000
+  properties. A Machine selector now sits between Line and Property; charts
+  show one machine's properties (tens on a real machine, 100 on a load
+  machine), the table still the whole line (2,000 rows in 25 ms).
 - Step 2.8 was tested on the local replica with Docker Engine 29.8 and
   Compose 5.5: the compose file validated by Compose itself (also the first
   validation of the step 2.7 changes); the bundle built by
