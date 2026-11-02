@@ -2,9 +2,10 @@
 
 *Updated: 2026-11-01. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2, step 2.9 — load test and failure drills;
-delivered, Jarek runs the Phase 2 exit check (L1–L3, X1–X6), then tags
-v0.2.** Next: Stage C, the plant pilot.
+**▶ We are here: Phase 2 complete — release `v0.2` tagged 2026-11-02 (exit
+check passed on the laptop).** Next: Stage C, the plant pilot — first the
+open questions that gate it (2 Docker licensing, 24 S7 PUT/GET, 26 latency
+target) and the choice of server.
 
 ## The plan in one view
 
@@ -16,8 +17,8 @@ publishing it as open source, runs alongside.
 ```
 Stage A  Foundations ............................. ✅ done
 Stage B  Phase 1   Live data path ................ ✅ v0.1.1 (2026-10-30)
-         Phase 2   Robust and editable ........... ▶ step 2.9 of 9
-Stage C  Plant pilot (one real line) ............. ⬜  after Phase 2
+         Phase 2   Robust and editable ........... ✅ v0.2 (2026-11-02)
+Stage C  Plant pilot (one real line) ............. ▶ next
 Stage B  Phase 3a  Production context ............ ⬜
          Phase 3b  OEE and efficiency KPIs ....... ⬜
          Phase 3c  SPC ........................... ⬜
@@ -86,7 +87,7 @@ OPC UA. Guide: deploy README section 5.
 | CompactLogix 1769-L16ER (`ethernetip`, slot 0): tags read end to end, unplug drill | ✅ 2026-10-30 |
 | `docker compose run --rm test` with all three PLCs in the model; tagged `v0.1.1` | ✅ 2026-10-30 |
 
-## Stage B — Phase 2: Robust and editable ▶ (release v0.2)
+## Stage B — Phase 2: Robust and editable ✅ v0.2 (2026-11-02)
 
 Goal: ready for the plant pilot — model changes without restarts, honest data
 quality, no lost history, encrypted traffic. Decided (2026-10-31): disk
@@ -108,7 +109,7 @@ authority, plant IT certificates as a drop-in (2.7, ADR-0019).
 | 2.6 | Runtime starts without the database: it keeps a copy of the last model on disk and starts from it when the database cannot be reached (added 2026-10-31, found in check S3; ADR-0001 amendment) | ✅ 2026-10-31: installed and pushed on the laptop |
 | 2.7 | Encryption (TLS) for every connection from another computer: MQTT on 8883, HTTPS for Grafana, Mathesar and the Node-RED editor through a Caddy front door; OFM's own certificate authority, renewed automatically; plant IT certificates importable; open to the network with one `.env` setting (ADR-0019) | ✅ 2026-11-01: on the laptop, T1–T4 passed (Grafana over HTTPS from a second laptop) |
 | 2.8 | Offline install bundle (`tools/make-bundle.ps1`): every pinned image, the repository at one commit, checksums, load scripts for Windows and Linux; no component contacts the internet by itself (Node-RED, Grafana, TimescaleDB telemetry off; Mathesar's usage data unticked); `deploy` test suite | ✅ 2026-11-01: on the laptop, O1–O3 passed (offline reinstall: images identical, data kept) |
-| 2.9 | Load test (2,000 values/s) and failure drills: a second OPC PLC simulator (`opcplc-load`, profile `loadtest`) feeding a removable test line (`migrate loadtest` / `loadtest-remove`); opt-in suites `load` (rate, delay, historian completeness) and `watch` (drill recorder); dashboard shows one line at a time; release `v0.2` | ▶ delivered 2026-11-01; Jarek runs the exit check below |
+| 2.9 | Load test (2,000 values/s) and failure drills: a second OPC PLC simulator (`opcplc-load`, profile `loadtest`) feeding a removable test line (`migrate loadtest` / `loadtest-remove`); opt-in suites `load` (rate, delay, historian completeness) and `watch` (drill recorder); dashboard shows one line at a time; release `v0.2` | ✅ 2026-11-02: exit check passed; tagged `v0.2` |
 
 ### Phase 2 exit check
 
@@ -118,7 +119,7 @@ sustained. Procedure: tests/README, step 2.9.
 
 | Check | Result |
 |---|---|
-| Automated: `docker compose run --rm test` | ⬜ (after removing the load-test line, before tagging) |
+| Automated: `docker compose run --rm test` | ✅ 2026-11-02, after removing the load-test line (only the two intentionally wrong bench addresses fail) |
 | R1–R5, M1–M3, H1–H3, S1–S3, K1–K3, B1–B3, T1–T4, O1–O4 (steps 2.1–2.8) | ✅ 2026-10-30 … 2026-11-01 |
 | L1 2,000 values/s for 10 minutes (`test load`) | ✅ 2026-11-02: all 10 checks; median 2,000/s, worst 10 s 1,892/s; delay median 0.7 s, 99 % within 1.1 s; 1,132,000 UNS values = 1,132,000 historian rows |
 | L2 CPU and memory under load (`docker stats`) | ✅ 2026-11-02: Node-RED 35 % of one core, 427 MiB; Mosquitto 10 %, 8 MiB; TimescaleDB 10 %, 255 MiB; Grafana 1 %, 497 MiB; load simulator 3.5 % |
@@ -219,12 +220,11 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Jarek installs step 2.9, runs the Phase 2 exit check (tests/README,
-   step 2.9), removes the load-test line, records the results here and tags
-   `v0.2`.
+1. Start Stage C: decide the plant server, and open questions 2 and 24.
 2. Decide open question 26 (UNS latency target vs. source read intervals).
-3. Stage C: plant pilot — open questions 2 (Docker licensing), 24 (S7
-   PUT/GET) and the server first.
+3. Update the Claude Project instructions: model editor is Mathesar (not
+   NocoDB, ADR-0013); secrets live in deploy/.env, the Mosquitto password
+   file (generated) and the Docker volume `certs`.
 
 ## Open questions
 
