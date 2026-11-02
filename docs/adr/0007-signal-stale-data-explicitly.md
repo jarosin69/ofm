@@ -108,3 +108,6 @@ of its own.
   the loss or refusal instead of the last good value. The *OFM · Live data*
   table also shows quality `stale` when a property's newest row is older than
   twice its `max_publish_interval_ms`.
+- 2026-11-02: ADR-0025 adds frozen-data detection by a machine heartbeat
+  property: a frozen machine is treated like a lost source, for that
+  machine only, and its heartbeat republish is `bad`, never good.

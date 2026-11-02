@@ -1,0 +1,137 @@
+[
+    {
+        "id": "linesim_tab",
+        "type": "tab",
+        "label": "Line simulator",
+        "disabled": false,
+        "info": "Simulated packing line (ADR-0023). This Node-RED instance plays the plant: OFM reads it like PLCs. Line definition: /demo/line.json. Guide: demo/packing-line/README.md."
+    },
+    {
+        "id": "linesim_c1",
+        "type": "comment",
+        "z": "linesim_tab",
+        "name": "1  Load the line (line.json) at start; the engine moves it forward every 100 ms",
+        "info": "",
+        "x": 290,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "linesim_start",
+        "type": "inject",
+        "z": "linesim_tab",
+        "name": "start-up",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "0.5",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 110,
+        "y": 100,
+        "wires": [
+            [
+                "linesim_config"
+            ]
+        ]
+    },
+    {
+        "id": "linesim_config",
+        "type": "function",
+        "z": "linesim_tab",
+        "name": "load line.json",
+        "func": "// Load line.json (the simulator's plant definition) and hand it to the\n// line engine. Runs once at start; send any message to load it again.\n// Input: any message. Output: msg.topic \"config\", msg.payload = the line.\nconst fs = global.get(\"fs\");\nconst file = env.get(\"OFM_LINESIM_CONFIG\") || \"/demo/line.json\";\nlet line;\ntry {\n    line = JSON.parse(fs.readFileSync(file, \"utf8\"));\n} catch (e) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"cannot read \" + file });\n    node.error(\"cannot read \" + file + \": \" + e.message);\n    return null;\n}\n\n// Basic checks, so a typing error in line.json is reported clearly instead\n// of producing a strange line.\nconst problems = [];\nconst machines = (line.machines || []).filter(m => m.enabled !== false);\nif (machines.length < 2 || machines.length > 10) problems.push(\"2 to 10 enabled machines needed\");\nconst slots = new Set();\nfor (const m of machines) {\n    if (!Number.isInteger(m.slot) || m.slot < 1 || m.slot > 10) problems.push(m.name + \": slot must be 1 to 10\");\n    if (slots.has(m.slot)) problems.push(\"slot \" + m.slot + \" used twice\");\n    slots.add(m.slot);\n    if (!/^[a-z][a-z0-9_]*$/.test(m.name || \"\")) problems.push(\"machine name '\" + m.name + \"': lowercase a-z, 0-9, _\");\n    if (!(m.ratedPerMin > 0)) problems.push(m.name + \": ratedPerMin must be above 0\");\n    if (!(m.inPerUnit >= 0)) problems.push(m.name + \": inPerUnit must be 0 or more\");\n}\nmachines.sort((a, b) => a.slot - b.slot).forEach((m, i) => {\n    if (i < machines.length - 1 && !(m.bufferAfter >= 1)) problems.push(m.name + \": bufferAfter must be 1 or more\");\n    if (i === 0 && m.inPerUnit !== 0) problems.push(m.name + \": the first machine has an unlimited supply: inPerUnit must be 0\");\n    if (i > 0 && !(m.inPerUnit >= 1)) problems.push(m.name + \": inPerUnit must be 1 or more (only the first machine has an unlimited supply)\");\n});\nif (machines.filter(m => m.constraint).length !== 1) problems.push(\"exactly one machine must be the constraint\");\nif (!(line.products || []).some(p => p.sku === line.freeRunSku)) problems.push(\"freeRunSku is not one of the products\");\nif (problems.length) {\n    node.status({ fill: \"red\", shape: \"ring\", text: problems.length + \" problem(s) in line.json\" });\n    node.error(\"line.json: \" + problems.join(\"; \"));\n    return null;\n}\nnode.status({ fill: \"green\", shape: \"dot\", text: machines.length + \" machines, loaded \" + new Date().toLocaleTimeString() });\nreturn { topic: \"config\", payload: line };\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 290,
+        "y": 100,
+        "wires": [
+            [
+                "linesim_engine"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "linesim_tick",
+        "type": "inject",
+        "z": "linesim_tab",
+        "name": "tick 100 ms",
+        "props": [
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "0.1",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "1",
+        "topic": "tick",
+        "x": 120,
+        "y": 160,
+        "wires": [
+            [
+                "linesim_engine"
+            ]
+        ]
+    },
+    {
+        "id": "linesim_engine",
+        "type": "function",
+        "z": "linesim_tab",
+        "name": "line engine",
+        "func": "// Line engine (ADR-0023): moves the simulated packing line forward on every\n// tick and reports each machine's interface (demo/packing-line/README.md,\n// section 4).\n//\n// Inputs (msg.topic):\n//   \"config\" - the line from line.json: (re)build the line; counters of\n//              machines that stay in the same slot are kept\n//   \"tick\"   - every 100 ms; msg.now (epoch ms) may replace the clock (tests)\n//   \"cmd\"    - a command from the control panel, msg.payload.cmd:\n//              break {slot, code?, minutes?, hold?} · jam {slot, seconds?} ·\n//              repair {slot} · stop · run · pause · resume ·\n//              product {sku, changeover?} · schedule {enabled} ·\n//              set {slot?, key, value}\n// Output: on every tick, msg.payload = the line's snapshot (ts, mode, sku,\n//   heartbeat, machines[] with the nine interface signals and the conveyor\n//   after each machine). Nothing is sent while paused: values freeze and the\n//   heartbeat stops, as when a PLC program stops (ADR-0025).\nconst STATE = { running: 1, idle: 2, blocked: 3, starved: 4, fault: 5, setup: 6, cleaning: 7, maintenance: 8 };\nconst MODE_STATE = { off: STATE.idle, cleaning: STATE.cleaning, setup: STATE.setup };\nconst MACHINE_KEYS = [\"speedPct\", \"mtbfH\", \"mttrMin\", \"jamsPerH\", \"rejectPct\"];   // what \"set\" may change\nconst LINE_KEYS = [\"unknownFaultPct\", \"debounceS\"];\n\nlet sim = context.get(\"sim\");\nconst now = Number.isFinite(msg.now) ? msg.now : Date.now();\n\n// --- random numbers: seeded, so a test (or a demo) can be repeated -----------------\nfunction rand() {                      // mulberry32: small, fast, good enough for a simulation\n    let t = (sim.rngState = (sim.rngState + 0x6D2B79F5) | 0);\n    t = Math.imul(t ^ (t >>> 15), t | 1);\n    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);\n    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;\n}\nconst uniform = (a, b) => a + (b - a) * rand();\nconst normal = () => Math.sqrt(-2 * Math.log(rand() || 1e-12)) * Math.cos(2 * Math.PI * rand());\nconst pick = list => list[Math.floor(rand() * list.length)];\nconst round1 = x => Math.round(x * 10) / 10;\n\n// --- the shift pattern, in the line's local time -------------------------------------\nconst toMinutes = hm => { const [h, m] = String(hm).split(\":\").map(Number); return h * 60 + m; };\nfunction scheduleMode(ts) {\n    const s = sim.line.schedule || {};\n    if (!s.enabled) return \"run\";\n    const minuteKey = Math.floor(ts / 60000);\n    if (sim.scheduleCache.minute === minuteKey) return sim.scheduleCache.mode;\n    const parts = new Intl.DateTimeFormat(\"en-AU\", {\n        timeZone: s.timeZone || \"Australia/Melbourne\", weekday: \"short\", hour: \"2-digit\", minute: \"2-digit\", hourCycle: \"h23\"\n    }).formatToParts(new Date(ts));\n    const get = type => (parts.find(p => p.type === type) || {}).value;\n    const day = get(\"weekday\"), minute = Number(get(\"hour\")) * 60 + Number(get(\"minute\"));\n    let mode = \"off\";\n    if ((s.days || []).includes(day)) {\n        if (s.cleaning && minute >= toMinutes(s.cleaning.start) && minute < toMinutes(s.cleaning.end)) mode = \"cleaning\";\n        else if (minute >= toMinutes(s.start) && minute < toMinutes(s.end)) mode = \"run\";\n    }\n    sim.scheduleCache = { minute: minuteKey, mode };\n    return mode;\n}\n\n// --- building the line -----------------------------------------------------------------\nfunction build(line, old) {\n    const kept = {};\n    for (const m of (old ? old.machines : [])) kept[m.cfg.slot] = m;\n    const machines = line.machines.filter(c => c.enabled !== false).sort((a, b) => a.slot - b.slot).map(c => {\n        const k = kept[c.slot] || {};\n        return {\n            cfg: JSON.parse(JSON.stringify(c)), state: STATE.idle, fault: null, acc: 0,\n            waiting: null, lastOutAt: now, lastTakenAt: now, speedEma: 0, setpoint: 0,\n            count_in: k.count_in || 0, count_good: k.count_good || 0, count_reject: k.count_reject || 0,\n            process_value: k.process_value || 0, buffer: 0, casesOnPallet: k.casesOnPallet || 0, pallets: k.pallets || 0\n        };\n    });\n    return {\n        line: JSON.parse(JSON.stringify(line)), machines, last: now,\n        heartbeat: old ? old.heartbeat : 0, lastSecond: Math.floor(now / 1000),\n        rngState: (line.seed ? line.seed : Math.floor(Math.random() * 2147483647)) | 0,\n        mode: \"off\", stopped: false, paused: false, sku: line.freeRunSku, changeoverUntil: 0,\n        scheduleCache: { minute: -1, mode: null }\n    };\n}\n\nconst product = () => sim.line.products.find(p => p.sku === sim.sku) || sim.line.products[0];\n\nfunction setpointOf(m) {\n    const c = m.cfg;\n    const rated = c.constraint ? Math.min(c.ratedPerMin, product().ratePerHour / 60) : c.ratedPerMin;\n    return rated * c.speedPct / 100;\n}\n\n// Expected time between two units leaving machine j when the line runs at\n// the constraint's pace: one carton every 0.6 s at 100/min, but one case only\n// every 6 s after the case packer. Waiting that long is normal, not starved.\nfunction paceMs(j) {\n    const k = sim.machines.findIndex(x => x.cfg.constraint);\n    let rate = Math.max(setpointOf(sim.machines[k]), 0.1);\n    for (let x = k + 1; x <= j; x++) rate /= Math.max(sim.machines[x].cfg.inPerUnit, 1);\n    return Math.min(60000 / rate, 60000);\n}\n\nfunction startFault(m, kind) {\n    const c = m.cfg;\n    if (kind === \"breakdown\") {\n        const unknown = rand() < (sim.line.unknownFaultPct || 0) / 100;\n        const code = unknown || !(c.breakdowns || []).length ? 999 : pick(c.breakdowns);\n        m.fault = { code, left: c.mttrMin * 60 * Math.exp(0.5 * normal()), kind };   // log-normal around MTTR\n    } else if (kind === \"jam\") {\n        m.fault = { code: c.jam || 999, left: uniform(10, 90), kind };\n    } else if (kind === \"shortage\") {\n        m.fault = { code: c.shortage.code, left: uniform(c.shortage.minMin, c.shortage.maxMin) * 60, kind };\n    }\n}\n\n// --- one machine, one tick ---------------------------------------------------------------\nfunction step(i, dt) {\n    const m = sim.machines[i], c = m.cfg;\n    const up = i > 0 ? sim.machines[i - 1] : null;          // its conveyor feeds this machine\n    const last = i === sim.machines.length - 1;\n    m.setpoint = setpointOf(m);\n    if (m.fault && !m.fault.hold) {                          // repairs go on in every mode\n        m.fault.left -= dt;\n        if (m.fault.left <= 0) m.fault = null;\n    }\n    // A stopped machine makes nothing. When the whole line is stopped, the\n    // clocks for starved and blocked restart, so the next start is not\n    // reported as starved before the first carton could arrive.\n    const halt = (st, lineStopped) => {\n        m.state = st; m.acc = 0; m.speedEma = 0; m.waiting = null;\n        if (lineStopped) m.lastOutAt = m.lastTakenAt = now;\n    };\n    if (m.fault) return halt(STATE.fault, sim.mode !== \"run\");\n    if (sim.mode !== \"run\") return halt(MODE_STATE[sim.mode], true);\n\n    if (m.state === STATE.running) {                         // only a running machine wears out or jams\n        if (c.mtbfH > 0 && rand() < dt / (c.mtbfH * 3600)) startFault(m, \"breakdown\");\n        else if (c.jamsPerH > 0 && rand() < dt * c.jamsPerH / 3600) startFault(m, \"jam\");\n        else if (c.shortage && c.shortage.perShift > 0 && rand() < dt * c.shortage.perShift / (8 * 3600)) startFault(m, \"shortage\");\n        if (m.fault) return halt(STATE.fault);\n    }\n\n    const wasRunning = m.state;\n    m.acc += m.setpoint * dt / 60;                       // progress of the unit in hand\n    let made = 0, starved = false, blocked = false;\n    while (m.acc >= 1) {\n        if (c.inPerUnit > 0 && up.buffer < c.inPerUnit) { starved = true; break; }\n        if (!last && m.buffer >= c.bufferAfter) { blocked = true; break; }\n        if (c.inPerUnit > 0) { up.buffer -= c.inPerUnit; up.lastTakenAt = now; }\n        m.acc -= 1;\n        made++;\n        m.count_in++;\n        let bad;\n        if (c.weigher) {                                     // the filler's count accuracy shows up here\n            const p = product(), q = sim.line.quality;\n            const w = p.targetWeightG * (1 + normal() * q.weightSigmaPct / 100);\n            const dev = (w / p.targetWeightG - 1) * 100;\n            m.process_value = round1(w);\n            bad = dev < q.rejectBelowPct || dev > q.rejectAbovePct;\n        } else {\n            bad = c.rejectPct > 0 && rand() < c.rejectPct / 100;\n        }\n        if (bad) { m.count_reject++; continue; }\n        m.count_good++;\n        if (!last) { m.buffer++; m.lastOutAt = now; continue; }\n        if (++m.casesOnPallet >= (sim.line.palletCases || 60)) {   // last machine: a pallet is full\n            m.casesOnPallet = 0;\n            m.process_value = ++m.pallets;\n            const w = c.palletWait;\n            if (w && rand() < w.probability) {\n                m.fault = { code: w.code, left: uniform(w.minMin, w.maxMin) * 60, kind: \"pallet\" };\n                return halt(STATE.fault);\n            }\n        }\n    }\n    // Starved: waiting for input while the machine before it has delivered\n    // nothing for debounceS plus 1.5 of its normal intervals (paceMs).\n    // Blocked: waiting for space while the machine after it has taken nothing\n    // for as long. A faster machine that waits a moment\n    // for the next carton, or a case packer collecting a set of 10, is running.\n    if (starved || blocked) m.acc = Math.min(m.acc, 1);  // a waiting machine holds one finished cycle, no more\n    if (made > 0) m.waiting = null;\n    if (starved) m.waiting = \"in\";\n    if (blocked) m.waiting = \"out\";\n    const debounce = (sim.line.debounceS || 2) * 1000;\n    if (m.waiting === \"in\" && now - up.lastOutAt >= debounce + 1.5 * paceMs(i - 1)) m.state = STATE.starved;\n    else if (m.waiting === \"out\" && now - m.lastTakenAt >= debounce + 1.5 * paceMs(i + 1)) m.state = STATE.blocked;\n    else m.state = STATE.running;\n    // Shown speed: units actually made per minute, averaged over about 20 s;\n    // a machine that starts running starts at its set speed.\n    if (m.state !== STATE.running) m.speedEma = 0;\n    else {\n        if (wasRunning !== STATE.running) m.speedEma = m.setpoint;\n        m.speedEma += (made * 60 / dt - m.speedEma) * (1 - Math.exp(-dt / 20));\n        m.speedEma = Math.min(m.speedEma, m.setpoint);\n    }\n}\n\nfunction snapshot() {\n    return {\n        ts: now, mode: sim.mode, sku: sim.sku, stopped: sim.stopped, heartbeat: sim.heartbeat,\n        machines: sim.machines.map(m => ({\n            slot: m.cfg.slot, name: m.cfg.name,\n            state: m.state, fault_code: m.fault ? m.fault.code : 0,\n            count_in: m.count_in, count_good: m.count_good, count_reject: m.count_reject,\n            speed: round1(m.speedEma), speed_setpoint: round1(m.setpoint),\n            heartbeat: sim.heartbeat, process_value: m.process_value,\n            buffer: m.buffer, buffer_capacity: m.cfg.bufferAfter || 0\n        }))\n    };\n}\n\n// --- messages ------------------------------------------------------------------------------\nif (msg.topic === \"config\") {\n    sim = build(msg.payload, sim);\n    context.set(\"sim\", sim);\n    return null;\n}\nif (!sim) return null;\n\nif (msg.topic === \"cmd\") {\n    const p = msg.payload || {};\n    const m = sim.machines.find(x => x.cfg.slot === p.slot);\n    switch (p.cmd) {\n        case \"break\":\n            if (m) m.fault = { code: p.code || (m.cfg.breakdowns || [])[0] || 999,\n                               left: (p.minutes != null ? p.minutes : m.cfg.mttrMin) * 60, kind: \"manual\", hold: p.hold === true };\n            break;\n        case \"jam\":     if (m) m.fault = { code: m.cfg.jam || 999, left: p.seconds != null ? p.seconds : 30, kind: \"jam\" }; break;\n        case \"repair\":  if (m) m.fault = null; break;\n        case \"stop\":    sim.stopped = true; break;\n        case \"run\":     sim.stopped = false; break;\n        case \"pause\":   sim.paused = true; break;\n        case \"resume\":  sim.paused = false; sim.last = now; break;\n        case \"product\": {\n            const prod = sim.line.products.find(x => x.sku === p.sku);\n            if (!prod) { node.warn(\"unknown product \" + p.sku); break; }\n            sim.sku = prod.sku;\n            if (p.changeover !== false) sim.changeoverUntil = now + prod.changeoverMin * 60000 * uniform(0.8, 1.2);\n            break;\n        }\n        case \"schedule\": sim.line.schedule.enabled = p.enabled === true; sim.scheduleCache = { minute: -1, mode: null }; break;\n        case \"set\":\n            if (m && MACHINE_KEYS.includes(p.key) && Number.isFinite(p.value)) m.cfg[p.key] = p.value;\n            else if (!m && LINE_KEYS.includes(p.key) && Number.isFinite(p.value)) sim.line[p.key] = p.value;\n            else node.warn(\"cannot set \" + p.key);\n            break;\n        default: node.warn(\"unknown command \" + p.cmd);\n    }\n    return null;\n}\n\n// tick\nif (sim.paused) {\n    node.status({ fill: \"grey\", shape: \"ring\", text: \"paused - values frozen, heartbeat stopped\" });\n    sim.last = now;\n    return null;\n}\nlet dt = (now - sim.last) / 1000;\nsim.last = now;\nif (dt <= 0) return null;\ndt = Math.min(dt, 1);                                        // after a hold-up, never jump ahead\n\nlet mode = sim.stopped ? \"off\" : scheduleMode(now);\nif (mode === \"run\" && now < sim.changeoverUntil) mode = \"setup\";\nsim.mode = mode;\nfor (let i = sim.machines.length - 1; i >= 0; i--) step(i, dt);   // downstream first: space frees before upstream pushes\n\nconst second = Math.floor(now / 1000);\nif (second !== sim.lastSecond) {\n    sim.lastSecond = second;\n    sim.heartbeat++;\n    const k = sim.machines.find(x => x.cfg.constraint);\n    node.status({ fill: mode === \"run\" ? \"green\" : \"yellow\", shape: \"dot\",\n                  text: mode + \" · \" + sim.sku + \" · \" + k.cfg.name + \" \" + Object.keys(STATE).find(s => STATE[s] === k.state) +\n                        \" \" + round1(k.speedEma) + \"/min · good \" + k.count_good });\n}\nreturn { topic: \"snapshot\", payload: snapshot() };\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 480,
+        "y": 160,
+        "wires": [
+            [
+                "linesim_opcua"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "linesim_c2",
+        "type": "comment",
+        "z": "linesim_tab",
+        "name": "2  Machines as PLCs: one simulated OPC UA server per machine (ports 4841-4846)",
+        "info": "",
+        "x": 300,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "linesim_opcua",
+        "type": "function",
+        "z": "linesim_tab",
+        "name": "simulated OPC UA PLCs",
+        "func": "// Simulated OPC UA PLCs (ADR-0023): one OPC UA server per machine, so each\n// machine looks like its own PLC to OFM. Machine in slot n is\n// opc.tcp://linesim:484n, namespace urn:ofm:linesim:m<n>, nodes s=State,\n// s=FaultCode, s=CountIn, s=CountGood, s=CountReject, s=Speed,\n// s=SpeedSetpoint, s=Heartbeat, s=ProcessValue (demo README, section 5).\n// Values carry the simulator's own time as source timestamp (tss: device).\n// REAL signals are Double here (a PLC REAL is 32-bit, so 96.2 would arrive\n// as 96.19999694824219); integers have the PLC's sizes (INT 16, DINT 32 bit).\n// Input: the line engine's snapshot. Output: none.\nconst opcua = global.get(\"opcua\");\nconst SIGNALS = [\n    [\"state\", \"State\", \"Int16\"], [\"fault_code\", \"FaultCode\", \"Int16\"],\n    [\"count_in\", \"CountIn\", \"Int32\"], [\"count_good\", \"CountGood\", \"Int32\"], [\"count_reject\", \"CountReject\", \"Int32\"],\n    [\"speed\", \"Speed\", \"Double\"], [\"speed_setpoint\", \"SpeedSetpoint\", \"Double\"],\n    [\"heartbeat\", \"Heartbeat\", \"Int32\"], [\"process_value\", \"ProcessValue\", \"Double\"]\n];\nconst servers = context.get(\"servers\") || {};\ncontext.set(\"servers\", servers);\n\nasync function start(machine, s) {\n    const slot = machine.slot, uri = \"urn:ofm:linesim:m\" + slot;\n    try {\n        const pki = (env.get(\"OFM_LINESIM_PKI_DIR\") || \"/data/linesim-pki\") + \"/m\" + slot;\n        const server = new opcua.OPCUAServer({\n            port: 4840 + slot,\n            resourcePath: \"\",\n            alternateHostname: \"localhost\",                           // also offered as opc.tcp://localhost:484n, for a desktop client\n            buildInfo: { productName: \"OFM simulated PLC m\" + slot, buildNumber: \"1\", buildDate: new Date() },\n            serverInfo: { applicationUri: uri, productUri: \"urn:ofm:linesim\",\n                          applicationName: { text: \"OFM linesim \" + machine.name, locale: \"en\" } },\n            serverCertificateManager: new opcua.OPCUACertificateManager({\n                rootFolder: pki, automaticallyAcceptUnknownCertificate: true }),\n            securityModes: [opcua.MessageSecurityMode.None],           // a simulator: no encryption, no login\n            securityPolicies: [opcua.SecurityPolicy.None],\n            allowAnonymous: true\n        });\n        s.server = server;\n        await server.initialize();\n        const space = server.engine.addressSpace;\n        const ns = space.registerNamespace(uri);\n        const folder = ns.addObject({ organizedBy: space.rootFolder.objects, browseName: machine.name });\n        s.vars = {};\n        for (const [key, browse, type] of SIGNALS) {\n            s.vars[key] = ns.addVariable({\n                componentOf: folder, browseName: browse, nodeId: \"s=\" + browse,\n                dataType: type, minimumSamplingInterval: 100,\n                value: new opcua.Variant({ dataType: opcua.DataType[type], value: 0 })\n            });\n        }\n        await server.start();\n        s.state = \"up\";\n        s.endpoint = \"opc.tcp://linesim:\" + (4840 + slot);\n    } catch (e) {\n        s.state = \"failed\";\n        s.error = (e && (e.message || String(e))) || \"unknown error\";\n        node.error(\"OPC UA server for slot \" + slot + \" (\" + machine.name + \"): \" + s.error + (e && e.stack ? \"\\n\" + e.stack : \"\"));\n    }\n}\n\nconst snap = msg.payload;\nfor (const machine of snap.machines) {\n    let s = servers[machine.slot];\n    if (!s) {\n        s = servers[machine.slot] = { state: \"starting\", last: {} };\n        start(machine, s);                                       // runs in the background\n        continue;\n    }\n    if (s.state !== \"up\") continue;\n    const ts = new Date(snap.ts);\n    for (const [key, , type] of SIGNALS) {\n        const v = machine[key];\n        if (s.last[key] === v) continue;                         // send changes only\n        s.last[key] = v;\n        s.vars[key].setValueFromSource(new opcua.Variant({ dataType: opcua.DataType[type], value: v }),\n                                       opcua.StatusCodes.Good, ts);\n    }\n}\nconst list = Object.values(servers);\nconst up = list.filter(s => s.state === \"up\").length, failed = list.filter(s => s.state === \"failed\").length;\nif (context.get(\"shown\") !== up + \"/\" + failed) {\n    context.set(\"shown\", up + \"/\" + failed);\n    node.status(failed ? { fill: \"red\", shape: \"ring\", text: failed + \" failed, \" + up + \" up (see log)\" }\n                       : { fill: up === list.length ? \"green\" : \"yellow\", shape: \"dot\", text: up + \" of \" + list.length + \" OPC UA servers up, ports 4841-484\" + list.length });\n}\nreturn null;\n",
+        "outputs": 0,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "// On Stop (redeploy, restart): close every OPC UA server, so the ports are free again.\nconst servers = context.get(\"servers\") || {};\nconst closing = Object.values(servers).filter(s => s.server).map(s => s.server.shutdown(0).catch(() => {}));\ncontext.set(\"servers\", {});\nreturn Promise.all(closing);\n",
+        "libs": [],
+        "x": 700,
+        "y": 160,
+        "wires": [],
+        "info": ""
+    }
+]

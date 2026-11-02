@@ -83,3 +83,9 @@ line produces many short stops per shift, far too many to code by hand.
 - The default minor-stop threshold of 5 minutes is an assumption, to be
   confirmed per line.
 - Related: ADR-0006, ADR-0008, ADR-0010.
+
+## Amendments
+
+- 2026-11-02: ADR-0024 adds one classification rule, after rule 5: starved
+  and blocked time of the constraint takes the reason of the machine that
+  caused it. The other rules are unchanged.

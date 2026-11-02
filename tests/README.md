@@ -24,11 +24,11 @@ same command can later run automatically on every commit (CI).
 | Suite | Checks | Needs the stack |
 |---|---|---|
 | `schemas` | Every payload schema in `schemas/` is valid JSON Schema 2020-12; every example in `tests/schemas/<schema>/valid/` passes and every one in `invalid/` is rejected | no |
-| `flows` | The function code in `flows/ofm-runtime.json`, run outside Node-RED: scaling, validation and timestamp rules (ADR-0003), quarantine, model cache; S7 and EtherNet/IP polling against a stand-in PLC library (report by exception, wrong addresses skipped, connection loss and recovery); heartbeat, historian writer and its disk queue; the saved model copy and the start without the database; every payload the flow can produce matches its schema and topics follow the topic standard | no |
+| `flows` | The function code in `flows/ofm-runtime.json`, run outside Node-RED: scaling, validation and timestamp rules (ADR-0003), quarantine, model cache; S7 and EtherNet/IP polling against a stand-in PLC library (report by exception, wrong addresses skipped, connection loss and recovery); heartbeat, historian writer and its disk queue; the saved model copy and the start without the database; every payload the flow can produce matches its schema and topics follow the topic standard. The simulated packing line (`demo/packing-line/linesim-flows.json`, `linesim`): `line.json` checked; the constraint sets the pace; no flapping; a breakdown spreads through the conveyors and clears; rejects, breakdown rate, shift pattern, changeover, pause (frozen heartbeat) and commands, in simulated time | no |
 | `deploy` | The deployment files: every image pinned to a version and OFM's own never pulled; only the encrypted ports may be opened to the network, the database never; no password written into `docker-compose.yml`; every component's telemetry and update checks off; the offline bundle covers every image | no |
 | `database` | All migrations applied and unedited; UTC; hypertables; the model refuses bad names, reserved names, missing units, duplicate addresses; `vw_runtime_model` is right; every role can do exactly what Overview §13 says and no more; every model change is audited | yes |
 | `load`, `watch` | **Opt-in, never part of `all`.** The Phase 2 load test and the drill recorder (step 2.9, below); they run for minutes and need the load-test line | yes, with the load-test line |
-| `live` | The automated part of the Phase 1 exit check (below): runtime and sources online, the whole model loaded, a current value on the UNS for every property, every UNS message valid, recent rows in the historian, dashboard and Grafana datasource working, editors reachable; model reload; encryption (`tls`: certificates, MQTT over TLS, HTTPS for every page, checked as a client computer would) | yes, with data flowing |
+| `live` | The automated part of the Phase 1 exit check (below): runtime and sources online, the whole model loaded, a current value on the UNS for every property, every UNS message valid, recent rows in the historian, dashboard and Grafana datasource working, editors reachable; model reload; encryption (`tls`: certificates, MQTT over TLS, HTTPS for every page, checked as a client computer would); the simulated packing line when it runs (`linesim`: all six simulated PLCs answer, nine Good signals each, heartbeat moving; skipped otherwise) | yes, with data flowing |
 
 The `live` suite takes its list of properties from the model, not from a file:
 add a property in Mathesar, restart Node-RED, and it is checked too.
@@ -208,7 +208,7 @@ machines of 100 properties; pick a *Machine* before looking at charts), and
 
 | # | Do | Expected |
 |---|---|---|
-| L1 | `docker compose run --rm -e OFM_LOAD_MINUTES=10 test load` (10 minutes) | Every 10 s a line like `UNS 2000 values/s (100%), historian 2000 rows/s, writer writing`; at the end `ALL CHECKS PASSED`: rate held, 95 % of values on the UNS within 2.5 s of their device time, every UNS value in the historian, nothing buffered or dropped, all values good |
+| L1 | `docker compose run --rm -e OFM_LOAD_MINUTES=10 test load` (10 minutes) | Every 10 s a line like `UNS 2000 values/s (100%), historian 2000 rows/s, writer writing`; at the end `ALL CHECKS PASSED`: rate held, 95 % of values on the UNS within 2 s of their device time (ADR-0022), every UNS value in the historian, nothing buffered or dropped, all values good |
 | L2 | During L1, in a second window: `docker stats --no-stream` (twice, a minute apart) | Note *CPU %* and *MEM USAGE* of `ofm-nodered`, `ofm-mosquitto`, `ofm-timescaledb`: the figures for STATUS. Node-RED uses one CPU core at most, so its CPU % shows the headroom (100 % = one core full) |
 | L3 | *Optional, the ceiling:* in `.env` set `OFM_LOAD_VALUES=4000`, then `docker compose --profile loadtest up -d`, `docker compose run --rm migrate loadtest 4000`, then `docker compose run --rm -e OFM_LOAD_MINUTES=5 test load`; repeat with 6000, 8000 … | The highest number that still passes is what this computer can carry. Set `OFM_LOAD_VALUES=2000` and `migrate loadtest` back afterwards |
 
@@ -249,6 +249,21 @@ release from `C:\ofm`:
 git tag -a v0.2 -m "Phase 2: robust and editable"
 git push origin v0.2
 ```
+
+## Phase 3a checks so far
+
+**Step 3a.1 part 1, the simulated line's engine and simulated OPC UA PLCs**
+(ADR-0023). Automated: the `flows` suite (`linesim`) and, with the demo
+running, the `live` suite (`linesim`). By hand, on the laptop:
+
+| # | Do | Expect |
+|---|---|---|
+| P1 | `docker compose run --rm test offline` | all checks pass, including the `linesim` unit tests |
+| P2 | `demo` added to `COMPOSE_PROFILES` in `.env`; `docker compose up -d`; `docker compose logs linesim` | `linesim` running; `Started flows`, no `[error]` |
+| P3 | `https://localhost:1881`, tab *Line simulator* (inside the shift pattern, or with it switched off as in demo README section 12) | statuses: `6 machines, loaded …`; `run · mix250 · filler running 97/min · good …` with good rising; `6 of 6 OPC UA servers up` |
+| P4 | `docker compose run --rm test live` | the `linesim` checks pass for all six machines |
+| P5 | `docker compose restart linesim`, then P4 again | all six simulated PLCs back within about 15 s; counters start again from 0 |
+| P6 | *(optional)* a desktop OPC UA client (e.g. UaExpert) on `opc.tcp://localhost:4842`, anonymous, no security | Objects → `filler` → nine values; `Heartbeat` +1 per second |
 
 ## Adding a test
 

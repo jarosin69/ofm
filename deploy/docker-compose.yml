@@ -6,8 +6,9 @@
 # Image versions are pinned. An upgrade is a deliberate, committed change of a
 # version below, never a side effect of "docker compose pull".
 # Ports (ADR-0019): other computers reach OFM only through encrypted ports -
-# MQTT over TLS on 8883 and HTTPS for Grafana (3000), Mathesar (8080) and the
-# Node-RED editor (1880) through the "proxy" service. They listen on
+# MQTT over TLS on 8883 and HTTPS for Grafana (3000), Mathesar (8080), the
+# Node-RED editor (1880) and, with the demo, the simulated line (1881)
+# through the "proxy" service. They listen on
 # OFM_LISTEN_ADDRESS from .env: 127.0.0.1 (default) = this computer only,
 # 0.0.0.0 = the network. The database (5432) and the OPC UA simulator (50000)
 # stay on 127.0.0.1 always. Containers reach each other by service name on
@@ -246,6 +247,7 @@ services:
       - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:3000:3000"    # Grafana
       - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:8080:8080"    # Mathesar
       - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:1880:1880"    # Node-RED editor
+      - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:1881:1881"    # simulated line (demo profile); 502 when it is not running
     volumes:
       - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - certs:/certs:ro
@@ -310,6 +312,35 @@ services:
       - --fr=1                          # each changes once a second
       - --ft=uint
 
+  # Simulated packing line, OFM's demo (ADR-0023, demo/packing-line/README.md):
+  # a second Node-RED from OFM's own image that plays the plant - six machines,
+  # each a simulated OPC UA PLC (opc.tcp://linesim:4841 ... 4846). OFM reads
+  # it like any plant. Runs only when COMPOSE_PROFILES in .env contains "demo".
+  # Its editor (and, from step 3a.1 part 2, its control panel) is
+  # https://<server>:1881 through the proxy; the OPC UA ports are open to this
+  # computer only, for a desktop OPC UA client.
+  linesim:
+    image: ofm/node-red:4.1.16-ofm.3
+    pull_policy: never
+    container_name: ofm-linesim
+    hostname: linesim
+    restart: unless-stopped
+    profiles: ["demo"]
+    environment:
+      TZ: Australia/Melbourne      # log readability only; the shift pattern uses line.json's time zone
+      FLOWS: /demo/linesim-flows.json                  # the simulator's flows (ADR-0016); Deploy writes here
+      OFM_LINESIM_CONFIG: /demo/line.json               # the line: machines, speeds, failures, products
+      OFM_LINESIM_PKI_DIR: /data/linesim-pki            # the simulated PLCs' OPC UA certificates
+      NODERED_ADMIN_USER: ${NODERED_ADMIN_USER:?set NODERED_ADMIN_USER in .env}
+      NODERED_ADMIN_PASSWORD: ${NODERED_ADMIN_PASSWORD:?set NODERED_ADMIN_PASSWORD in .env}
+      NODE_RED_CREDENTIAL_SECRET: ${NODE_RED_CREDENTIAL_SECRET:?set NODE_RED_CREDENTIAL_SECRET in .env}
+    ports:
+      - "127.0.0.1:4841-4846:4841-4846"                 # OPC UA, one port per machine (this computer only)
+    volumes:
+      - linesim-data:/data
+      - ./nodered/settings.js:/data/settings.js:ro      # the same settings as OFM's runtime
+      - ../demo/packing-line:/demo                      # flows and line.json from the repository
+
   # Automated tests (tests/README.md). Never started by "up"; run with
   #   docker compose run --rm test              all suites
   #   docker compose run --rm test offline      no running stack needed
@@ -352,3 +383,4 @@ volumes:
   mathesar-pgdata:
   certs:                           # TLS keys and certificates (tools/certs.sh)
   proxy-data:
+  linesim-data:                    # the simulator's Node-RED data (demo profile)

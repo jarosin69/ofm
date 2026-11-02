@@ -39,17 +39,21 @@ module.exports.run = async function (t) {
   t.check("the broker starts again in the same container (stop/start, server restart): its private folder is emptied first",
           mq.indexOf("rm -rf /mosquitto/secure") >= 0 && mq.indexOf("rm -rf /mosquitto/secure") < mq.indexOf("mosquitto_passwd -c"));
 
+  const sim = services.linesim;
+  t.check("the simulated line (demo) only runs when asked for (profile demo), from OFM's own image",
+          sim && JSON.stringify(sim.profiles) === '["demo"]' && sim.image === services.nodered.image);
+
   const load = services["opcplc-load"];
   t.check("the load-test simulator only runs when asked for (profile loadtest) and publishes no port",
           load && JSON.stringify(load.profiles) === '["loadtest"]' && !load.ports);
 
   // --- ports (ADR-0019) -------------------------------------------------------------------
-  const NETWORK = { mosquitto: ["8883"], proxy: ["3000", "8080", "1880"] };
+  const NETWORK = { mosquitto: ["8883"], proxy: ["3000", "8080", "1880", "1881"] };
   const problems = [];
   for (const [name, s] of Object.entries(services)) {
     for (const p of s.ports || []) {
       const text = typeof p === "string" ? p : (p.host_ip || "") + ":" + p.published + ":" + p.target;
-      const m = /^(.*):(\d+):(\d+)(\/\w+)?$/.exec(text);
+      const m = /^(.*):(\d+(?:-\d+)?):(\d+(?:-\d+)?)(\/\w+)?$/.exec(text);
       const host = m ? m[1] : "";
       const published = m ? m[2] : "?";
       if (host === "127.0.0.1") continue;
@@ -57,7 +61,7 @@ module.exports.run = async function (t) {
       problems.push(name + " " + text);
     }
   }
-  t.check("only the encrypted ports (MQTT 8883, HTTPS 3000/8080/1880) may be opened to the network; every other port stays on 127.0.0.1",
+  t.check("only the encrypted ports (MQTT 8883, HTTPS 3000/8080/1880/1881) may be opened to the network; every other port stays on 127.0.0.1",
           problems.length === 0, problems.join(", "));
   t.check("the default listen address is this computer only (127.0.0.1)",
           /OFM_LISTEN_ADDRESS=127\.0\.0\.1/.test(read("deploy", ".env.example")) &&

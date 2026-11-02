@@ -1,4 +1,4 @@
-# OFM Proof of Concept — Windows 11 setup
+# OFM — installation and operation (Windows 11 laptop; Linux plant server in section 7)
 
 This folder is the complete PoC environment as containers under Docker
 Compose: TimescaleDB (model and historian), Mosquitto (UNS broker), Node-RED
@@ -38,10 +38,13 @@ The kit is hardened for a single laptop (Architecture Overview §13):
    reports `open //./pipe/dockerDesktopLinuxEngine`, Docker Desktop is not
    running: start it and wait until it reports "running".
 
-   *Licensing:* Docker Desktop is free for personal use, education and small
-   businesses only. For use within a larger organisation, either obtain a
-   subscription or install the free Docker Engine directly inside the WSL2
-   Ubuntu distribution; the Compose file is identical either way.
+   *Licensing (ADR-0020):* Docker Desktop is free for personal use,
+   education and small businesses only (fewer than 250 employees and less
+   than US$10 million revenue). Within a larger organisation use a paid
+   seat, or a free alternative that provides Docker Engine and Compose:
+   Rancher Desktop (with the `dockerd (moby)` engine) or Docker Engine
+   installed inside the WSL2 Ubuntu distribution. The Compose file is
+   identical in every case. A plant server runs Linux (section 7).
 4. **Stop the laptop from sleeping.** Settings → System → Power → Screen and
    sleep → "When plugged in, put my device to sleep" → **Never**. Also
    disable Fast Startup (Control Panel → Power Options → Choose what the
@@ -534,8 +537,9 @@ before OFM can read it:
 **Security:** PUT/GET lets any device on the network read *and write* the
 CPU's memory, and turning off optimised access gives the data block fixed,
 predictable addresses. Do this on a bench or an isolated network only, and
-agree it with the PLC's owner before doing it at a plant (STATUS open
-question 24).
+agree it with the PLC's owner before doing it at a plant. At a plant OFM
+asks for PUT/GET only with a firewall rule for port 102, a dedicated export
+data block like `OFM_Test` here, and a change record (ADR-0021).
 
 **In Mathesar** (schema `config`):
 
@@ -774,6 +778,196 @@ intermediate certificate appended), `server.key` and IT's `ca.crt` into
 `server.key` from that folder, then `docker compose restart mosquitto proxy`.
 Their certificate must name the server as clients reach it (`OFM_TLS_NAMES`).
 
+## 7. Plant server (Linux)
+
+A plant installation runs on a Linux server with the free Docker Engine
+(ADR-0020); the Compose file and `.env` settings are the same as on the
+laptop. This section is what to ask plant IT for, how to prepare the server,
+and how to check it before a real line is connected. Commands are for
+Ubuntu Server LTS; Debian is identical, Red Hat uses `dnf` instead of `apt`.
+
+### 7.1 What the server needs
+
+| | Pilot (one line) | Whole plant (design target, Overview §3.2) |
+|---|---|---|
+| Processor | 64-bit x86, 4 cores | 4–8 cores |
+| Memory | 16 GB (8 GB works) | 32 GB |
+| Disk | 500 GB SSD | 1–2 TB SSD (see 7.6) |
+| Network | two ports: plant network and PLC network (7.2) | same |
+| Operating system | Ubuntu Server 26.04 LTS (24.04 if IT already runs it; or plant IT's Debian / RHEL) | same |
+| Power | UPS; firmware set to *power on after power loss* | same |
+| Time | NTP from a plant time server | same |
+
+The basis: in the load test (step 2.9, L2) OFM's containers used together
+about 0.6 of one core and 1.2 GB of memory at 2,000 values per second. The
+rest of the memory is cache for the database, which keeps dashboards fast.
+
+**Virtual machine or industrial PC.** Either works, with no change to OFM.
+
+- A **virtual machine** on plant IT's servers brings backup, UPS and
+  monitoring with it. It needs a virtual network card on the PLC network
+  (usually a VLAN), and the host must be close to the PLCs in network terms.
+- An **industrial PC** in a panel near the line is closest to the PLCs and
+  independent of IT's servers, but backup (7.7) and patching are then the
+  OFM owner's job.
+
+**Disk space** is decided mostly by the historian. Estimates, assuming about
+100 bytes per uncompressed row, 8 bytes per compressed row, and the averages
+stored uncompressed (as in migration 011):
+
+| | Pilot: 200 properties, 50 values/s | Plant: 2,000 properties, 500 values/s |
+|---|---|---|
+| Raw values, last 7 days (uncompressed) | 3 GB | 30 GB |
+| Raw values, 1 year (compressed) | 12 GB | 125 GB |
+| 1-minute averages, 5 years | 55 GB | 525 GB |
+| 1-hour averages, 5 years | 1 GB | 9 GB |
+| Store-and-forward reserve (`OFM_SF_QUEUE_MAX_GB`) | 10 GB | 10 GB |
+| Images, logs, operating system | 20 GB | 20 GB |
+| **Total after 5 years** | **about 100 GB** | **about 720 GB** |
+
+The 1-minute averages, not the raw values, take most of the space: one row
+per property per minute, kept 5 years. These are estimates; measure the
+real figures after the first week (7.6).
+
+### 7.2 Networks and ports
+
+Two network cards keep PLC protocols off the plant network (Overview §13):
+
+```
+plant network ── [card 1]  OFM server  [card 2] ── PLC network
+ browsers, MQTT clients     no routing between     PLCs only; OFM only
+ reach OFM here             the two cards          connects out
+```
+
+| Direction | Card | Port | For |
+|---|---|---|---|
+| in | plant network | TCP 3000, 8080, 1880 | Grafana, Mathesar, Node-RED editor (HTTPS) |
+| in | plant network | TCP 8883 | MQTT over TLS |
+| in | plant network | TCP 22 | SSH, from the administrators' PCs only |
+| out | PLC network | TCP 102 | Siemens S7 |
+| out | PLC network | TCP 44818 | Rockwell EtherNet/IP |
+| out | PLC network | TCP 4840 (or as in the endpoint) | OPC UA |
+| out | plant network | UDP 123 | NTP time server |
+| in | PLC network | none | nothing listens on the PLC side |
+
+The database (5432) and plain MQTT (1883) are never reachable from another
+computer. A single network card is also possible (for example a VM in a DMZ
+whose firewall routes to the PLC network); the plant firewall then holds the
+rules above.
+
+Two Linux facts to know:
+
+- **Ports published by Docker bypass `ufw`.** Docker writes its own firewall
+  rules, so a `ufw deny` does not close OFM's ports. The controls are
+  `OFM_LISTEN_ADDRESS` — set it to the plant-network card's IP address, so
+  the ports exist on that card only — and the plant firewall.
+- **Docker switches on IP forwarding.** Docker Engine 28 and later then set
+  the forwarding policy to *drop*, so the server does not route between its
+  cards; check 7.5 (C4) confirms it on every server.
+
+### 7.3 Prepare the server
+
+1. Install Ubuntu Server (minimal is enough), with OpenSSH. Give both cards
+   fixed addresses (`/etc/netplan/`); a default gateway on the plant card
+   only.
+2. Time: point `chrony` at the plant's time server, then check:
+   ```sh
+   sudo apt install chrony          # if not installed
+   echo "server <plant-ntp-server> iburst" | sudo tee /etc/chrony/sources.d/plant.sources
+   sudo systemctl restart chrony && chronyc tracking
+   ```
+   The server's own time zone does not matter: OFM's data path uses UTC
+   (ADR-0003) and Grafana shows Melbourne time.
+3. Install Docker Engine and the Compose plugin from Docker's packages
+   (https://docs.docker.com/engine/install/ubuntu/): through plant IT's
+   package mirror if there is one; otherwise download the five `.deb` files
+   (`containerd.io`, `docker-ce`, `docker-ce-cli`, `docker-buildx-plugin`,
+   `docker-compose-plugin`) for the server's Ubuntu version on a computer
+   with internet, copy them with the offline bundle, and install them with
+   `sudo apt install ./*.deb`.
+4. **Bounded logs** — before OFM's first start, because the setting applies
+   only to containers created after it. Docker Engine's default log files
+   grow without limit; the `local` driver keeps at most 100 MB per container:
+   ```sh
+   echo '{ "log-driver": "local" }' | sudo tee /etc/docker/daemon.json
+   sudo systemctl enable docker && sudo systemctl restart docker
+   ```
+5. Let the administrator run Docker without `sudo`:
+   `sudo usermod -aG docker $USER`, then log out and in. Members of the
+   `docker` group can do anything on the server: add only administrators.
+
+### 7.4 Install OFM
+
+Follow *Installing without internet* below (Linux commands), into
+`/opt/ofm`, then:
+
+```sh
+cd /opt/ofm/deploy
+docker run --rm -v "$PWD:/work" -w /work alpine:3.22 sh make-env.sh
+sudo chown $USER: .env && chmod 600 .env     # passwords: owner only
+sudo chown -R 1000:1000 /opt/ofm/flows       # Node-RED writes flows here
+```
+
+In `.env`: `COMPOSE_PROFILES=` (empty), `OFM_LISTEN_ADDRESS=<plant-card IP>`
+and `OFM_TLS_NAMES=<server name>,<plant-card IP>`. Then
+`docker compose up -d` (without `--build`). With a specific listen address,
+the pages open at `https://<server name>:3000` also on the server itself,
+not at `localhost`.
+
+### 7.5 Checks before a real line is connected
+
+| # | Check | Expected |
+|---|---|---|
+| C1 | `docker compose run --rm test` | all checks pass |
+| C2 | `sudo reboot`, then wait without logging in; from a plant PC open Grafana | everything back by itself; `ofm/_system/runtime/ofm_runtime_01` online; historian `writing` |
+| C3 | Power cut (pull the cable or switch off the VM hard), power back | as C2; at most about one second of values lost (drill X3) |
+| C4 | No routing: on the server `sudo iptables -S FORWARD \| head -1`; from a plant PC `Test-NetConnection <PLC IP> -Port 102` | `-P FORWARD DROP`; the PLC is **not** reachable |
+| C5 | From a plant PC: `Test-NetConnection <server> -Port 8883` (and 3000, 8080, 1880); then `-Port 5432` and `-Port 1883` | the first four succeed; 5432 and 1883 fail |
+| C6 | `chronyc tracking` | "System time" within a few milliseconds; "Leap status: Normal" |
+| C7 | `docker inspect -f '{{.HostConfig.LogConfig.Type}}' ofm-nodered` | `local` |
+| C8 | Drills X1–X4 (`tests/README.md`, step 2.9) | as in the Phase 2 exit check |
+
+### 7.6 Watching disk space
+
+After the first week, and then monthly (`psql` in the database container):
+
+```sh
+docker exec -it ofm-timescaledb psql -U ofm_admin -d ofm
+```
+```sql
+SELECT pg_size_pretty(hypertable_size('hist.measurement')) AS raw;
+SELECT view_name, pg_size_pretty(hypertable_size(format('%I.%I',
+         materialization_hypertable_schema, materialization_hypertable_name)::regclass)) AS size
+  FROM timescaledb_information.continuous_aggregates;
+SELECT pg_size_pretty(pg_database_size('ofm')) AS database;
+```
+
+Multiply the weekly growth by the retention to check the estimate in 7.1;
+`df -h /` shows what is left on the disk.
+
+### 7.7 Backups during the pilot
+
+| What | How | Why |
+|---|---|---|
+| The model | nightly dump (below), copied off the server by plant IT's backup | small and precious (Overview §16) |
+| `.env` | once, and after every change, to a place only administrators can open | the passwords |
+| Certificates (`certs` volume) | once, same place | losing it means every client must trust a new `ofm-ca.crt` |
+| The historian | the VM's backup, if a VM; otherwise not backed up in the pilot (STATUS open question 28) | full backups are built in Phase 3b |
+
+Nightly model dump, kept 90 days (`crontab -e` as the administrator):
+
+```
+0 2 * * * docker exec ofm-timescaledb pg_dump -U ofm_admin -n config -Fc ofm > /var/backups/ofm/config-$(date +\%Y\%m\%d).dump && find /var/backups/ofm -name 'config-*.dump' -mtime +90 -delete
+```
+
+Create the folder first (`sudo mkdir -p /var/backups/ofm && sudo chown
+$USER: /var/backups/ofm`). The certificates, once:
+
+```sh
+docker run --rm -v ofm_certs:/c:ro -v /var/backups/ofm:/b alpine:3.22 tar czf /b/certs.tgz -C /c .
+chmod 600 /var/backups/ofm/certs.tgz          # contains private keys
+```
+
 ## Installing without internet (plant LAN)
 
 Most plant networks have no internet. OFM needs none once its images are on
@@ -802,10 +996,9 @@ the last Git tag, e.g. `v0.2` or `v0.1.1-14-g3f2a9c1`). It refuses to run with
 uncommitted changes, so a bundle always matches a commit.
 `MANIFEST.txt` in the folder lists the images and their IDs.
 
-**2. On the plant server** (64-bit x86, Docker Engine or Docker Desktop
-already installed — installing Docker itself is the plant IT's step, open
-question 2 in `docs/STATUS.md`): copy the folder over (USB drive, file share),
-then check and load it. Windows:
+**2. On the plant server** (64-bit x86 Linux with Docker Engine, prepared
+as in section 7; a Windows computer with Docker works the same way): copy the
+folder over (USB drive, file share), then check and load it. Windows:
 ```powershell
 cd D:\ofm-v0.2                                   # wherever the folder is
 powershell -ExecutionPolicy Bypass -File .\offline-load.ps1

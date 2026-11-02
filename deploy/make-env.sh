@@ -50,7 +50,7 @@ add MATHESAR_ADMIN_USER        admin      "Mathesar model editor: type these on 
 add MATHESAR_ADMIN_PASSWORD    "$(pw)"
 add MATHESAR_DB_PASSWORD       "$(pw)"    "Mathesar's own settings database, and its session key"
 add MATHESAR_SECRET_KEY        "$(pw 50)"
-add COMPOSE_PROFILES           simulator  "Optional services to run. 'simulator' = the OPC UA simulator (development and demos; leave empty at a plant)"
+add COMPOSE_PROFILES           simulator  "Optional services to run, comma-separated. 'simulator' = the OPC UA simulator, 'demo' = the simulated packing line (development and demos; leave empty at a plant)"
 add OFM_LISTEN_ADDRESS         127.0.0.1  "Who can reach OFM's encrypted ports (MQTT 8883, web pages 3000/8080/1880): 127.0.0.1 = this computer only, 0.0.0.0 = the network"
 add OFM_TLS_NAMES              ""         "This server's network name(s) and IP address(es), comma-separated, e.g. ofm-server,192.168.10.20: the TLS certificate is valid for these (and localhost)"
 

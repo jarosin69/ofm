@@ -9,7 +9,7 @@
 const { loadModel, record, compare, delayPercentile } = require("../lib/loadmeter");
 
 const WARMUP_S = 30;            // the first seconds after the start are not judged
-const MAX_DELAY_P95_S = 2.5;    // device time -> UNS; OPC UA samples 0.5 s, publishes every 1 s (assumption)
+const MAX_DELAY_P95_S = 2.0;    // device time -> UNS at the default read settings (ADR-0022, Overview §3.2)
 
 module.exports.run = async function (t) {
   const minutes = Number(process.env.OFM_LOAD_MINUTES || 5);

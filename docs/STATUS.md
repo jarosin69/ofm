@@ -1,11 +1,18 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-01. Update this file at the end of every working session.*
+*Updated: 2026-11-02. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 2 complete — release `v0.2` tagged 2026-11-02 (exit
-check passed on the laptop).** Next: Stage C, the plant pilot — first the
-open questions that gate it (2 Docker licensing, 24 S7 PUT/GET, 26 latency
-target) and the choice of server.
+**▶ We are here: Phase 3a, detailed design for review.** Decided
+2026-11-02: before the plant pilot, management sees OFM on a **simulated
+packing line** (six machines, work orders, OEE and downtime) built with the
+real Phase 3a features; the simulator ships with OFM as its demo, with a
+selectable backend per machine (simulated OPC UA, S7-300, S7-1200,
+CompactLogix). Design accepted 2026-11-02: ADR-0023 (the simulator),
+ADR-0024 (starved and blocked time), ADR-0025 (frozen data),
+`demo/packing-line/README.md`. **Step 3a.1 part 1 built** (line engine, six
+simulated OPC UA PLCs, profile `demo`) and tested on the local replica; next:
+checks P1–P6 on the laptop, then part 2, the control panel. Stage C
+decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
 
 ## The plan in one view
 
@@ -18,9 +25,11 @@ publishing it as open source, runs alongside.
 Stage A  Foundations ............................. ✅ done
 Stage B  Phase 1   Live data path ................ ✅ v0.1.1 (2026-10-30)
          Phase 2   Robust and editable ........... ✅ v0.2 (2026-11-02)
-Stage C  Plant pilot (one real line) ............. ▶ next
-Stage B  Phase 3a  Production context ............ ⬜
-         Phase 3b  OEE and efficiency KPIs ....... ⬜
+Stage B  Phase 3a  Production context and OEE
+                   on the simulated line ......... ▶ design
+Stage C  C0  Management demo ..................... ⬜ after v0.3
+         C1–C4 Plant pilot (one real line) ...... ▶ C1 decisions prepared
+Stage B  Phase 3b  Remaining KPIs, management views ⬜
          Phase 3c  SPC ........................... ⬜
          Phase 3d  Food safety checks ............ ⬜
          Phase 3e  Traceability and inventory .... ⬜
@@ -131,37 +140,60 @@ sustained. Procedure: tests/README, step 2.9.
 | X5 PLC lost and back | ✅ 2026-11-02: source offline 35 s, back by itself, lost 0 |
 | X6 data path restart | ✅ 2026-11-02: gap 6 s, everything back by itself, lost 0 |
 
-## Stage C — Plant pilot ⬜ (after Phase 2)
+## Stage C — Plant pilot ▶
+
+Goal: OFM running on a plant server, reading one real line, alongside the
+existing plant tools, without any risk to production. Server requirements,
+networks, preparation, checks and pilot backups: deploy README section 7.
+
+| Step | What | Status |
+|---|---|---|
+| C0 | Management demo on the simulated line, after `v0.3`: presentation, live demo (line calibrated to the real packing line's figures), recorded backup; the decision to go ahead with C1–C4 | ⬜ |
+| C1.1 | Docker and operating system: plant servers on Ubuntu Server 26.04 LTS with Docker Engine (ADR-0020); the laptop keeps Docker Desktop for development | ▶ ADR proposed 2026-11-02 |
+| C1.2 | Latency target: 2 s for 95 % at default read settings, OFM's own share < 250 ms (ADR-0022); load-test threshold 2.0 s | ▶ ADR proposed 2026-11-02 |
+| C1.3 | Pilot line and its controllers chosen (question 31); S7 access agreed with the PLC owners (ADR-0021, question 24); pilot duration and success criteria agreed (question 32) | ⬜ |
+| C1.4 | Server: VM or industrial PC to deploy README 7.1; networks and firewall rules (7.2) approved by plant IT and OT; how Docker is installed (question 30) | ⬜ |
+| C1.5 | *Only if the PLC owners require OPC UA:* OPC UA security in the acquisition client — signed and encrypted sessions, user name and password from `.env`, a fixed client certificate kept in a volume, server certificates trusted explicitly (ADR-0017 follow-up) | ⬜ |
+| C2.1 | Dry run on a Linux VM (e.g. Hyper-V on the laptop): offline bundle, deploy README 7.3–7.5, checks C1–C8 — the first end-to-end run on Linux with the real images | ⬜ |
+| C2.2 | Plant server prepared (7.3), OFM installed from the bundle (7.4), checks C1–C8 (7.5), nightly model backup (7.7) | ⬜ |
+| C3.1 | In the PLC, by its owner: export data block (or OPC UA interface); firewall rule for port 102 | ⬜ |
+| C3.2 | Model the line in Mathesar (deploy README 5.1); checks 5.6 | ⬜ |
+| C3.3 | Measure OFM's own latency on a polled source (ADR-0022); disk growth after one week (7.6) against the estimate | ⬜ |
+| C4 | Run alongside the existing plant tools for the agreed period; review against the criteria of C1.3 | ⬜ |
+
+## Stage B — Phase 3a: Production context and OEE on the simulated line ▶ (release v0.3)
+
+Goal: machine states, counts, work orders, reasons, OEE and downtime,
+built as real OFM features and proven against a simulated packing line whose
+true KPIs are known (ADR-0023, ADR-0024; design in
+`demo/packing-line/README.md`). Brings forward the time ledger, OEE with
+A·P·Q, Downtime, MTBF, MTTR, live KPIs and the operations dashboard from
+Phase 3b. Docker Desktop on the laptop for this phase (development only).
+
+| Step | What | Status |
+|---|---|---|
+| 3a.0 | Detailed design reviewed: ADR-0023, ADR-0024, ADR-0025, demo README (decisions in its section 11) | ✅ 2026-11-02, ADRs accepted |
+| 3a.1 | Simulator: line engine, six simulated OPC UA PLCs, `line.json`, Compose profile `demo`, HTTPS port 1881 (part 1); control panel with presets and commands (part 2) | ▶ part 1 built 2026-11-02, tested on the replica; P1–P6 on the laptop to do |
+| 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ⬜ |
+| 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ⬜ |
+| 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ⬜ |
+| 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ⬜ |
+| 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ⬜ |
+| 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ⬜ |
+| 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ⬜ |
+| 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
+| 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |
+
+## Stage B — Phase 3b: Remaining KPIs and management views ⬜ (release v0.4)
+
+The time ledger, OEE with A·P·Q, Downtime, MTBF, MTTR, live KPIs and the
+operations dashboard moved to Phase 3a (2026-11-02).
 
 | Step | What |
 |---|---|
-| C1 | Plant server, IT/OT network approval, Docker licensing decision |
-| C2 | Install from the offline bundle |
-| C3 | Connect one real line (S7 or OPC UA) and model its tags in Mathesar |
-| C4 | Run alongside the existing plant tools for an agreed period; review |
-
-## Stage B — Phase 3a: Production context ⬜ (release v0.3)
-
-| Step | What |
-|---|---|
-| 3a.1 | Material master (ADR-0014), rated speeds, shift calendar and schedule |
-| 3a.2 | Machine states, append-only, with `unknown`, heartbeat and startup reconciliation (ADR-0006) |
-| 3a.3 | Good and reject counts |
-| 3a.4 | Work orders and changeovers (ADR-0010) |
-| 3a.5 | Reason catalogue mapped to the loss waterfall (ADR-0009) |
-| 3a.6 | Operator whiteboard with per-person sign-in |
-| 3a.7 | Exit check against the plant's existing whiteboard tool; release `v0.3` |
-
-## Stage B — Phase 3b: OEE and efficiency KPIs ⬜ (release v0.4)
-
-| Step | What |
-|---|---|
-| 3b.1 | Time ledger: every minute classified into the loss waterfall (ADR-0008, ADR-0009) |
-| 3b.2 | KPI views: GE, OEE with A·P·Q, Downtime, MTBF, MTTR, CU, LU, TEEP |
-| 3b.3 | Live KPIs published to the UNS |
-| 3b.4 | Grafana operations dashboards |
-| 3b.5 | Grafana management dashboards (week, month, year) |
-| 3b.6 | Disaster-recovery rehearsal; release `v0.4` |
+| 3b.1 | KPI views: GE, CU, LU, TEEP |
+| 3b.2 | Grafana management dashboards (week, month, year) |
+| 3b.3 | Disaster-recovery rehearsal; release `v0.4` |
 
 ## Stage B — Phase 3c: SPC ⬜ (release v0.5)
 
@@ -220,8 +252,10 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Start Stage C: decide the plant server, and open questions 2 and 24.
-2. Decide open question 26 (UNS latency target vs. source read intervals).
+1. Step 3a.1 part 1 on the laptop: checks P1–P6 (tests/README, Phase 3a);
+   then part 2, the control panel.
+2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
+   the management decision at C0).
 3. Update the Claude Project instructions: model editor is Mathesar (not
    NocoDB, ADR-0013); secrets live in deploy/.env, the Mosquitto password
    file (generated) and the Docker volume `certs`.
@@ -232,7 +266,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
 
 | # | Question | Needed by |
 |---|---|---|
-| 2 | Docker Desktop licence vs. Docker Engine directly in WSL2 or on a Linux server | Plant pilot |
+| 2 | Docker Desktop licence vs. Docker Engine directly in WSL2 or on a Linux server — **ADR-0020 proposed:** plant servers on Linux with Docker Engine; laptops any Docker with Engine and Compose; Jarek's laptop keeps Docker Desktop for development. Removed when accepted | Plant pilot |
 | 3 | Employer policy on open-sourcing work developed for or at the site | Going public |
 | 5 | Runtime heartbeat interval: 60 s assumed (ADR-0006) | Phase 3a |
 | 6 | Default `max_publish_interval_ms`: 60 000 assumed (ADR-0007) | Phase 2 |
@@ -248,9 +282,14 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 21 | Food safety: which checks first; who verifies; electronic records replacing or accompanying paper under the site's certification scheme | Phase 3d |
 | 22 | Traceability: lot identification on the floor, tipping points, mass-balance tolerance, mixing-attribution rules (own ADR) | Phase 3e |
 | 23 | Modbus driver: every current `node-red-contrib-modbus` release downloads part of its code from a third-party package server; choose a driver when the first Modbus device needs it | First Modbus device |
-| 24 | S7 at the plant: is PUT/GET access acceptable to the PLC owners, or must S7-1200/1500 CPUs be read through their OPC UA server (S7-1200 from firmware 4.4, with runtime licence)? | Plant pilot |
+| 24 | S7 at the plant: is PUT/GET access acceptable to the PLC owners, or must S7-1200/1500 CPUs be read through their OPC UA server (S7-1200 from firmware 4.4, with runtime licence)? **ADR-0021 proposed:** use PUT/GET if already on; otherwise only with read-only OFM, a port-102 firewall rule, an export data block and a change record; OPC UA if required, after step C1.5. Needs the PLC owners' answer | Plant pilot (C1.3) |
 | 25 | Remote database access (Power BI, DBeaver or Python on another computer): when needed, PostgreSQL over TLS with the same certificates, read-only role `ofm_reader` (ADR-0019 follow-up) | First remote database client |
-| 26 | UNS latency target (Overview §3.2: < 250 ms typical) vs. how often sources are read: with the example OPC UA settings (sampling 0.5 s, publishing 1 s) values reach the UNS about 1.3 s after their device time; with 0.1 s about 0.3 s, at more load on the PLC. Keep 1 s as the default and relax the target to about 1–2 s for monitoring, or set faster intervals per source where needed? | Plant pilot |
+| 26 | UNS latency target (Overview §3.2: < 250 ms typical) vs. how often sources are read: with the example OPC UA settings (sampling 0.5 s, publishing 1 s) values reach the UNS about 1.3 s after their device time; with 0.1 s about 0.3 s, at more load on the PLC. Keep 1 s as the default and relax the target to about 1–2 s for monitoring, or set faster intervals per source where needed? **ADR-0022 proposed:** defaults stay; target 2 s for 95 % at default settings, OFM's own share < 250 ms; faster per source only for a named need. Removed when accepted | Plant pilot |
+| 28 | Historian backup during the pilot: VM backup (if a VM), or accept no historian backup until Phase 3b (the pilot runs alongside existing tools; the model is backed up nightly) | C2.2 |
+| 29 | Disk: the 1-minute averages are stored uncompressed and would take about three-quarters of the disk at plant scale (estimate, deploy README 7.1). Compress them (TimescaleDB columnstore on continuous aggregates, a new migration) or keep them shorter than 5 years? Decide with the measured growth from C3.3 | Before plant-wide use |
+| 30 | Plant server: VM on plant IT's servers or an industrial PC near the line; who administers and patches it; Docker from IT's package mirror or as packages with the offline bundle | C1.4 |
+| 31 | Pilot line: which line, which controllers (S7-1200/1500, S7-300, Logix, OPC UA) and roughly how many properties | C1.3 |
+| 32 | Pilot: duration and success criteria (for example: values agree with the HMI/SCADA, no unexplained gaps, no effect on PLC scan or communication load, operators' and engineers' feedback) | C1.3 |
 
 ## Known gaps and notes
 
@@ -437,6 +476,38 @@ Numbers are stable; answered questions are removed rather than renumbered.
   message beside them was left alone.
 - No automatic test run on GitHub (CI) yet; the runner's exit code is ready
   for it. Candidate for Stage D.
+- Step 3a.1 part 1 was tested on a local replica (Node-RED 4.1.16 with
+  node-opcua 2.160.0, the image's versions; no Docker): `flows` suite 168
+  checks including 33 for the simulator; the flow running in Node-RED with
+  all six OPC UA servers up; read and subscribed with an OPC UA client like
+  OFM's (sampling 0.5 s, publishing 1 s): nine Good values per machine,
+  device timestamps, heartbeat +1/s; a full Deploy closes and reopens the
+  servers; the `live` check passes with the simulator running and is
+  skipped without it. Not tested here: Docker Compose itself, the proxy
+  route 1881, the bind-mounted `demo/` folder — that is P2–P5. Found on the
+  way: faster machines flapped between running and starved/blocked, and a
+  case packer collecting a set of 10 showed as starved; starved/blocked now
+  need the neighbour to have delivered or taken nothing for 2 s plus 1.5 of
+  its normal intervals. With the default settings an 8-hour run gives
+  55–85 % of rated output depending on the random seed, about 15 state
+  changes per machine per hour.
+- Docker Desktop stays on the laptop for development (decided 2026-11-02).
+  Its licence applies to development use too: within an organisation above
+  Docker's small-business limit, the laptop needs a paid seat.
+- Stage C preparation (2026-11-02) is documentation only: three proposed
+  ADRs, deploy README section 7, Overview 0.6.13, load-test threshold
+  2.5 → 2.0 s. Nothing was run; the Linux steps in section 7 are first
+  tested in C2.1. Storage figures in 7.1 are estimates from assumed row
+  sizes.
+- OPC UA client, found while preparing question 24 (from the flow code and
+  node-opcua 2.160.0): sessions are anonymous; server certificates are
+  accepted automatically; the client's own certificate is created in
+  node-opcua's default folder (`~/.config/node-opcua-default-nodejs/PKI`,
+  assumed inside the container's home `/usr/src/node-red`, not in a volume),
+  so it changes whenever the container is recreated. Harmless with
+  `securityMode: None`; must be fixed before an encrypted connection to a
+  real PLC (step C1.5). To confirm on the laptop:
+  `docker exec ofm-nodered sh -c 'echo $HOME; ls -a ~/.config'`.
 - Mosquitto 2.1 deprecates `password_file`/`acl_file` in favour of plugins
   (removal planned for 3.0). Migrate before any upgrade to 3.x.
 - The installation has been run end-to-end on one machine only.
