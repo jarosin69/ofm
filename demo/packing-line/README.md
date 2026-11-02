@@ -1,8 +1,8 @@
 # Simulated packing line — OFM's demo
 
 > **Design reviewed by Jarek 2026-11-02; being built in Phase 3a.** Built so
-> far: the line engine and the six simulated OPC UA PLCs (step 3a.1, part 1,
-> section 12). The rest describes what is still to come. Decisions: ADR-0023
+> far: the line engine, the six simulated OPC UA PLCs and the control panel
+> (step 3a.1, section 12). The rest describes what is still to come. Decisions: ADR-0023
 > (the simulator), ADR-0024 (starved and blocked time), ADR-0025 (frozen
 > data). The line figures were proposed by Claude and accepted as the demo's
 > defaults; replace them with your own line's (section 10).
@@ -244,7 +244,7 @@ the line can run unattended for weeks with realistic changeovers.
 
 | Screen | Where | Shows |
 |---|---|---|
-| Simulator control panel | linesim, `https://<server>:1881/dashboard` | the line with conveyor levels; per machine: backend, connection, speed %, MTBF, MTTR, jams/h, rejects; buttons *Break now*, *Repair*, *Jam*; presets, shift pattern, auto-operator; the simulator's own OEE |
+| Simulator control panel | linesim, `https://<server>:1881/dashboard` | the line with conveyor levels; per machine: speed %, MTBF, MTTR, jams/h, rejects; buttons *Break*, *Break and hold*, *Jam*, *Repair*; run/stop the line, stop the simulator, shift pattern on/off, product changeover, presets; this hour's output against rated *(built, step 3a.1)*. Later: backend per machine (3a.9), auto-operator (3a.5), the simulator's own OEE (3a.10) |
 | Line view | OFM, `https://<server>:1880/dashboard` | the line drawn from the UNS only: machine colours by state, speeds, counts, fault; active order with *Start*, *Changeover done*, *Complete*; stops waiting for a reason |
 | Line OEE | Grafana | OEE with availability, performance and quality per shift and hour; loss waterfall; downtime Pareto by reason and by machine; MTBF and MTTR per machine |
 
@@ -283,7 +283,7 @@ simulator's ground truth for every complete hour of the last day:
 4. Switching a backend in the control panel changes OFM's model
    automatically (`demo.set_machine_backend`, section 5).
 
-## 12. Running the simulator (step 3a.1, part 1)
+## 12. Running the simulator (step 3a.1)
 
 **Start it** (laptop, PowerShell in `C:\ofm\deploy`): add `demo` to
 `COMPOSE_PROFILES` in `.env` (e.g. `COMPOSE_PROFILES=simulator,demo`), then
@@ -318,11 +318,128 @@ simulator is not running.
 **Good to know:**
 
 - Editing `line.json` takes effect at `docker compose restart linesim`.
-  Counters start again from 0 at every restart or Deploy, like a PLC
-  without retentive counters; OFM handles that (step 3a.4).
+  Counters and the product start again (counters from 0, product
+  `freeRunSku`) at every restart of the container or full Deploy, like a
+  PLC without retentive data; OFM handles counter resets (step 3a.4), and
+  from step 3a.5 the simulator takes the product from OFM's active work
+  order. If only `line.json` is read again (the *start-up* inject), the
+  counters, product and a running changeover are kept.
 - On a Linux host the folder `demo/packing-line` must be writable by user
   1000 for Deploy (`sudo chown -R 1000:1000 demo/packing-line`), as for
   `flows/`.
-- The control panel (section 8) comes in step 3a.1, part 2. Until then the
-  engine takes commands only from the editor (an inject node with topic
-  `cmd`, e.g. `{"cmd":"break","slot":4}`).
+- The control panel is not behind a login (Node-RED's editor login does
+  not cover dashboards): anyone who can open port 1881 can stop the line.
+  On the laptop that is only you; do not open the demo to a plant network.
+
+**The control panel:** `https://localhost:1881/dashboard` — how to use it
+is section 13.
+
+## 13. Operating the simulator
+
+The simulator always runs once its container is up, as a real line always
+exists; the control panel decides whether the line produces, much as
+operators and supervisors do on the floor.
+
+### What decides whether the line produces
+
+The engine checks these every 100 ms, in this order; the coloured badge at
+the top left of the panel shows the result.
+
+| Badge | When | Machines |
+|---|---|---|
+| SIMULATOR STOPPED | *Stop simulator* was pressed | everything frozen (below) |
+| STOPPED | *Stop line* was pressed | all idle (grey) |
+| OFF SHIFT | shift pattern on, outside Mon–Fri 06:00–22:00 | all idle (grey) |
+| CLEANING | shift pattern on, 21:30–22:00 | all cleaning (teal) |
+| CHANGEOVER | a changeover is counting down | all setup (blue) |
+| RUN | none of the above | producing, with random breakdowns, jams, shortages and rejects |
+
+### The buttons at the top
+
+**Stop line / Run line** is the operator stopping the whole line. One
+button; its label shows what pressing it will do. The line runs by itself,
+so there is no "Start line": *Run line* appears only after *Stop line*.
+While stopped, machines are idle and make nothing, get no new random
+breakdowns (machines only wear while running), and a breakdown already in
+progress keeps counting down. Once OFM reads the line, this is downtime
+during the shift that someone has to give a reason for.
+
+**Stop simulator / Resume simulator** is not a production event but a
+fault in the data: it imitates a PLC whose program has stopped, or a data
+block nobody updates any more. Every value freezes, including the
+heartbeat; the time in between is skipped, not caught up. It exists to test
+OFM's frozen-data detection (from step 3a.3 OFM must then mark the machines
+`unknown`, ADR-0025), not for normal simulation.
+
+**New run** starts a fresh run without restarting the container, after a
+confirmation: every counter to 0, conveyors empty, all breakdowns cleared, a
+running changeover cancelled, the line running (also after *Stop line* or
+*Stop simulator*). Product and settings stay; the preset *As in line.json*
+resets the settings too. Once OFM reads the line, a new run erases nothing
+in OFM's history: OFM sees the counters drop to 0, as when a PLC is
+reloaded, and handles that from step 3a.4.
+
+**Shift pattern: on / off.** On: the line runs Mon–Fri 06:00–22:00, cleans
+21:30–22:00, and is idle at night and at weekends — the realistic setting
+for long unattended runs; OFM will count off-shift time as *No activity*.
+Off: the line runs 24/7, for testing in the evening or at weekends. For the
+management demo keep it on, so that it matches OFM's shift calendar
+(step 3a.2).
+
+### Normal procedure
+
+Inside shift hours the line is already producing when the panel opens;
+nothing needs starting.
+
+1. Open `https://localhost:1881/dashboard`; inside shift hours the badge
+   says RUN.
+2. Optional: pick a **preset** and press *Apply* — *Good day* about 75 % of
+   rated output, *Typical* 60 %, *Bad day* 40 % — or edit single values in
+   the table (speed %, MTBF, MTTR, jams per hour, rejects %; a change
+   applies when you leave the field).
+3. Let it run. Breakdowns, jams, material shortages and rejects come
+   randomly, so the line looks alive on its own.
+4. To show something on purpose: **Break** (a breakdown lasting about the
+   machine's MTTR, mean time to repair), **Break and hold** (broken until
+   *Repair* — the presenter decides when it ends), **Jam** (a 30-second
+   minor stop).
+5. Watch the effect spread through the conveyors: machines before a broken
+   one fill up and turn orange (blocked), machines after it run empty and
+   turn yellow (starved).
+
+The picture shows, per machine, actual / set speed, good and rejected
+count, fault code and the time left to repair, and how full each conveyor
+is. *This hour* is the simulator's own rough count of good cartons against
+what the line could have made at rated speed while scheduled to run — not
+OFM's OEE. Presets scale the values in `line.json` (`presets` there);
+measured over 8-hour runs, *Good day* 75 %, *Typical* 60 %, *Bad day* 41 %
+of rated output on average, about ±10 points on any one day.
+
+### Changeover
+
+1. Pick the new product in the list. The minutes box fills in with that
+   product's usual changeover time from `line.json` (mix150 10, mix250 15,
+   mix500 20 minutes).
+2. Change the minutes if wanted, for example 2 for a quick test.
+3. Press *Change over*: all machines show SETUP and the countdown runs at
+   the top.
+4. At zero the line runs the new product: the filler's set speed follows
+   the product's rate (mix500: 80/min × 97 % = 77.6), and the checkweigher
+   weighs around the new target weight.
+
+A changeover can start while the line is running or stopped. The conveyors
+are not emptied: cartons of the old product finish their way down the line
+(a simplification). The countdown is clock time, so it keeps running while
+the line is stopped or off shift. From step 3a.5 changeovers normally start
+from OFM's work orders and the simulator follows them; the panel's *Change
+over* stays for testing without OFM.
+
+### What restarts do
+
+| Action | Counters | Product | Panel settings and presets |
+|---|---|---|---|
+| `docker compose restart linesim` | back to 0 | back to mix250 | back to `line.json` |
+| *New run* | back to 0 | kept | kept |
+| Preset *As in line.json* | kept | kept | back to `line.json` |
+
+Counters only ever go up while the simulator runs, like PLC counters.

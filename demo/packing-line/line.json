@@ -18,9 +18,16 @@
     { "sku": "mix500", "description": "Assorted 500 g", "ratePerHour": 4800, "targetWeightG": 500, "changeoverMin": 20 }
   ],
   "freeRunSku": "mix250",
+  "lineOutput": "closer",
   "quality": { "weightSigmaPct": 0.8, "rejectBelowPct": -2, "rejectAbovePct": 5 },
   "palletCases": 60,
   "unknownFaultPct": 10,
+  "presets_about": "Each preset multiplies the machines' values below (mtbf, mttr, jams, shortages, rejects; weightSpread the quality spread) and sets the constraint's speed. Measured over 8-hour runs with 10 random seeds: good 75 %, typical 60 %, bad 41 % of rated output on average; any one day varies by about +/- 10 points.",
+  "presets": {
+    "good":    { "label": "Good day (about 75 %)", "mtbf": 1, "mttr": 1, "jams": 1, "shortages": 1, "rejects": 1, "weightSpread": 1, "constraintSpeedPct": 97 },
+    "typical": { "label": "Typical (about 60 %)",  "mtbf": 0.6, "mttr": 1.4, "jams": 2, "shortages": 2, "rejects": 2, "weightSpread": 1.2, "constraintSpeedPct": 94 },
+    "bad":     { "label": "Bad day (about 40 %)",  "mtbf": 0.33, "mttr": 1.8, "jams": 3.5, "shortages": 3.5, "rejects": 3, "weightSpread": 1.35, "constraintSpeedPct": 90 }
+  },
   "machines": [
     { "slot": 1, "name": "erector", "display": "Carton erector", "enabled": true,
       "ratedPerMin": 120, "unit": "carton", "inPerUnit": 0, "bufferAfter": 30, "speedPct": 100,

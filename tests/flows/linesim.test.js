@@ -38,12 +38,15 @@ async function start(line, t0) {
   let t = t0 || Date.UTC(2026, 10, 2, 0, 0, 0);
   let snap = null;
   const faults = {};                                   // slot -> number of times the machine went to fault
+  const panels = [];                                   // what the control panel received (output 2)
   await e.run({ topic: "config", payload: line, now: t });
   return {
     async run(seconds, each) {
       for (let i = 0; i < Math.round(seconds * 10); i++) {
         t += 100;
-        const out = await e.run({ topic: "tick", now: t });
+        const res = await e.run({ topic: "tick", now: t });
+        if (res && res[1]) panels.push(res[1].payload);
+        const out = res && res[0];
         if (!out) continue;
         for (const m of out.payload.machines) {
           const before = snap && snap.machines.find(x => x.slot === m.slot);
@@ -55,8 +58,10 @@ async function start(line, t0) {
       return snap;
     },
     cmd: p => e.run({ topic: "cmd", payload: p, now: t }),
+    reload: l => e.run({ topic: "config", payload: l, now: t }),
     tick: () => e.run({ topic: "tick", now: (t += 100) }),
     faults,
+    panels,
     get now() { return t; }
   };
 }
@@ -176,12 +181,31 @@ module.exports.run = async function (t) {
   t.check("after the changeover (20 min ± 20 %): running mix500, filler set to 80 cartons/min",
           s.mode === "run" && s.sku === "mix500" && by(s, "filler").speed_setpoint === 80, s.mode + " " + by(s, "filler").speed_setpoint);
 
+  // a changeover of a given length (control panel), at the line.json speed
+  const sim2 = await start(makeLine());
+  await sim2.run(30);
+  await sim2.cmd({ cmd: "product", sku: "mix500", minutes: 2 });
+  let s2 = await sim2.run(110);
+  t.check("changeover of 2 minutes from the panel: still in setup after 1 min 50 s", s2.mode === "setup" && s2.sku === "mix500", s2.mode);
+  s2 = await sim2.run(20);
+  t.check("... running mix500 after 2 minutes, filler set to 77.6 cartons/min (97 % of 80)",
+          s2.mode === "run" && by(s2, "filler").speed_setpoint === 77.6, s2.mode + " " + by(s2, "filler").speed_setpoint);
+  // line.json read again (a flow restart): the product stays
+  await sim2.cmd({ cmd: "product", sku: "mix150", minutes: 5 });
+  await sim2.run(10);
+  await sim2.reload(makeLine());
+  s2 = await sim2.run(5);
+  t.check("line.json read again: product mix150 and its changeover are kept", s2.sku === "mix150" && s2.mode === "setup", s2.sku + " " + s2.mode);
+
   // --- pause: frozen values, heartbeat stopped (ADR-0025) ---------------------------------------------------------
   const hb = s.heartbeat;
   await sim.cmd({ cmd: "pause" });
   const quiet = [];
   for (let i = 0; i < 50; i++) quiet.push(await sim.tick());
-  t.check("paused: nothing is sent (values and heartbeat freeze)", quiet.every(x => x === null));
+  t.check("paused: nothing goes to the simulated PLCs (values and heartbeat freeze)", quiet.every(x => x === null || x[0] === null));
+  const pausedPanels = quiet.filter(x => x && x[1]).map(x => x[1].payload);
+  t.check("paused: the control panel still gets a message every second, saying paused",
+          pausedPanels.length >= 4 && pausedPanels.length <= 6 && pausedPanels.every(p => p.paused === true), pausedPanels.length);
   await sim.cmd({ cmd: "resume" });
   s = await sim.run(3);
   t.check("resumed: heartbeat moves again", s.heartbeat > hb && s.heartbeat <= hb + 4, hb + " -> " + s.heartbeat);
@@ -193,4 +217,56 @@ module.exports.run = async function (t) {
   await sim.cmd({ cmd: "stop" });
   s = await sim.run(1);
   t.check("stop: the line is idle", s.mode === "off" && s.machines.every(m => m.state === S.idle));
+
+  // --- control panel: feed, presets, command filter ---------------------------------------------------
+  sim = await start(makeLine());
+  await sim.run(60);
+  const fed = sim.panels;
+  const p = fed[fed.length - 1];
+  t.check("panel fed once a second (60 in a minute) with settings, products, presets and this hour's output",
+          fed.length >= 59 && fed.length <= 61 && p.machines[1].settings.speedPct === 97 && p.products.length === 3 &&
+          p.presets.map(x => x.name).join() === "line,good,typical,bad" && p.hour && p.hour.good > 0 && p.lineOutput === "closer",
+          fed.length + " messages; " + JSON.stringify(p.hour));
+  await sim.cmd({ cmd: "preset", name: "bad" });
+  s = await sim.run(1);
+  const pb = sim.panels[sim.panels.length - 1], base = makeLine();
+  t.check("preset bad: MTBF x0.33, MTTR x1.8, jams x3.5, filler at 90 %",
+          Math.abs(pb.machines[1].settings.mtbfH - base.machines[1].mtbfH * 0.33) < 0.1 &&
+          Math.abs(pb.machines[1].settings.mttrMin - base.machines[1].mttrMin * 1.8) < 0.1 &&
+          Math.abs(pb.machines[0].settings.jamsPerH - base.machines[0].jamsPerH * 3.5) < 0.1 &&
+          pb.machines[1].settings.speedPct === 90 && pb.preset === "bad", JSON.stringify(pb.machines[1].settings));
+  await sim.cmd({ cmd: "preset", name: "line" });
+  s = await sim.run(1);
+  const pl = sim.panels[sim.panels.length - 1];
+  t.check("preset 'as in line.json' restores the file's values", pl.machines[1].settings.mtbfH === base.machines[1].mtbfH &&
+          pl.machines[1].settings.speedPct === base.machines[1].speedPct, JSON.stringify(pl.machines[1].settings));
+  await sim.cmd({ cmd: "set", slot: 3, key: "mtbfH", value: 2 });
+  s = await sim.run(1);
+  t.check("a value set by hand shows the preset as custom", sim.panels[sim.panels.length - 1].preset === "custom");
+
+  // New run: counters, conveyors, breakdowns and changeover cleared; product and settings kept
+  await sim.cmd({ cmd: "product", sku: "mix150", minutes: 30 });
+  await sim.cmd({ cmd: "break", slot: 4, hold: true });
+  await sim.cmd({ cmd: "stop" });
+  s = await sim.run(2);
+  await sim.cmd({ cmd: "newrun" });
+  s = await sim.run(0.1);                              // one tick: nothing made yet
+  t.check("New run: every counter 0, conveyors empty, no fault, line running, product mix150 and the custom MTBF kept",
+          s.machines.every(m => m.count_in === 0 && m.count_good === 0 && m.count_reject === 0 && m.buffer === 0 && m.fault_code === 0) &&
+          s.mode === "run" && s.sku === "mix150" && sim.panels[sim.panels.length - 1].machines[2].settings.mtbfH === 2,
+          s.mode + " " + s.sku + " " + s.machines.map(m => m.count_good + "/" + m.buffer + "/" + m.fault_code).join(" "));
+  s = await sim.run(60);
+  t.check("... and production starts again from 0", by(s, "filler").count_good > 50 && by(s, "filler").count_good < 110, by(s, "filler").count_good);
+
+  const cmds = loadFunction(flow, "linesim_cmds");
+  const okCmd = await cmds.run({ payload: { cmd: "break", slot: 2 } });
+  const newRun = await cmds.run({ payload: { cmd: "newrun" } });
+  const badMin = await cmds.run({ payload: { cmd: "product", sku: "mix500", minutes: "-1" } });
+  const goodMin = await cmds.run({ payload: { cmd: "product", sku: "mix500", minutes: "2" } });
+  const badCmd = await cmds.run({ payload: { cmd: "format_disk" } });
+  const badSet = await cmds.run({ payload: { cmd: "set", slot: 2, key: "mtbfH", value: "-3" } });
+  const goodSet = await cmds.run({ payload: { cmd: "set", slot: 2, key: "mtbfH", value: "4.5" } });
+  t.check("panel commands: known commands pass as topic cmd; unknown commands and negative numbers are refused",
+          okCmd && okCmd.topic === "cmd" && newRun && newRun.payload.cmd === "newrun" && badCmd === null && badSet === null && goodSet.payload.value === 4.5 &&
+          badMin === null && goodMin.payload.minutes === 2);
 };

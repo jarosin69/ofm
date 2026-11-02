@@ -265,6 +265,20 @@ running, the `live` suite (`linesim`). By hand, on the laptop:
 | P5 | `docker compose restart linesim`, then P4 again | all six simulated PLCs back within about 15 s; counters start again from 0 |
 | P6 | *(optional)* a desktop OPC UA client (e.g. UaExpert) on `opc.tcp://localhost:4842`, anonymous, no security | Objects → `filler` → nine values; `Heartbeat` +1 per second |
 
+**Step 3a.1 part 2, the control panel.** Automated: the `flows` suite
+(`linesim`: panel fed once a second, also while the simulator is stopped;
+presets; refused commands). By hand, after unpacking and
+`docker compose restart linesim` (inside the shift pattern, or with it
+switched off in the panel):
+
+| # | Do | Expect |
+|---|---|---|
+| P7 | `https://localhost:1881/dashboard` | *Packing line 1* with RUN, six green boxes, the table of settings; Melbourne time ticking |
+| P8 | *Break and hold* on the closer; wait a minute | closer red with fault 401 *held*; checkweigher, filler, erector orange (blocked); case packer, palletiser yellow (starved); conveyors before the closer full. *Repair*: all green again within a minute |
+| P9 | Product mix500 (the minutes box shows 20), type 2, *Change over* | CHANGEOVER, all boxes blue, 2:00 counting down; afterwards RUN with product mix500, the filler set to 77.6 cartons/min (97 % of mix500's 80) and the checkweigher's last weight near 500 g |
+| P10 | Preset *Bad day*, *Apply*; then *Stop simulator* | the table's values change (filler MTBF 2 h); with the simulator stopped the badge says SIMULATOR STOPPED, every value stands still, and `docker compose run --rm test live` fails the *heartbeat moves* checks; *Resume simulator* and it passes again |
+| P11 | *New run*, then *Cancel* in the question; then *New run* and *OK* | after Cancel nothing changes; after OK every counter starts again from 0, the conveyors are empty, any breakdown is cleared and the badge says RUN (inside the shift pattern), with the same product and settings as before |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

@@ -9,9 +9,13 @@ real Phase 3a features; the simulator ships with OFM as its demo, with a
 selectable backend per machine (simulated OPC UA, S7-300, S7-1200,
 CompactLogix). Design accepted 2026-11-02: ADR-0023 (the simulator),
 ADR-0024 (starved and blocked time), ADR-0025 (frozen data),
-`demo/packing-line/README.md`. **Step 3a.1 part 1 built** (line engine, six
-simulated OPC UA PLCs, profile `demo`) and tested on the local replica; next:
-checks P1–P6 on the laptop, then part 2, the control panel. Stage C
+`demo/packing-line/README.md`. **Step 3a.1 built:** part 1 (line engine,
+six simulated OPC UA PLCs, profile `demo`; P1–P5 passed on the laptop
+2026-11-02) and part 2 (control panel, presets; P7–P8 passed on the
+laptop 2026-11-03; P9 found the product back at mix250 after a changeover
+— cause not found, see notes; added: changeover minutes, *New run*,
+"Operating the simulator" in the demo guide, section 13); next: P9–P11,
+then step 3a.2. Stage C
 decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
 
 ## The plan in one view
@@ -173,7 +177,7 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | Step | What | Status |
 |---|---|---|
 | 3a.0 | Detailed design reviewed: ADR-0023, ADR-0024, ADR-0025, demo README (decisions in its section 11) | ✅ 2026-11-02, ADRs accepted |
-| 3a.1 | Simulator: line engine, six simulated OPC UA PLCs, `line.json`, Compose profile `demo`, HTTPS port 1881 (part 1); control panel with presets and commands (part 2) | ▶ part 1 built 2026-11-02, tested on the replica; P1–P6 on the laptop to do |
+| 3a.1 | Simulator: line engine, six simulated OPC UA PLCs, `line.json`, Compose profile `demo`, HTTPS port 1881 (part 1); control panel with presets and commands (part 2) | ▶ part 1 ✅ 2026-11-02 (P1–P5 on the laptop); part 2 built 2026-11-02, tested on the replica; P7–P10 to do |
 | 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ⬜ |
 | 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ⬜ |
 | 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ⬜ |
@@ -252,8 +256,8 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 3a.1 part 1 on the laptop: checks P1–P6 (tests/README, Phase 3a);
-   then part 2, the control panel.
+1. Step 3a.1 part 2 on the laptop: checks P7–P10 (tests/README, Phase 3a);
+   then step 3a.2, production context and the demo model.
 2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
    the management decision at C0).
 3. Update the Claude Project instructions: model editor is Mathesar (not
@@ -491,6 +495,30 @@ Numbers are stable; answered questions are removed rather than renumbered.
   its normal intervals. With the default settings an 8-hour run gives
   55–85 % of rated output depending on the random seed, about 15 state
   changes per machine per hour.
+- Step 3a.1 part 2 was tested on the replica: `flows` suite 174 checks
+  (39 for the simulator); the panel opened in a headless browser at 1400
+  and 820 px wide: *Break and hold* on the closer turned the upstream
+  machines blocked and the downstream ones starved, preset, changeover,
+  *Stop simulator* and a typed setting all reached the engine. Presets were
+  calibrated with 10 random seeds × 8 hours each: good 75 %, typical 60 %,
+  bad 41 % of rated output. Found on the way: SVG attribute names lose
+  their capitals in a Dashboard 2 template (`viewBox`), so the picture did
+  not scale; written with Vue's `.camel` modifier.
+- 2026-11-03, P9 on the laptop: after a changeover to mix500 the panel
+  showed product mix250 and the filler at 97/min. Changeovers to mix500
+  worked on the replica (in simulated time and with a 1-minute changeover in
+  real time, panel driven by a browser). The only code that sets mix250 is
+  rebuilding the line from `line.json`, which a container restart or a flow
+  restart does — it reset the product to `freeRunSku`. Now a re-read of
+  `line.json` keeps product, changeover and a stopped line; a container
+  restart still starts at `freeRunSku` until step 3a.5 (product from OFM's
+  work order). Also from P9: 20-minute changeovers are too long to wait for
+  in a test, so the panel has a changeover-minutes box (default the
+  product's `changeoverMin`); `line.json` keeps the realistic 10–20 minutes.
+  Asked for the same day: a *New run* button (counters, conveyors,
+  breakdowns and changeover cleared; product and settings kept), tested in
+  a browser including its confirmation question; offline suites 205 checks
+  (44 for the simulator).
 - Docker Desktop stays on the laptop for development (decided 2026-11-02).
   Its licence applies to development use too: within an organisation above
   Docker's small-business limit, the laptop needs a paid seat.
