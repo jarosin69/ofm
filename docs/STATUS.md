@@ -15,13 +15,13 @@ six simulated OPC UA PLCs, profile `demo`; P1–P5 passed on the laptop
 laptop 2026-11-03; changeover minutes, *New run* and "Operating the
 simulator" added; P9–P11 passed 2026-11-03). **Step 3a.2 built:**
 migration 012 (materials, rated speeds, KPI rules, weekly schedule, loss
-categories) and the demo line in OFM's model (`migrate demo`); PC1–PC6
-passed on the laptop 2026-11-05, PC7 found a bug in `demo-remove` (fixed,
-to repeat). **Step 3a.3 built:** migration 013 (state vocabulary, property
+categories) and the demo line in OFM's model (`migrate demo`); PC1–PC7
+passed on the laptop 2026-11-05 (PC7 after a fix to `demo-remove`).
+**Step 3a.3 built:** migration 013 (state vocabulary, property
 roles, state rules, state events, runtime heartbeat), machine states and
 frozen-data detection in the runtime flow, `…/{machine}/state` with its
-schema; tested on the replica, drill F1 included; next: checks MS1–MS7, F1
-and F2 on the laptop, then step 3a.4, counts. Stage C
+schema; MS1–MS7 and drill F1 passed on the laptop 2026-11-05 (drill F2,
+bench S7 in STOP, still to do); next: step 3a.4, counts. Stage C
 decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
 
 ## The plan in one view
@@ -184,8 +184,8 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 |---|---|---|
 | 3a.0 | Detailed design reviewed: ADR-0023, ADR-0024, ADR-0025, demo README (decisions in its section 11) | ✅ 2026-11-02, ADRs accepted |
 | 3a.1 | Simulator: line engine, six simulated OPC UA PLCs, `line.json`, Compose profile `demo`, HTTPS port 1881 (part 1); control panel with presets and commands (part 2) | ✅ 2026-11-03 (P1–P11 on the laptop) |
-| 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ✅ 2026-11-05 (migration 012; PC1–PC6 on the laptop; PC7 to repeat with the `demo-remove` fix) |
-| 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ▶ built 2026-11-05 (migration 013), tested on the replica with drill F1; MS1–MS7, F1, F2 on the laptop to do |
+| 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ✅ 2026-11-05 (migration 012; PC1–PC7 on the laptop) |
+| 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ✅ 2026-11-05 (migration 013; MS1–MS7 and F1 on the laptop; F2 to do with the bench S7) |
 | 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ⬜ |
 | 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ⬜ |
 | 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ⬜ |
@@ -262,9 +262,9 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. On the laptop: PC7 again with the `demo-remove` fix; then step 3a.3,
-   checks MS1–MS7 and drills F1, F2 (tests/README, Phase 3a); then step
-   3a.4, counts.
+1. Step 3a.4, counts (count roles, counter increments with reset
+   handling, line good and reject). Drill F2 (bench S7-1200 in STOP) when
+   the bench is next set up.
 2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
    the management decision at C0).
 3. Update the Claude Project instructions: model editor is Mathesar (not
