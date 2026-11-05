@@ -2,10 +2,14 @@
 // (COMPOSE_PROFILES contains "demo"). Reads every simulated PLC the way OFM
 // will: one OPC UA server per machine, namespace urn:ofm:linesim:m<slot>,
 // nine signals, each Good; the heartbeat moves; the state is a valid code.
-// Skipped when the simulator is not running.
+// When the demo model is loaded (migrate demo, step 3a.3): every machine has
+// a valid retained state on .../{machine}/state and state events in the
+// historian. Skipped when the simulator is not running.
 "use strict";
 const path = require("path");
-const { ROOT, readJson, fromNodeRed } = require("../lib/harness");
+const { ROOT, readJson, fromNodeRed, stack, connectDb } = require("../lib/harness");
+const contracts = require("../lib/contracts");
+const LINE = "acme/melbourne/packing/packline01";
 
 const SIGNALS = ["State", "FaultCode", "CountIn", "CountGood", "CountReject", "Speed", "SpeedSetpoint", "Heartbeat", "ProcessValue"];
 const HOST = process.env.OFM_TEST_LINESIM_HOST || "linesim";
@@ -60,5 +64,44 @@ module.exports.run = async function (t) {
       await c.session.close();
       await c.client.disconnect();
     }
+  }
+
+  // --- machine states on the UNS and in the historian (step 3a.3) ---------------------------
+  let db, events;
+  try {
+    db = await connectDb();
+    events = (await db.query(`SELECT m.name, count(e.*)::int AS n, (array_agg(s.name ORDER BY e.ts DESC))[1] AS last
+      FROM config.machine m JOIN config.line l ON l.id = m.line_id
+      LEFT JOIN hist.machine_state_event e ON e.machine_id = m.id LEFT JOIN config.machine_state s ON s.id = e.state_id
+      WHERE l.name = 'packline01' AND m.retired_at IS NULL GROUP BY m.name`)).rows;
+  } catch (e) {
+    t.skip("demo machine states", "database not reachable: " + e.message);
+    return;
+  } finally {
+    if (db) await db.end().catch(() => {});
+  }
+  if (events.length === 0) {
+    t.skip("demo machine states", "the demo model is not loaded - docker compose run --rm migrate demo");
+    return;
+  }
+  const states = await new Promise(resolve => {
+    const got = {};
+    const client = fromNodeRed("mqtt").connect(stack.mqttUrl, {
+      username: "ofm_reader", password: process.env.OFM_MQTT_READER_PASSWORD,
+      clientId: "ofm-test-" + Math.random().toString(16).slice(2, 10), connectTimeout: 5000, reconnectPeriod: 0
+    });
+    const done = () => { client.end(true); resolve(got); };
+    client.on("error", done);
+    client.on("connect", () => client.subscribe(LINE + "/+/state", { qos: 0 }, () => setTimeout(done, 2000)));
+    client.on("message", (topic, buf, packet) => {
+      if (packet.retain && buf.length) got[topic.split("/")[4]] = JSON.parse(buf.toString());
+    });
+  });
+  for (const m of machines) {
+    const s = states[m.name], e = events.find(x => x.name === m.name);
+    const problem = s ? contracts.validate("machine-state", s) : "no retained state";
+    t.check(m.name + ": retained state on .../" + m.name + "/state, valid, and the same as its last state event",
+            !problem && e && e.n > 0 && e.last === s.v,
+            (problem || "state " + s.v) + "; " + (e ? e.n + " event(s), last " + e.last : "no events"));
   }
 };

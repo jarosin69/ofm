@@ -109,3 +109,30 @@ existing decisions:
 - 2026-10-18: `state_reason` gains an optional free-text `comment` column
   (ADR-0009). The "uncoded stop" threshold is the minor-stop threshold of
   ADR-0009.
+- 2026-11-05: **As built (step 3a.3, migration 013).**
+  *Naming:* the column `source` is named `cause` (`rule`,
+  `communication_loss`, `frozen`, `runtime_outage`), because "source"
+  already means a PLC connection in OFM.
+  *Rules:* `config.machine_state_rule` holds, per machine, "property,
+  operator, value → state", checked in order of priority; the first that
+  holds gives the state; if none holds, or a property a rule needs has no
+  good value before one holds, the state is `unknown`. A rule's value is
+  checked against its property's datatype when it is entered.
+  *Event time:* the newest own time of the values the rules test, but never
+  before the machine's previous event (+1 ms), and never before the moment
+  the machine became observable again (start-up, source back, heartbeat
+  moving again), which is decision 5's "read time".
+  *Runtime heartbeat:* every 60 s as assumed, written through the historian
+  writer so it survives a database outage; it starts only after start-up
+  reconciliation. Reconciliation first waits (at most 2 minutes) until the
+  writer's disk queue is empty, so the newest rows of the previous run are
+  in the database. If the database cannot be read at start-up (the model
+  came from the saved copy), `unknown` is placed at the start time instead,
+  with a warning.
+  *Topic:* `…/{machine}/state` carries `schemas/machine-state.schema.json`:
+  the live value shape with `v` the state's name and `q` bad for `unknown`;
+  `ts` is when the state began, and it is not republished while the state
+  lasts (stale states are covered by `unknown` on loss and freezing, and by
+  the runtime's status topic).
+  *Not yet built:* `hist.state_reason` (step 3a.6) and the health query of
+  decision 8 (open question 13).

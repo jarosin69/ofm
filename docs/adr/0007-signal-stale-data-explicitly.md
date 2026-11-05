@@ -111,3 +111,7 @@ of its own.
 - 2026-11-02: ADR-0025 adds frozen-data detection by a machine heartbeat
   property: a frozen machine is treated like a lost source, for that
   machine only, and its heartbeat republish is `bad`, never good.
+- 2026-11-05: Machine `unknown` states on loss are built (step 3a.3): a
+  machine with state rules becomes `unknown` (cause `communication_loss`) at
+  the moment its source's loss was detected (ADR-0006 amendment of the same
+  date).

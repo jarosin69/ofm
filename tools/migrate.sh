@@ -221,9 +221,10 @@ cmd_demo() {
 }
 
 cmd_demo_remove() {
-  # As for the load-test line: stop acquisition first and let the historian
-  # writer flush, then delete; then recompute the averages of the removed period.
-  sql -c "UPDATE config.plc_mapping SET retired_at = now() WHERE retired_at IS NULL AND source_id IN (SELECT id FROM config.source WHERE name ~ '^linesim_m[0-9]+\$')"
+  # As for the load-test line: stop acquisition and state tracking first (the
+  # state rules go now) and let the historian writer flush, then delete; then
+  # recompute the averages of the removed period.
+  sql -c "BEGIN; DELETE FROM config.machine_state_rule WHERE property_id IN (SELECT pm.property_id FROM config.plc_mapping pm JOIN config.source s ON s.id = pm.source_id WHERE s.name ~ '^linesim_m[0-9]+\$'); UPDATE config.plc_mapping SET retired_at = now() WHERE retired_at IS NULL AND source_id IN (SELECT id FROM config.source WHERE name ~ '^linesim_m[0-9]+\$'); COMMIT;"
   sleep 3
   { echo "BEGIN;"; cat "$REPO/db/examples/demo-packline-remove.sql"; echo; echo "COMMIT;"; } | sql
   sql -c "CALL refresh_continuous_aggregate('hist.measurement_1m', now() - interval '30 days', now())"

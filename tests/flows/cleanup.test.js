@@ -1,6 +1,7 @@
 // Unit tests for "start-up clean-up" (step 2.2, ADR-0004), run against a
 // stand-in database and broker: only retained OFM value and _meta topics
-// that no property has any more are cleared; everything else is left alone.
+// that no property has any more, and machine state topics of machines
+// without state rules (step 3a.3), are cleared; everything else is left alone.
 // Takes about 3 seconds (the clean-up listens for 3 s).
 "use strict";
 const { EventEmitter } = require("events");
@@ -18,7 +19,9 @@ const BROKER = [
   [E + "/depositor01/old_temp/_meta", meta, true, true],
   [E + "/depositor01/head1/old_speed", value, true, true],            // sub-asset property (7 levels)
   [E + "/kpi/oee", value, true, false],                               // reserved line-level topic
-  [E + "/depositor01/state", value, true, false],                     // machine state topic
+  [E + "/depositor01/state", value, true, false],                     // machine with state rules
+  [E + "/tempering01/state", value, true, true],                      // its state rules were removed (step 3a.3)
+  [E + "/tempering01/state/_meta", meta, true, false],                // not an OFM topic shape
   [E + "/depositor01/other_app", '{"temperature": 3}', true, false],  // not an OFM payload
   [E + "/depositor01/live_only", value, false, false],                // not retained
   [E + "/depositor01", value, true, false],                           // too short for a property
@@ -30,6 +33,7 @@ function fakes() {
   class Client {
     async connect() {}
     async query(sql) {
+      if (/state_rules/.test(sql)) return { rows: [{ topic: E + "/depositor01/state" }] };
       if (/vw_runtime_model/.test(sql)) return { rows: [{ topic: E + "/depositor01/chocolate_temp" }] };
       if (/config\.enterprise/.test(sql)) return { rows: [{ name: "acme" }] };
       throw new Error("unexpected query " + sql);

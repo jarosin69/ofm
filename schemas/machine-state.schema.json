@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:machine-state:1",
+  "title": "OFM machine state",
+  "description": "Payload of {enterprise}/{site}/{area}/{line}/{machine}/state (ADR-0006, step 3a.3): the machine's current state, published retained on every change; the same shape as a live value, with v a state name. ts is when the state began: it is not republished while it lasts, so its age is the state's duration. unknown always has q bad. An empty retained message clears the topic of a machine that no longer has state rules.",
+  "type": "object",
+  "properties": {
+    "v": {
+      "description": "The state, from the fixed vocabulary (config.machine_state).",
+      "enum": ["running", "idle", "blocked", "starved", "fault", "setup", "cleaning", "maintenance", "unknown"]
+    },
+    "ts": { "$ref": "urn:ofm:schema:common:1#/$defs/ts" },
+    "q": { "$ref": "urn:ofm:schema:common:1#/$defs/quality" },
+    "tss": { "$ref": "urn:ofm:schema:common:1#/$defs/tss" }
+  },
+  "required": ["v", "ts", "q", "tss"],
+  "additionalProperties": false,
+  "if": {
+    "properties": { "v": { "const": "unknown" } },
+    "required": ["v"]
+  },
+  "then": {
+    "properties": { "q": { "const": "bad" } }
+  }
+}

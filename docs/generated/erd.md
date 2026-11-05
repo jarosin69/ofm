@@ -100,6 +100,30 @@ erDiagram
     int4 max_publish_interval_ms
     bool is_historised
     timestamptz retired_at
+    text role
+    int4 heartbeat_timeout_ms
+  }
+  machine_state {
+    int2 id PK
+    text name
+    text display_name
+    text description
+  }
+  machine_state_event {
+    int4 machine_id PK,FK
+    timestamptz ts PK
+    int2 state_id FK
+    text cause
+  }
+  machine_state_rule {
+    int4 id PK
+    int4 machine_id FK
+    int2 priority
+    int4 property_id FK
+    text operator
+    text value
+    int2 state_id FK
+    text note
   }
   material {
     int4 id PK
@@ -143,6 +167,10 @@ erDiagram
     bool is_enabled
     timestamptz retired_at
   }
+  runtime_heartbeat {
+    text runtime_name PK
+    timestamptz ts PK
+  }
   site {
     int4 id PK
     int4 enterprise_id FK
@@ -181,13 +209,17 @@ erDiagram
   line ||--o{ line_schedule : "line_id"
   line ||--o{ machine : "line_id"
   line ||--o{ material_line_rate : "line_id"
+  machine_property ||--o{ machine_state_rule : "machine_id, property_id"
   machine_property ||--o{ measurement_text : "property_id"
   machine_property ||--o{ measurement : "property_id"
   machine_property ||--o{ plc_mapping : "property_id"
+  machine_state ||--o{ machine_state_event : "state_id"
+  machine_state ||--o{ machine_state_rule : "state_id"
   machine ||--o{ asset_relationship : "from_machine_id"
   machine ||--o{ asset_relationship : "to_machine_id"
   machine ||--o{ line_kpi_rule : "line_id, constraint_machine_id"
   machine ||--o{ machine_property : "machine_id"
+  machine ||--o{ machine_state_event : "machine_id"
   machine ||--o{ sub_asset : "machine_id"
   material ||--o{ material_line_rate : "material_id"
   site ||--o{ area : "site_id"

@@ -1,5 +1,6 @@
 -- Removes the simulated packing line (db/examples/demo-packline.sql)
--- completely: its history, mappings, properties, KPI rules, rates, schedule,
+-- completely: its history (values and state events), state rules, mappings,
+-- properties, KPI rules, rates, schedule,
 -- flow order, machines, line, its sources linesim_m1 ... linesim_m6, the
 -- area "packing" if nothing else is in it, and the demo products if no other
 -- line uses them. Run with
@@ -33,6 +34,8 @@ BEGIN
   EXECUTE format('DELETE FROM hist.measurement WHERE property_id = ANY (%L::int[])', ids);
   EXECUTE format('DELETE FROM hist.measurement_text WHERE property_id = ANY (%L::int[])', ids);
 END $$;
+DELETE FROM hist.machine_state_event WHERE machine_id IN (SELECT id FROM rm_machines);
+DELETE FROM config.machine_state_rule WHERE machine_id IN (SELECT id FROM rm_machines);
 DELETE FROM config.plc_mapping WHERE property_id IN (SELECT id FROM rm_props)
    OR source_id IN (SELECT id FROM config.source WHERE name ~ '^linesim_m[0-9]+$');
 DELETE FROM config.machine_property WHERE id IN (SELECT id FROM rm_props);

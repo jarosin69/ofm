@@ -73,3 +73,19 @@ watchdog counter, the demo's `heartbeat` signal (+1 every second).
 ## Notes / references
 
 - Related: ADR-0003, ADR-0006, ADR-0007, ADR-0021, ADR-0023.
+
+## Amendments
+
+- 2026-11-05: **As built (step 3a.3, migration 013).** Roles: `state_code`
+  (the PLC's state code; `state` is the machine state topic), `fault_code`,
+  `heartbeat`, `count_in`, `count_good`, `count_reject`, at most one of each
+  per active machine. `heartbeat_timeout_ms` is allowed only on the heartbeat
+  role, 1 s to 1 h, empty = 5 000. The check runs in the runtime's one-second
+  tick (node *heartbeat, source loss and frozen data*); a heartbeat without a
+  good value counts as not changing. While a machine is frozen, *normalise*
+  also publishes its new values `bad` (their own quality is kept for the
+  recovery). While the machine's source is offline, ADR-0007 applies instead,
+  and the timeout starts again once it is back. Drill F1 passed on the local
+  replica (2026-11-05): `unknown` on the UNS about 6–7 s after the simulator
+  stopped, stamped with the last heartbeat change; live again about 2 s
+  after it resumed. Drill F2 is in `tests/README.md` (step 3a.3).

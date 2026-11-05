@@ -24,11 +24,11 @@ same command can later run automatically on every commit (CI).
 | Suite | Checks | Needs the stack |
 |---|---|---|
 | `schemas` | Every payload schema in `schemas/` is valid JSON Schema 2020-12; every example in `tests/schemas/<schema>/valid/` passes and every one in `invalid/` is rejected | no |
-| `flows` | The function code in `flows/ofm-runtime.json`, run outside Node-RED: scaling, validation and timestamp rules (ADR-0003), quarantine, model cache; S7 and EtherNet/IP polling against a stand-in PLC library (report by exception, wrong addresses skipped, connection loss and recovery); heartbeat, historian writer and its disk queue; the saved model copy and the start without the database; every payload the flow can produce matches its schema and topics follow the topic standard. The simulated packing line (`demo/packing-line/linesim-flows.json`, `linesim`): `line.json` checked; the constraint sets the pace; no flapping; a breakdown spreads through the conveyors and clears; rejects, breakdown rate, shift pattern, changeover, pause (frozen heartbeat) and commands, in simulated time | no |
+| `flows` | The function code in `flows/ofm-runtime.json`, run outside Node-RED: scaling, validation and timestamp rules (ADR-0003), quarantine, model cache; S7 and EtherNet/IP polling against a stand-in PLC library (report by exception, wrong addresses skipped, connection loss and recovery); heartbeat, historian writer and its disk queue; machine states from the model's rules, frozen data and start-up reconciliation (`states`); the saved model copy and the start without the database; every payload the flow can produce matches its schema and topics follow the topic standard. The simulated packing line (`demo/packing-line/linesim-flows.json`, `linesim`): `line.json` checked; the constraint sets the pace; no flapping; a breakdown spreads through the conveyors and clears; rejects, breakdown rate, shift pattern, changeover, pause (frozen heartbeat) and commands, in simulated time | no |
 | `deploy` | The deployment files: every image pinned to a version and OFM's own never pulled; only the encrypted ports may be opened to the network, the database never; no password written into `docker-compose.yml`; every component's telemetry and update checks off; the offline bundle covers every image | no |
-| `database` | All migrations applied and unedited; UTC; hypertables; the model refuses bad names, reserved names, missing units, duplicate addresses; `vw_runtime_model` is right; every role can do exactly what Overview §13 says and no more; every model change is audited | yes |
+| `database` | All migrations applied and unedited; UTC; hypertables; the model refuses bad names, reserved names, missing units, duplicate addresses; `vw_runtime_model` is right; production context and machine states (vocabulary, roles, state rules, append-only events and their intervals); every role can do exactly what Overview §13 says and no more; every model change is audited | yes |
 | `load`, `watch` | **Opt-in, never part of `all`.** The Phase 2 load test and the drill recorder (step 2.9, below); they run for minutes and need the load-test line | yes, with the load-test line |
-| `live` | The automated part of the Phase 1 exit check (below): runtime and sources online, the whole model loaded, a current value on the UNS for every property, every UNS message valid, recent rows in the historian, dashboard and Grafana datasource working, editors reachable; model reload; encryption (`tls`: certificates, MQTT over TLS, HTTPS for every page, checked as a client computer would); the simulated packing line when it runs (`linesim`: all six simulated PLCs answer, nine Good signals each, heartbeat moving; skipped otherwise) | yes, with data flowing |
+| `live` | The automated part of the Phase 1 exit check (below): runtime and sources online, the whole model loaded, a current value on the UNS for every property, every UNS message valid, recent rows in the historian, dashboard and Grafana datasource working, editors reachable; model reload; encryption (`tls`: certificates, MQTT over TLS, HTTPS for every page, checked as a client computer would); the simulated packing line when it runs (`linesim`: all six simulated PLCs answer, nine Good signals each, heartbeat moving; with the demo model loaded, a valid retained state for every machine; skipped otherwise) | yes, with data flowing |
 
 The `live` suite takes its list of properties from the model, not from a file:
 add a property in Mathesar, restart Node-RED, and it is checked too.
@@ -296,6 +296,31 @@ simulator running:
 | PC5 | Mathesar, schema `config`: tables `material`, `material_line_rate`, `line_kpi_rule`, `line_schedule`, `loss_category` (if missing, reload Mathesar's view of the schema); change the rate of mix250 | the demo's rows are there; the change is refused: *rows are never changed: add a new row with a later valid_from* |
 | PC6 | `docker compose run --rm test live` | all checks pass, now including the demo line's 50 properties |
 | PC7 | `docker compose run --rm migrate demo-remove`, then `migrate demo` again | the line disappears from Grafana's Line list (with its history) and comes back empty; `eggline01` untouched |
+
+**Step 3a.3, machine states and frozen data** (migration 013; ADR-0006,
+ADR-0007, ADR-0025). Automated: `schemas` (`machine-state`); `flows`
+(`states`: rules in order of priority, event times, unknown on a lost
+source, frozen data and its recovery, start-up reconciliation, writer rows);
+`database` (state vocabulary, roles, rules checked against their property,
+events append-only, intervals, runtime heartbeat, the demo's roles and
+rules, `demo-remove` takes its states too); `live` (`linesim`: each demo
+machine has a valid retained state equal to its last state event). By hand,
+on the laptop, with the simulator running inside the shift pattern (or with
+it switched off in the panel). Watch the states in MQTT Explorer on
+`acme/melbourne/packing/packline01/+/state`; to see events, the query in
+demo README section 12.
+
+| # | Do | Expect |
+|---|---|---|
+| MS1 | `docker compose up -d`, then `docker compose logs migrate`; `docker compose restart nodered` | `Applying 013-machine-states.sql`, `Database is up to date` |
+| MS2 | `docker compose run --rm test offline`, then `docker compose run --rm test database` | all checks pass |
+| MS3 | `docker compose run --rm migrate demo`; then OFM's Node-RED editor (`https://localhost:1880`), node *machine states* in section 5 | six `…/state` topics appear; the node shows e.g. `5 running, 1 starved`, matching the simulator's panel |
+| MS4 | Panel: *Break and hold* on the closer; after a minute *Repair* | `closer/state` `fault` within about 2 s; the machines before it `blocked`, after it `starved`; after *Repair* all `running` again. One event per change in the query |
+| MS5 | `docker compose run --rm test live` | all checks pass, including the six *retained state* checks |
+| F1 | **Frozen data:** panel *Stop simulator*; wait 15 s; *Resume simulator* | within about 7 s all six states `unknown` (`q` bad), their `ts` the moment the simulator stopped; every filler value `bad` in MQTT Explorer and orange in Grafana; `docker compose logs nodered` shows `… is frozen: heartbeat … has stayed at …`. About 2 s after *Resume*: `… is live again`, values good, actual states back. Events: cause `frozen`, then `rule` |
+| F2 | **S7 CPU in STOP** (bench S7-1200, optional): in Mathesar give a property of the bench machine that changes every second the role `heartbeat`; switch the CPU to STOP for 30 s, then RUN | Either the source stays `online` and the machine is frozen as in F1 (its values `bad`, the log line), or the source goes `offline` (ADR-0007). Note which: it settles the assumption in ADR-0025. Back in RUN, values good again |
+| MS6 | **Runtime outage:** `docker compose stop nodered`; wait 2 minutes; `docker compose start nodered` | Events: each machine `unknown` (cause `runtime_outage`) from the last runtime heartbeat before the stop (at most a minute before it), then its actual state from when it was read again; nothing in between |
+| MS7 | **Lost source:** `docker compose stop linesim`; wait 20 s; `docker compose start linesim` | all six states `unknown` (cause `communication_loss`) within a few seconds; back about 15 s after the start |
 
 ## Adding a test
 

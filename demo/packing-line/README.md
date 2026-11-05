@@ -118,11 +118,13 @@ In OFM each signal is an ordinary property, on the topic
 `acme/melbourne/packing/packline01/<machine>/<property>` (50 properties,
 loaded by `docker compose run --rm migrate demo`, section 12). The PLC's
 state code is the property `state_code`, because `state` is the machine
-state OFM derives from it itself (step 3a.3). That property gets a
-state rule (code → state vocabulary, Overview §10.1), the counters get a
-count role, `fault_code` gets a fault-code → reason table, and `heartbeat`
-gets the heartbeat role with a 5-second timeout: all in the model, so a real
-machine with different codes needs only different rows.
+state OFM derives from it itself (step 3a.3). Each machine has eight state
+rules on `state_code` (code 1 → running … 8 → maintenance, Overview §10.1);
+the six signals the KPIs need have their role (`state_code`, `fault_code`,
+`heartbeat`, `count_in`, `count_good`, `count_reject`); `heartbeat` has a
+5-second timeout; `fault_code` gets a fault-code → reason table in step
+3a.6. All of it is in the model, so a real machine with different codes, or
+with status bits instead of a code, needs only different rows.
 
 **Frozen data.** If `heartbeat` stops changing for 5 seconds while the PLC or
 OPC UA server still answers — the simulator stopped, a CPU in STOP — OFM
@@ -331,6 +333,28 @@ its 50 properties as not current.
 reads all six simulated PLCs (part of *linesim*); it is skipped when the
 simulator is not running.
 
+**Machine states** (step 3a.3): OFM derives each machine's state from its
+state rules and publishes it retained on
+`acme/melbourne/packing/packline01/<machine>/state`, for example
+`{"v": "starved", "ts": 1793869183310, "q": "good", "tss": "device"}`;
+`ts` is when the state began. Watch the six topics in MQTT Explorer while
+you break a machine in the control panel. In OFM's Node-RED editor the node
+*machine states* shows how many machines are in which state. Every change
+is also a row in the historian; the last hour, in Melbourne time:
+
+```sql
+SELECT machine_name, starts_at AT TIME ZONE 'Australia/Melbourne' AS started,
+       state, round(duration_s) AS seconds, cause
+FROM hist.vw_machine_state_interval
+WHERE line_id = (SELECT id FROM config.line WHERE name = 'packline01' AND retired_at IS NULL)
+  AND starts_at > now() - interval '1 hour'
+ORDER BY machine_name, starts_at;
+```
+
+(in `docker exec -it ofm-timescaledb psql -U ofm_admin -d ofm`, with the
+administrator name from your `.env`). Charts of states come with the line
+view in step 3a.8.
+
 **Outside the shift pattern**, to see the line run: set
 `"schedule": { "enabled": false, … }` in `line.json`, then
 `docker compose restart linesim`. Set it back afterwards.
@@ -388,8 +412,11 @@ during the shift that someone has to give a reason for.
 fault in the data: it imitates a PLC whose program has stopped, or a data
 block nobody updates any more. Every value freezes, including the
 heartbeat; the time in between is skipped, not caught up. It exists to test
-OFM's frozen-data detection (from step 3a.3 OFM must then mark the machines
-`unknown`, ADR-0025), not for normal simulation.
+OFM's frozen-data detection, not for normal simulation: about 5 seconds
+later OFM marks every value of every machine `bad` and the machines
+`unknown` from the last heartbeat change, and about 2 seconds after
+*Resume simulator* they are live again (ADR-0025, drill F1 in
+`tests/README.md`).
 
 **New run** starts a fresh run without restarting the container, after a
 confirmation: every counter to 0, conveyors empty, all breakdowns cleared, a

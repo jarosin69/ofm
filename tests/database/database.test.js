@@ -26,6 +26,18 @@ const ZZ_MIX = "(SELECT id FROM config.material WHERE code = 'zz_mix')";
 const SUNDAY_EARLY = "INSERT INTO config.line_schedule (line_id, kind, sun, start_time, end_time, valid_from) VALUES ($line, 'production', true, '00:00', '06:00', '2026-01-01')";
 const hoursOf = r => r.map(x => Number(x.hours));
 
+// Machine states (migration 013): a state code property and a fault bit on the test machine.
+const CODE = "(SELECT id FROM config.engineering_unit WHERE code = 'code')";
+const ADD_STATE_CODE = "INSERT INTO config.machine_property (machine_id, name, display_name, datatype, engineering_unit_id, role) VALUES ($machine, 'state_code', 'State code', 'int', " + CODE + ", 'state_code')";
+const ADD_FAULT_BIT = "INSERT INTO config.machine_property (machine_id, name, display_name, datatype) VALUES ($machine, 'fault_bit', 'Fault', 'bool')";
+const STATE_CODE = "(SELECT id FROM config.machine_property WHERE machine_id = $machine AND name = 'state_code')";
+const FAULT_BIT = "(SELECT id FROM config.machine_property WHERE machine_id = $machine AND name = 'fault_bit')";
+const RULE = (priority, prop, op, value, state) =>
+  "INSERT INTO config.machine_state_rule (machine_id, priority, property_id, operator, value, state_id) VALUES ($machine, " +
+  priority + ", " + prop + ", '" + op + "', '" + value + "', " + state + ")";
+const EVENT = (ts, state, cause) =>
+  "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES ($machine, '" + ts + "', " + state + ", '" + (cause || "rule") + "') ON CONFLICT (machine_id, ts) DO NOTHING";
+
 // A small plant created inside each case's transaction (as administrator).
 async function testPlant(db) {
   const one = async (sql, params) => (await db.query(sql, params)).rows[0].id;
@@ -200,6 +212,74 @@ const CASES = [
     { as: "ofm_config", sql: "INSERT INTO config.material_line_rate (line_id, material_id, rate_per_hour) VALUES ($line, " + ZZ_MIX + ", 6000)" },
     { as: "ofm_reader", sql: "SELECT action, new_row->>'rate_per_hour' AS rate FROM audit.audit_log WHERE table_name = 'config.material_line_rate' ORDER BY id DESC LIMIT 1",
       expect: r => r.length === 1 && r[0].action === "INSERT" && Number(r[0].rate) === 6000 }] },
+
+  // --- machine states (migration 013, step 3a.3) ----------------------------------------------
+  { name: "machine states: the vocabulary of ADR-0006, unknown included; editors may rename, never add or delete", steps: [
+    { as: "ofm_reader", sql: "SELECT string_agg(name, ',' ORDER BY id) AS names FROM config.machine_state",
+      expect: r => r[0].names === "running,idle,blocked,starved,fault,setup,cleaning,maintenance,unknown" },
+    { as: "ofm_config", sql: "UPDATE config.machine_state SET display_name = 'Waiting for product' WHERE name = 'starved'" },
+    { as: "ofm_config", sql: "INSERT INTO config.machine_state (id, name, display_name) VALUES (10, 'paused', 'x')", expect: NO_PERMISSION },
+    { as: "ofm_config", sql: "DELETE FROM config.machine_state WHERE id = 9", expect: NO_PERMISSION }] },
+  { name: "roles: at most one property per role on a machine; counters must be numbers", steps: [
+    { as: "ofm_config", sql: ADD_STATE_CODE },
+    { as: "ofm_config", sql: "UPDATE config.machine_property SET role = 'state_code' WHERE id = $temp", expect: DUPLICATE },
+    { as: "ofm_config", sql: "INSERT INTO config.machine_property (machine_id, name, display_name, datatype, role) VALUES ($machine, 'good', 'x', 'string', 'count_good')", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "UPDATE config.machine_property SET role = 'counter' WHERE id = $temp", expect: REFUSED_BY_RULE }] },
+  { name: "roles: a heartbeat timeout only on the heartbeat role, at least 1 s; the view gives 5000 when empty (ADR-0025)", steps: [
+    { as: "ofm_config", sql: "UPDATE config.machine_property SET heartbeat_timeout_ms = 5000 WHERE id = $temp", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "UPDATE config.machine_property SET role = 'heartbeat', heartbeat_timeout_ms = 500 WHERE id = $temp", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "UPDATE config.machine_property SET role = 'heartbeat' WHERE id = $temp" },
+    { as: "ofm_runtime", sql: "SELECT role, heartbeat_timeout_ms, machine_topic FROM config.vw_runtime_model WHERE property_id = $temp",
+      expect: r => r[0].role === "heartbeat" && r[0].heartbeat_timeout_ms === 5000 && r[0].machine_topic === "zz_test/site1/area1/line1/mach1" }] },
+  { name: "state rules: the value must suit the property (number, true/false); bool allows only = and <>", steps: [
+    { as: "ofm_config", sql: ADD_STATE_CODE },
+    { as: "ofm_config", sql: ADD_FAULT_BIT },
+    { as: "ofm_config", sql: RULE(1, STATE_CODE, "=", "five", 5), expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: RULE(1, FAULT_BIT, "=", "1", 5), expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: RULE(1, FAULT_BIT, ">", "true", 5), expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: RULE(1, FAULT_BIT, "=", "true", 5) },
+    { as: "ofm_config", sql: RULE(2, STATE_CODE, ">=", "1.5e0", 1) },
+    { as: "ofm_config", sql: RULE(3, STATE_CODE, "==", "1", 1), expect: REFUSED_BY_RULE }] },
+  { name: "state rules: one rule per priority on a machine; only properties of that machine", steps: [
+    { as: "ofm_config", sql: ADD_STATE_CODE },
+    { as: "ofm_config", sql: RULE(1, STATE_CODE, "=", "1", 1) },
+    { as: "ofm_config", sql: RULE(1, STATE_CODE, "=", "5", 5), expect: DUPLICATE },
+    { as: "ofm_config", sql: "INSERT INTO config.machine (line_id, name, display_name) VALUES ($line, 'mach2', 'Machine 2')" },
+    { as: "ofm_config", sql: "INSERT INTO config.machine_state_rule (machine_id, priority, property_id, value, state_id) SELECT id, 1, " + STATE_CODE + ", '1', 1 FROM config.machine WHERE name = 'mach2' AND line_id = $line", expect: NO_SUCH_PARENT }] },
+  { name: "runtime view: each rule on the row of the property it tests, in order of priority", steps: [
+    { as: "ofm_config", sql: ADD_STATE_CODE },
+    { as: "ofm_config", sql: "INSERT INTO config.plc_mapping (property_id, source_id, address) VALUES (" + STATE_CODE + ", $source, 'ns=2;s=State')" },
+    { as: "ofm_config", sql: RULE(5, STATE_CODE, "=", "5", 5) },
+    { as: "ofm_config", sql: RULE(1, STATE_CODE, "=", "1", 1) },
+    { as: "ofm_runtime", sql: "SELECT property_id, state_rules FROM config.vw_runtime_model WHERE runtime_name = 'zz_runtime' ORDER BY property_id",
+      expect: r => r.length === 2 && r[0].state_rules === null &&
+                   JSON.stringify(r[1].state_rules) === JSON.stringify([{ state: "running", value: "1", operator: "=", priority: 1 }, { state: "fault", value: "5", operator: "=", priority: 5 }]) }] },
+  { name: "state events: the runtime appends, never changes or deletes; a replayed event is ignored", steps: [
+    { as: "ofm_runtime", sql: EVENT("2026-11-05T01:00:00Z", 1) },
+    { as: "ofm_runtime", sql: EVENT("2026-11-05T01:00:00Z", 5) },
+    { as: "ofm_runtime", sql: "UPDATE hist.machine_state_event SET state_id = 2 WHERE machine_id = $machine", expect: NO_PERMISSION },
+    { as: "ofm_runtime", sql: "DELETE FROM hist.machine_state_event WHERE machine_id = $machine", expect: NO_PERMISSION },
+    { as: "ofm_reader", sql: "SELECT state_id FROM hist.machine_state_event WHERE machine_id = $machine", expect: r => r.length === 1 && r[0].state_id === 1 },
+    { as: "ofm_runtime", sql: EVENT("2026-11-05T01:00:01Z", 1, "power_cut"), expect: REFUSED_BY_RULE }] },
+  { name: "state events: ofm_config can neither read nor write them", steps: [
+    { as: "ofm_config", sql: "SELECT 1 FROM hist.machine_state_event LIMIT 1", expect: NO_PERMISSION },
+    { as: "ofm_config", sql: EVENT("2026-11-05T01:00:00Z", 1), expect: NO_PERMISSION }] },
+  { name: "state intervals: each state ends where the next begins; the newest is open", steps: [
+    { as: "ofm_runtime", sql: EVENT("2026-11-05T01:00:00Z", 1) },
+    { as: "ofm_runtime", sql: EVENT("2026-11-05T01:10:00Z", 5) },
+    { as: "ofm_runtime", sql: EVENT("2026-11-05T01:04:00Z", 4) },                     // arrives late (store-and-forward)
+    { as: "ofm_reader", sql: "SELECT state, duration_s, ends_at IS NULL AS open FROM hist.vw_machine_state_interval WHERE machine_id = $machine ORDER BY starts_at",
+      expect: r => r.map(x => x.state).join() === "running,starved,fault" && Number(r[0].duration_s) === 240 && Number(r[1].duration_s) === 360 &&
+                   r[2].open === true && !r[0].open }] },
+  { name: "runtime heartbeat: appended by the runtime, read by the reader, never changed", steps: [
+    { as: "ofm_runtime", sql: "INSERT INTO hist.runtime_heartbeat (runtime_name, ts) VALUES ('zz_runtime', now()) ON CONFLICT DO NOTHING" },
+    { as: "ofm_runtime", sql: "DELETE FROM hist.runtime_heartbeat WHERE runtime_name = 'zz_runtime'", expect: NO_PERMISSION },
+    { as: "ofm_reader", sql: "SELECT count(*)::int AS n FROM hist.runtime_heartbeat WHERE runtime_name = 'zz_runtime'", expect: r => r[0].n === 1 }] },
+  { name: "state rules are audited and reach the runtime as a model change", steps: [
+    { as: "ofm_config", sql: ADD_STATE_CODE },
+    { as: "ofm_config", sql: RULE(1, STATE_CODE, "=", "1", 1) },
+    { as: "ofm_reader", sql: "SELECT action FROM audit.audit_log WHERE table_name = 'config.machine_state_rule' ORDER BY id DESC LIMIT 1",
+      expect: r => r.length === 1 && r[0].action === "INSERT" }] },
 
   // --- audit (Overview §11) -----------------------------------------------------------------
   { name: "a model change is audited with old and new values", steps: [

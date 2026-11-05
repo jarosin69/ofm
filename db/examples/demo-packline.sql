@@ -11,7 +11,8 @@
 -- mix150, mix250, mix500 with their rated speeds; the line's KPI rules
 -- (constraint: filler, minor stops under 5 minutes); its shift pattern
 -- (Mon-Fri 06:00-22:00, cleaning 21:30-22:00, Melbourne time); and the flow
--- order of the machines (ADR-0024). Rename anything in Mathesar afterwards:
+-- order of the machines (ADR-0024); each machine's property roles, heartbeat
+-- and state rules (ADR-0006, ADR-0025). Rename anything in Mathesar afterwards:
 -- history is kept by ID (ADR-0004).
 -- Running it again changes nothing that is already there.
 
@@ -116,6 +117,27 @@ JOIN demo_signal sg ON sg.only_machine IS NULL OR sg.only_machine = d.name
 JOIN config.machine_property p ON p.machine_id = m.id AND p.name = sg.prop AND p.retired_at IS NULL
 JOIN config.source src ON src.name = 'linesim_m' || d.slot AND src.retired_at IS NULL
 ON CONFLICT (property_id) WHERE retired_at IS NULL DO NOTHING;
+
+-- Roles (migration 013): what each signal means to OFM. The heartbeat rises
+-- every second; 5 s without a change = frozen data (ADR-0025).
+UPDATE config.machine_property p
+SET role = p.name,
+    heartbeat_timeout_ms = CASE WHEN p.name = 'heartbeat' THEN 5000 END
+FROM config.machine m JOIN demo_line ON demo_line.id = m.line_id
+WHERE p.machine_id = m.id AND m.retired_at IS NULL AND p.retired_at IS NULL AND p.role IS NULL
+  AND p.name IN ('state_code', 'fault_code', 'heartbeat', 'count_in', 'count_good', 'count_reject')
+  AND NOT EXISTS (SELECT 1 FROM config.machine_property o
+                  WHERE o.machine_id = p.machine_id AND o.role = p.name AND o.retired_at IS NULL);
+
+-- State rules: the simulator's state code is the state's id (1 running ...
+-- 8 maintenance, demo README section 4); priority = code.
+INSERT INTO config.machine_state_rule (machine_id, priority, property_id, operator, value, state_id, note)
+SELECT m.id, ms.id, p.id, '=', ms.id::text, ms.id, 'Simulator state code (demo)'
+FROM config.machine m JOIN demo_line ON demo_line.id = m.line_id
+JOIN config.machine_property p ON p.machine_id = m.id AND p.name = 'state_code' AND p.retired_at IS NULL
+CROSS JOIN config.machine_state ms
+WHERE m.retired_at IS NULL AND ms.id BETWEEN 1 AND 8
+ON CONFLICT (machine_id, priority) DO NOTHING;
 
 -- Flow order (ADR-0024): each machine feeds the next.
 INSERT INTO config.asset_relationship (from_machine_id, to_machine_id, relation_type)

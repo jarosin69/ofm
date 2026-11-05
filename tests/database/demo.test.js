@@ -1,4 +1,4 @@
-// The demo line's model (db/examples/demo-packline.sql, step 3a.2): it loads,
+// The demo line's model (db/examples/demo-packline.sql, steps 3a.2 and 3a.3): it loads,
 // loading it again changes nothing, and demo-remove takes away exactly what
 // it added. Runs as the administrator, as "migrate demo" does, inside one
 // transaction that is rolled back: a demo line you have loaded is untouched.
@@ -22,6 +22,14 @@ const COUNTS = `
          (SELECT count(*) FROM config.asset_relationship r JOIN config.machine m ON m.id = r.from_machine_id
           WHERE m.line_id IN (SELECT id FROM line) AND r.relation_type = 'feeds')::int AS feeds,
          (SELECT count(*) FROM config.material WHERE code IN ('mix150', 'mix250', 'mix500'))::int AS products,
+         (SELECT count(*) FROM config.machine_property p JOIN config.machine m ON m.id = p.machine_id
+          WHERE m.line_id IN (SELECT id FROM line) AND p.role IS NOT NULL)::int AS roles,
+         (SELECT count(*) FROM config.machine_property p JOIN config.machine m ON m.id = p.machine_id
+          WHERE m.line_id IN (SELECT id FROM line) AND p.role = 'heartbeat' AND p.heartbeat_timeout_ms = 5000)::int AS heartbeats,
+         (SELECT count(*) FROM config.machine_state_rule r JOIN config.machine m ON m.id = r.machine_id
+          WHERE m.line_id IN (SELECT id FROM line))::int AS state_rules,
+         (SELECT count(*) FROM hist.machine_state_event e JOIN config.machine m ON m.id = e.machine_id
+          WHERE m.line_id IN (SELECT id FROM line))::int AS state_events,
          (SELECT name FROM config.machine WHERE id = (SELECT constraint_machine_id FROM config.line_kpi_rule
            WHERE line_id IN (SELECT id FROM line) LIMIT 1)) AS constraint_machine`;
 
@@ -42,6 +50,8 @@ module.exports.run = async function (t) {
     t.check("demo line: 3 products with rates, filler as constraint, 2 schedule windows, 5 feeds links",
             once.rates === 3 && once.rules === 1 && once.constraint_machine === "filler" && once.windows === 2 &&
             once.feeds === 5 && once.products === 3, JSON.stringify(once));
+    t.check("demo line: 6 roles per machine, a 5 s heartbeat, 8 state rules per machine (step 3a.3)",
+            once.roles === 36 && once.heartbeats === 6 && once.state_rules === 48, JSON.stringify(once));
     await db.query(read("demo-packline.sql"));
     const twice = (await db.query(COUNTS)).rows[0];
     t.check("demo line loaded again: nothing added or changed", JSON.stringify(twice) === JSON.stringify(once), JSON.stringify(twice));
@@ -64,6 +74,9 @@ module.exports.run = async function (t) {
       generate_series(1, 120000) g WHERE e.name = 'zz_other'`);
     await db.query(`SELECT compress_chunk(c, true)
       FROM show_chunks('hist.measurement', older_than => now() - interval '299 days', newer_than => now() - interval '301 days') c`);
+    await db.query(`INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause)
+      SELECT m.id, now() - interval '1 hour', 1, 'rule' FROM config.machine m JOIN config.line l ON l.id = m.line_id
+      WHERE l.name = 'packline01' ON CONFLICT DO NOTHING`);
     await db.query("SAVEPOINT before_remove");
     await db.query(read("demo-packline-remove.sql"));
     const gone = (await db.query(COUNTS)).rows[0];
@@ -74,6 +87,8 @@ module.exports.run = async function (t) {
     t.check("demo-remove works beside 120,000 compressed rows of another line, and leaves them all", other === 120000, other);
     t.check("demo-remove takes away the demo line, its sources, rates, rules, schedule and products",
             gone.lines === 0 && gone.machines === 0 && gone.mapped === 0 && gone.sources === 0 && gone.products === 0, JSON.stringify(gone));
+    t.check("demo-remove takes away its state rules and state events too",
+            gone.state_rules === 0 && gone.state_events === 0, JSON.stringify(gone));
     t.check("demo-remove leaves the rest of the model alone (eggline01, if loaded, is still there)",
             eggline === (await (async () => { await db.query("ROLLBACK TO SAVEPOINT before_remove");
               return (await db.query("SELECT count(*)::int AS n FROM config.line WHERE name = 'eggline01'")).rows[0].n; })()), eggline);

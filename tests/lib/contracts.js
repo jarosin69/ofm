@@ -38,6 +38,7 @@ function schemaNameForTopic(topic) {
   if (topic.endsWith("/_meta")) return "meta";
   const levels = topic.split("/");
   if (levels.length === 5 && levels[4] === "workorder") return "workorder";
+  if (levels.length === 6 && levels[5] === "state") return "machine-state";   // property name state is reserved
   if (levels.length >= 6) return "value";
   return null;
 }

@@ -17,12 +17,12 @@ Architecture Overview and a schema disagree, the schema wins.
 | `ofm/_system/cache/{runtime}` | `system-cache.schema.json` | yes | 1 |
 | `ofm/_system/historian/{runtime}` | `system-historian.schema.json` | yes | 2 |
 | `{enterprise}/{site}/{area}/{line}/workorder` | `workorder.schema.json` | yes | 3a |
+| `{enterprise}/{site}/{area}/{line}/{machine}/state` | `machine-state.schema.json` | yes | 3a |
 
 `common.schema.json` holds shared definitions (timestamp, quality, timestamp
 provenance, IDs) and is referenced by the others; it is not a payload.
 
-Not yet specified, deliberately: machine state (`…/{machine}/state`, Phase 3a),
-line KPIs (`…/{line}/kpi/{name}`, Phase 3b), state health
+Not yet specified, deliberately: line KPIs (`…/{line}/kpi/{name}`, Phase 3b), state health
 (`ofm/_system/state_health`, Phase 3), SPC state (`…/{line}/spc/{characteristic}`,
 Phase 3c), food safety check state (`…/{line}/foodsafety/{check}`, Phase 3d)
 and write-back commands (`ofm/_cmd/…`).

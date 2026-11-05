@@ -1,6 +1,6 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-02. Update this file at the end of every working session.*
+*Updated: 2026-11-05. Update this file at the end of every working session.*
 
 **▶ We are here: Phase 3a, detailed design for review.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
@@ -15,9 +15,13 @@ six simulated OPC UA PLCs, profile `demo`; P1–P5 passed on the laptop
 laptop 2026-11-03; changeover minutes, *New run* and "Operating the
 simulator" added; P9–P11 passed 2026-11-03). **Step 3a.2 built:**
 migration 012 (materials, rated speeds, KPI rules, weekly schedule, loss
-categories) and the demo line in OFM's model (`migrate demo`), tested on the
-replica; next: checks PC1–PC7 on the laptop, then step 3a.3, machine
-states. Stage C
+categories) and the demo line in OFM's model (`migrate demo`); PC1–PC6
+passed on the laptop 2026-11-05, PC7 found a bug in `demo-remove` (fixed,
+to repeat). **Step 3a.3 built:** migration 013 (state vocabulary, property
+roles, state rules, state events, runtime heartbeat), machine states and
+frozen-data detection in the runtime flow, `…/{machine}/state` with its
+schema; tested on the replica, drill F1 included; next: checks MS1–MS7, F1
+and F2 on the laptop, then step 3a.4, counts. Stage C
 decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
 
 ## The plan in one view
@@ -180,8 +184,8 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 |---|---|---|
 | 3a.0 | Detailed design reviewed: ADR-0023, ADR-0024, ADR-0025, demo README (decisions in its section 11) | ✅ 2026-11-02, ADRs accepted |
 | 3a.1 | Simulator: line engine, six simulated OPC UA PLCs, `line.json`, Compose profile `demo`, HTTPS port 1881 (part 1); control panel with presets and commands (part 2) | ✅ 2026-11-03 (P1–P11 on the laptop) |
-| 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ▶ built 2026-11-03 (migration 012), tested on the replica; PC1–PC7 on the laptop to do |
-| 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ⬜ |
+| 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ✅ 2026-11-05 (migration 012; PC1–PC6 on the laptop; PC7 to repeat with the `demo-remove` fix) |
+| 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ▶ built 2026-11-05 (migration 013), tested on the replica with drill F1; MS1–MS7, F1, F2 on the laptop to do |
 | 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ⬜ |
 | 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ⬜ |
 | 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ⬜ |
@@ -258,8 +262,9 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 3a.2 on the laptop: checks PC1–PC7 (tests/README, Phase 3a);
-   then step 3a.3, machine states and frozen-data detection.
+1. On the laptop: PC7 again with the `demo-remove` fix; then step 3a.3,
+   checks MS1–MS7 and drills F1, F2 (tests/README, Phase 3a); then step
+   3a.4, counts.
 2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
    the management decision at C0).
 3. Update the Claude Project instructions: model editor is Mathesar (not
@@ -274,7 +279,6 @@ Numbers are stable; answered questions are removed rather than renumbered.
 |---|---|---|
 | 2 | Docker Desktop licence vs. Docker Engine directly in WSL2 or on a Linux server — **ADR-0020 proposed:** plant servers on Linux with Docker Engine; laptops any Docker with Engine and Compose; Jarek's laptop keeps Docker Desktop for development. Removed when accepted | Plant pilot |
 | 3 | Employer policy on open-sourcing work developed for or at the site | Going public |
-| 5 | Runtime heartbeat interval: 60 s assumed (ADR-0006) | Phase 3a |
 | 6 | Default `max_publish_interval_ms`: 60 000 assumed (ADR-0007) | Phase 2 |
 | 7 | Minor-stop threshold per line: 5 min assumed (ADR-0009); now a setting of each line's KPI rule (`config.line_kpi_rule`, default 300 s) — confirm 5 min for the real lines | Plant pilot |
 | 8 | Source of good and reject counts per line: PLC counters, or manual reject entry | Phase 3a |
@@ -282,7 +286,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 10 | Ramp-up after a changeover: inside the changeover window, or speed loss (ADR-0010) | Phase 3a |
 | 11 | Defined capacity per line for CU: manual or from ERP/SAP | Phase 3b |
 | 12 | Verify KPI terminology against ISO 22400-2 (ADR-0008) | Going public |
-| 13 | Schemas still to write: machine state (3a), line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
+| 13 | Schemas still to write: line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
 | 14 | First SPC characteristics and their plans (pack weight, temper index?); how lab results arrive (manual entry or instrument interface) | Phase 3c |
 | 21 | Food safety: which checks first; who verifies; electronic records replacing or accompanying paper under the site's certification scheme | Phase 3d |
 | 22 | Traceability: lot identification on the floor, tipping points, mass-balance tolerance, mixing-attribution rules (own ADR) | Phase 3e |
@@ -544,6 +548,22 @@ Numbers are stable; answered questions are removed rather than renumbered.
   120,000 compressed rows of another line; it failed with the old script
   and passes with the new one. The failed run had already stopped
   acquisition of the demo line (its mappings retired) but removed nothing.
+- Step 3a.3 was tested on the local replica (PostgreSQL with TimescaleDB,
+  Mosquitto, the simulator and OFM's runtime flow in Node-RED): `flows` 235
+  checks (new: `states`), `database` 75, `schemas` (new: `machine-state`
+  examples), `live`: the six demo machines' retained states
+  valid and equal to their last events, all 261 UNS messages valid (the
+  example line's failures there only because its OPC UA simulator does not
+  run on the replica). By hand: states followed the simulator; with the
+  simulator restarted, `unknown` (communication_loss) and back; F1 (pause):
+  `unknown` on the UNS 6–7 s after the pause, stamped at the last heartbeat
+  change, live 2 s after resume; runtime killed for 20 s: `unknown`
+  (runtime_outage) from its last heartbeat 1 s before the kill, actual
+  states from the moment they were read again. The runtime heartbeat
+  interval stays 60 s (former open question 5, ADR-0006 amendment). A
+  `starved` of 1 ms seen once on resume is real simulator data (the
+  palletiser flaps starved → running), split over two OPC UA batches. Not
+  tested here: Docker Compose, Mathesar, Grafana, drill F2.
 - Docker Desktop stays on the laptop for development (decided 2026-11-02).
   Its licence applies to development use too: within an organisation above
   Docker's small-business limit, the laptop needs a paid seat.
