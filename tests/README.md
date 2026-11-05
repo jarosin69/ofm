@@ -279,6 +279,24 @@ switched off in the panel):
 | P10 | Preset *Bad day*, *Apply*; then *Stop simulator* | the table's values change (filler MTBF 2 h); with the simulator stopped the badge says SIMULATOR STOPPED, every value stands still, and `docker compose run --rm test live` fails the *heartbeat moves* checks; *Resume simulator* and it passes again |
 | P11 | *New run*, then *Cancel* in the question; then *New run* and *OK* | after Cancel nothing changes; after OK every counter starts again from 0, the conveyors are empty, any breakdown is cleared and the badge says RUN (inside the shift pattern), with the same product and settings as before |
 
+**Step 3a.2, production context and the demo line in OFM's model**
+(migration 012). Automated: the `database` suite (materials, rated speeds and
+KPI rules never changed once in force, the constraint machine on its own
+line, the schedule as UTC intervals on both daylight-saving days, permissions
+and audit; `demo`: the demo line loads, loads again without change, and
+`demo-remove` takes exactly it away). By hand, on the laptop, with the
+simulator running:
+
+| # | Do | Expect |
+|---|---|---|
+| PC1 | `docker compose up -d`, then `docker compose logs migrate` | `Applying 012-production-context.sql`, `Database is up to date` |
+| PC2 | `docker compose run --rm test offline`, then `docker compose run --rm test database` | all checks pass |
+| PC3 | `docker compose run --rm migrate demo`, then the same again | both times `Demo line ready: 50 properties on acme/melbourne/packing/packline01` |
+| PC4 | Grafana *OFM · Live data*, Line `packline01` (inside the shift pattern, or with it switched off in the simulator's panel) | six machines; counts rising, `heartbeat` +1 a second, quality good; values move as in the simulator's panel |
+| PC5 | Mathesar, schema `config`: tables `material`, `material_line_rate`, `line_kpi_rule`, `line_schedule`, `loss_category` (if missing, reload Mathesar's view of the schema); change the rate of mix250 | the demo's rows are there; the change is refused: *rows are never changed: add a new row with a later valid_from* |
+| PC6 | `docker compose run --rm test live` | all checks pass, now including the demo line's 50 properties |
+| PC7 | `docker compose run --rm migrate demo-remove`, then `migrate demo` again | the line disappears from Grafana's Line list (with its history) and comes back empty; `eggline01` untouched |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

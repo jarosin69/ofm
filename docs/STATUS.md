@@ -12,10 +12,12 @@ ADR-0024 (starved and blocked time), ADR-0025 (frozen data),
 `demo/packing-line/README.md`. **Step 3a.1 built:** part 1 (line engine,
 six simulated OPC UA PLCs, profile `demo`; P1–P5 passed on the laptop
 2026-11-02) and part 2 (control panel, presets; P7–P8 passed on the
-laptop 2026-11-03; P9 found the product back at mix250 after a changeover
-— cause not found, see notes; added: changeover minutes, *New run*,
-"Operating the simulator" in the demo guide, section 13); next: P9–P11,
-then step 3a.2. Stage C
+laptop 2026-11-03; changeover minutes, *New run* and "Operating the
+simulator" added; P9–P11 passed 2026-11-03). **Step 3a.2 built:**
+migration 012 (materials, rated speeds, KPI rules, weekly schedule, loss
+categories) and the demo line in OFM's model (`migrate demo`), tested on the
+replica; next: checks PC1–PC7 on the laptop, then step 3a.3, machine
+states. Stage C
 decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
 
 ## The plan in one view
@@ -177,8 +179,8 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | Step | What | Status |
 |---|---|---|
 | 3a.0 | Detailed design reviewed: ADR-0023, ADR-0024, ADR-0025, demo README (decisions in its section 11) | ✅ 2026-11-02, ADRs accepted |
-| 3a.1 | Simulator: line engine, six simulated OPC UA PLCs, `line.json`, Compose profile `demo`, HTTPS port 1881 (part 1); control panel with presets and commands (part 2) | ▶ part 1 ✅ 2026-11-02 (P1–P5 on the laptop); part 2 built 2026-11-02, tested on the replica; P7–P10 to do |
-| 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ⬜ |
+| 3a.1 | Simulator: line engine, six simulated OPC UA PLCs, `line.json`, Compose profile `demo`, HTTPS port 1881 (part 1); control panel with presets and commands (part 2) | ✅ 2026-11-03 (P1–P11 on the laptop) |
+| 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ▶ built 2026-11-03 (migration 012), tested on the replica; PC1–PC7 on the laptop to do |
 | 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ⬜ |
 | 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ⬜ |
 | 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ⬜ |
@@ -256,8 +258,8 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 3a.1 part 2 on the laptop: checks P7–P10 (tests/README, Phase 3a);
-   then step 3a.2, production context and the demo model.
+1. Step 3a.2 on the laptop: checks PC1–PC7 (tests/README, Phase 3a);
+   then step 3a.3, machine states and frozen-data detection.
 2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
    the management decision at C0).
 3. Update the Claude Project instructions: model editor is Mathesar (not
@@ -274,15 +276,14 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 3 | Employer policy on open-sourcing work developed for or at the site | Going public |
 | 5 | Runtime heartbeat interval: 60 s assumed (ADR-0006) | Phase 3a |
 | 6 | Default `max_publish_interval_ms`: 60 000 assumed (ADR-0007) | Phase 2 |
-| 7 | Minor-stop threshold per line: 5 min assumed (ADR-0009) | Phase 3a |
+| 7 | Minor-stop threshold per line: 5 min assumed (ADR-0009); now a setting of each line's KPI rule (`config.line_kpi_rule`, default 300 s) — confirm 5 min for the real lines | Plant pilot |
 | 8 | Source of good and reject counts per line: PLC counters, or manual reject entry | Phase 3a |
-| 9 | Source of rated speeds, shift calendar and schedule (manual first; ERP/SAP later) | Phase 3a |
+| 9 | Source of rated speeds, shift calendar and schedule: manual in Mathesar for now (`material_line_rate`, `line_schedule`, migration 012); ERP/SAP later | ERP integration |
 | 10 | Ramp-up after a changeover: inside the changeover window, or speed loss (ADR-0010) | Phase 3a |
 | 11 | Defined capacity per line for CU: manual or from ERP/SAP | Phase 3b |
 | 12 | Verify KPI terminology against ISO 22400-2 (ADR-0008) | Going public |
 | 13 | Schemas still to write: machine state (3a), line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
 | 14 | First SPC characteristics and their plans (pack weight, temper index?); how lab results arrive (manual entry or instrument interface) | Phase 3c |
-| 20 | Phase 3a must build `config.material` (with `material_type`), not `product` (ADR-0014) | Phase 3a |
 | 21 | Food safety: which checks first; who verifies; electronic records replacing or accompanying paper under the site's certification scheme | Phase 3d |
 | 22 | Traceability: lot identification on the floor, tipping points, mass-balance tolerance, mixing-attribution rules (own ADR) | Phase 3e |
 | 23 | Modbus driver: every current `node-red-contrib-modbus` release downloads part of its code from a third-party package server; choose a driver when the first Modbus device needs it | First Modbus device |
@@ -294,6 +295,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 30 | Plant server: VM on plant IT's servers or an industrial PC near the line; who administers and patches it; Docker from IT's package mirror or as packages with the offline bundle | C1.4 |
 | 31 | Pilot line: which line, which controllers (S7-1200/1500, S7-300, Logix, OPC UA) and roughly how many properties | C1.3 |
 | 32 | Pilot: duration and success criteria (for example: values agree with the HMI/SCADA, no unexplained gaps, no effect on PLC scan or communication load, operators' and engineers' feedback) | C1.3 |
+| 34 | Schedule exceptions: public holidays, overtime, shutdowns — the weekly `line_schedule` has none yet; a table of one-off windows (added or removed time) when the first real line needs it | Plant pilot |
 
 ## Known gaps and notes
 
@@ -519,6 +521,29 @@ Numbers are stable; answered questions are removed rather than renumbered.
   breakdowns and changeover cleared; product and settings kept), tested in
   a browser including its confirmation question; offline suites 205 checks
   (44 for the simulator).
+- Step 3a.2 was tested on a local replica: PostgreSQL 16 with TimescaleDB
+  2.30.2 built from source, OFM's init script and migrations 001–012 run by
+  `tools/migrate.sh`; `database` suite 62 checks (23 new: 17 cases for
+  migration 012, 6 for the demo scripts), each new protection also seen to
+  fail when switched off. End to end, with Mosquitto, the simulator and
+  OFM's runtime flow in Node-RED: all six simulated PLCs online, 50 values
+  and 50 `_meta` topics on the UNS, all 50 properties in the historian,
+  changing values with device time; `bad` only for the first second, before
+  the simulator's OPC UA servers were up (ADR-0007). Not tested here:
+  Docker Compose itself, Mathesar showing the new tables, Grafana — that is
+  PC1–PC7. `docs/generated/erd.md` regenerated from the replica.
+- 2026-11-05, PC7 on the laptop: `migrate demo-remove` stopped with
+  *tuple decompression limit exceeded* (226,422 rows unpacked, limit
+  100,000). History older than 7 days is stored compressed (migration 011);
+  a DELETE whose property list comes from a subquery makes TimescaleDB
+  unpack every property's compressed rows to check them. Fixed in both
+  removal scripts (demo and load test): the property IDs go into the DELETE
+  as a fixed list, so only those properties' rows are unpacked, and the
+  limit is lifted for that one transaction (the demo's own history is
+  compressed after a week too). New `database` check: removal beside
+  120,000 compressed rows of another line; it failed with the old script
+  and passes with the new one. The failed run had already stopped
+  acquisition of the demo line (its mappings retired) but removed nothing.
 - Docker Desktop stays on the laptop for development (decided 2026-11-02).
   Its licence applies to development use too: within an organisation above
   Docker's small-business limit, the laptop needs a paid seat.

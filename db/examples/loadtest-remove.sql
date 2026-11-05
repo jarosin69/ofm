@@ -17,8 +17,17 @@ JOIN config.site s ON s.id = a.site_id
 JOIN config.enterprise e ON e.id = s.enterprise_id
 WHERE e.name = 'ofmload';
 
-DELETE FROM hist.measurement WHERE property_id IN (SELECT id FROM load_props);
-DELETE FROM hist.measurement_text WHERE property_id IN (SELECT id FROM load_props);
+-- History older than 7 days is stored compressed (migration 011). The IDs
+-- go into the DELETE as a fixed list, so TimescaleDB unpacks only these
+-- properties' compressed rows, not every property's; and the limit on rows
+-- unpacked per transaction is lifted for this one removal.
+SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0;
+DO $$
+DECLARE ids int[] := ARRAY(SELECT id FROM load_props);
+BEGIN
+  EXECUTE format('DELETE FROM hist.measurement WHERE property_id = ANY (%L::int[])', ids);
+  EXECUTE format('DELETE FROM hist.measurement_text WHERE property_id = ANY (%L::int[])', ids);
+END $$;
 DELETE FROM config.plc_mapping WHERE property_id IN (SELECT id FROM load_props)
    OR source_id IN (SELECT id FROM config.source WHERE name = 'opcplc_load');
 DELETE FROM config.machine_property WHERE id IN (SELECT id FROM load_props);

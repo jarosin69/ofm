@@ -104,7 +104,7 @@ Every machine offers the same nine signals, whatever backend it runs on.
 
 | Signal | Type | Meaning |
 |---|---|---|
-| `state` | INT | 1 running, 2 idle, 3 blocked, 4 starved, 5 fault, 6 setup, 7 cleaning, 8 maintenance |
+| `state` | INT | 1 running, 2 idle, 3 blocked, 4 starved, 5 fault, 6 setup, 7 cleaning, 8 maintenance (in OFM: property `state_code`) |
 | `fault_code` | INT | 0 = none; otherwise the machine's fault number (below) |
 | `count_in` | DINT | units processed (good plus rejected) since the simulator started; only ever rises |
 | `count_good` | DINT | good units passed on |
@@ -112,9 +112,13 @@ Every machine offers the same nine signals, whatever backend it runs on.
 | `speed` | REAL | actual speed, units/min |
 | `speed_setpoint` | REAL | set speed, units/min |
 | `heartbeat` | DINT | +1 every second while the simulator runs; OFM watches it (ADR-0025) |
-| `process_value` | REAL | one machine-specific value: checkweigher last weight (g), palletiser pallets completed, others 0 |
+| `process_value` | REAL | one machine-specific value: checkweigher last weight (g), palletiser pallets completed, others 0 (in OFM: `last_weight`, `pallets`; not mapped on the other machines) |
 
-In OFM each signal is an ordinary property. The `state` property gets a
+In OFM each signal is an ordinary property, on the topic
+`acme/melbourne/packing/packline01/<machine>/<property>` (50 properties,
+loaded by `docker compose run --rm migrate demo`, section 12). The PLC's
+state code is the property `state_code`, because `state` is the machine
+state OFM derives from it itself (step 3a.3). That property gets a
 state rule (code → state vocabulary, Overview §10.1), the counters get a
 count role, `fault_code` gets a fault-code → reason table, and `heartbeat`
 gets the heartbeat role with a 5-second timeout: all in the model, so a real
@@ -306,6 +310,22 @@ line shows what it does:
 - *line engine*: `run · mix250 · filler running 97/min · good …` — or `off`
   outside the shift pattern (Monday–Friday 06:00–22:00 Melbourne time);
 - *simulated OPC UA PLCs*: `6 of 6 OPC UA servers up, ports 4841-4846`.
+
+**Put it in OFM's model** (step 3a.2), so OFM reads it:
+
+```powershell
+docker compose run --rm migrate demo
+```
+
+It adds the line `acme/melbourne/packing/packline01` with its six machines
+and 50 properties, the sources `linesim_m1` … `linesim_m6`, the products
+mix150, mix250 and mix500 with their rated speeds, the line's KPI rules
+(filler as constraint, minor stops under 5 minutes), its shift pattern and
+the machines' flow order (`db/examples/demo-packline.sql`). Running it again
+adds nothing twice. `docker compose run --rm migrate demo-remove` takes all
+of it away again, with its history; the example line `eggline01` stays.
+Load the demo only while the simulator runs, or OFM's `live` checks report
+its 50 properties as not current.
 
 **Check it:** `docker compose run --rm test live` includes a check that
 reads all six simulated PLCs (part of *linesim*); it is skipped when the

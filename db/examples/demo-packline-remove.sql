@@ -1,0 +1,55 @@
+-- Removes the simulated packing line (db/examples/demo-packline.sql)
+-- completely: its history, mappings, properties, KPI rules, rates, schedule,
+-- flow order, machines, line, its sources linesim_m1 ... linesim_m6, the
+-- area "packing" if nothing else is in it, and the demo products if no other
+-- line uses them. Run with
+--   docker compose run --rm migrate demo-remove
+-- History is append-only everywhere else (ADR-0006); the demo's data is an
+-- exception, so a demo leaves nothing behind. The audit log keeps the record
+-- of the removal. The example line eggline01 is not touched.
+
+SET LOCAL ofm.removing = 'on';      -- lets rates and KPI rules in force be deleted (migration 012)
+
+CREATE TEMP TABLE rm_line AS
+SELECT l.id
+FROM config.line l JOIN config.area a ON a.id = l.area_id
+JOIN config.site s ON s.id = a.site_id JOIN config.enterprise e ON e.id = s.enterprise_id
+WHERE e.name = 'acme' AND s.name = 'melbourne' AND a.name = 'packing' AND l.name = 'packline01';
+
+CREATE TEMP TABLE rm_machines AS
+SELECT id FROM config.machine WHERE line_id IN (SELECT id FROM rm_line);
+
+CREATE TEMP TABLE rm_props AS
+SELECT id FROM config.machine_property WHERE machine_id IN (SELECT id FROM rm_machines);
+
+-- History older than 7 days is stored compressed (migration 011). The IDs
+-- go into the DELETE as a fixed list, so TimescaleDB unpacks only these
+-- properties' compressed rows, not every property's; and the limit on rows
+-- unpacked per transaction is lifted for this one removal.
+SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0;
+DO $$
+DECLARE ids int[] := ARRAY(SELECT id FROM rm_props);
+BEGIN
+  EXECUTE format('DELETE FROM hist.measurement WHERE property_id = ANY (%L::int[])', ids);
+  EXECUTE format('DELETE FROM hist.measurement_text WHERE property_id = ANY (%L::int[])', ids);
+END $$;
+DELETE FROM config.plc_mapping WHERE property_id IN (SELECT id FROM rm_props)
+   OR source_id IN (SELECT id FROM config.source WHERE name ~ '^linesim_m[0-9]+$');
+DELETE FROM config.machine_property WHERE id IN (SELECT id FROM rm_props);
+DELETE FROM config.asset_relationship WHERE from_machine_id IN (SELECT id FROM rm_machines)
+   OR to_machine_id IN (SELECT id FROM rm_machines);
+DELETE FROM config.line_kpi_rule WHERE line_id IN (SELECT id FROM rm_line);
+DELETE FROM config.material_line_rate WHERE line_id IN (SELECT id FROM rm_line);
+DELETE FROM config.line_schedule WHERE line_id IN (SELECT id FROM rm_line);
+DELETE FROM config.machine WHERE id IN (SELECT id FROM rm_machines);
+DELETE FROM config.line WHERE id IN (SELECT id FROM rm_line);
+DELETE FROM config.area a USING config.site s, config.enterprise e
+WHERE s.id = a.site_id AND e.id = s.enterprise_id
+  AND e.name = 'acme' AND s.name = 'melbourne' AND a.name = 'packing'
+  AND NOT EXISTS (SELECT 1 FROM config.line l WHERE l.area_id = a.id);
+DELETE FROM config.source WHERE name ~ '^linesim_m[0-9]+$';
+DELETE FROM config.material m
+WHERE m.code IN ('mix150', 'mix250', 'mix500')
+  AND NOT EXISTS (SELECT 1 FROM config.material_line_rate r WHERE r.material_id = m.id);
+
+DROP TABLE rm_line, rm_machines, rm_props;

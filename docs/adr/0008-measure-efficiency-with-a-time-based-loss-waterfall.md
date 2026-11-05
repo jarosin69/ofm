@@ -113,3 +113,14 @@ reduced by speed and quality losses even though neither is a failure.
 - Related: ADR-0006 (state events; this ADR resolves its open question on
   line state), ADR-0009 (classification), ADR-0010 (rated speeds and work
   orders).
+
+## Amendments
+
+- 2026-11-03: **As built (migration 012, step 3a.2).** `config.loss_category`
+  holds the positions with id = position number; Unaccounted has id 90 and
+  sorts after position 12. The KPI definition version of decision 7 is the
+  row of `config.line_kpi_rule` in force at the time: a line's constraint
+  machine and minor-stop threshold, from a `valid_from`, never changed once
+  in force (a new rule is a new row). Rated speeds are versioned the same
+  way in `config.material_line_rate` (ADR-0010 amendment); the waterfall
+  mapping is versioned with the KPI views themselves (migrations).

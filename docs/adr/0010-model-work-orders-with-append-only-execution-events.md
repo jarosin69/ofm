@@ -93,3 +93,9 @@ performance figure.
   `work_order` reference `material_id` instead of `product_id`. The
   `workorder` payload keeps its field names (`productId`, `sku`) for
   readability; they carry the material's ID and code.
+- 2026-11-03: **As built (migration 012).** `product_line_rate` is
+  `config.material_line_rate (line_id, material_id, rate_per_hour,
+  valid_from)`; only a material of type `finished` or `semi_finished` may
+  have a rate. A rate in force is never changed or deleted (enforced by a
+  trigger); a rate whose `valid_from` is still in the future may be deleted,
+  so a typo can be fixed before it takes effect.

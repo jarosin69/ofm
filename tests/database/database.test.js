@@ -16,6 +16,15 @@ const { ROOT, connectDb } = require("../lib/harness");
 const REFUSED_BY_RULE = "23514";     // check_violation: a CHECK constraint said no
 const DUPLICATE = "23505";           // unique_violation
 const NO_PERMISSION = "42501";       // insufficient_privilege
+const NO_SUCH_PARENT = "23503";      // foreign_key_violation
+
+// Production context (migration 012): a product and its rate, as steps.
+const PCS = "(SELECT id FROM config.engineering_unit WHERE code = 'pcs')";
+const ADD_PRODUCT = "INSERT INTO config.material (code, name, material_type, base_unit_id) VALUES ('zz_mix', 'Test mix', 'finished', " + PCS + ")";
+const ZZ_MIX = "(SELECT id FROM config.material WHERE code = 'zz_mix')";
+// A Sunday window 00:00-06:00 and a Saturday night window 22:00-06:00, in Melbourne time.
+const SUNDAY_EARLY = "INSERT INTO config.line_schedule (line_id, kind, sun, start_time, end_time, valid_from) VALUES ($line, 'production', true, '00:00', '06:00', '2026-01-01')";
+const hoursOf = r => r.map(x => Number(x.hours));
 
 // A small plant created inside each case's transaction (as administrator).
 async function testPlant(db) {
@@ -120,6 +129,77 @@ const CASES = [
   { name: "ofm_reader cannot change anything", steps: [
     { as: "ofm_reader", sql: "UPDATE config.machine_property SET alarm_high = 1 WHERE id = $temp", expect: NO_PERMISSION },
     { as: "ofm_reader", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES (now(), $temp, 1, 0, 0)", expect: NO_PERMISSION }] },
+
+  // --- production context (migration 012, step 3a.2) ---------------------------------------
+  { name: "loss categories: the 13 waterfall positions and Unaccounted are there (ADR-0008)", steps: [
+    { as: "ofm_reader", sql: "SELECT array_agg(id ORDER BY sort_order) AS ids FROM config.loss_category",
+      expect: r => r[0].ids.join() === "1,2,3,4,5,6,7,8,9,10,11,12,90,13" }] },
+  { name: "loss categories: editors may rename one, never add or delete one", steps: [
+    { as: "ofm_config", sql: "UPDATE config.loss_category SET display_name = 'Cleaning (CIP)' WHERE id = 5" },
+    { as: "ofm_config", sql: "INSERT INTO config.loss_category (id, name, display_name, category_type, sort_order) VALUES (14, 'extra', 'x', 'planned', 1)", expect: NO_PERMISSION },
+    { as: "ofm_config", sql: "DELETE FROM config.loss_category WHERE id = 7", expect: NO_PERMISSION }] },
+  { name: "material: an unknown material type or a code with a space is refused", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.material (code, name, material_type, base_unit_id) VALUES ('zz1', 'x', 'product', " + PCS + ")", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "INSERT INTO config.material (code, name, material_type, base_unit_id) VALUES ('zz 1', 'x', 'finished', " + PCS + ")", expect: REFUSED_BY_RULE }] },
+  { name: "material: two active materials with the same code are refused", steps: [
+    { as: "ofm_config", sql: ADD_PRODUCT },
+    { as: "ofm_config", sql: ADD_PRODUCT, expect: DUPLICATE }] },
+  { name: "rated speed: only a product (finished or semi_finished) has one", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.material (code, name, material_type, base_unit_id) VALUES ('zz_box', 'Carton', 'packaging', " + PCS + ")" },
+    { as: "ofm_config", sql: "INSERT INTO config.material_line_rate (line_id, material_id, rate_per_hour) SELECT $line, id, 100 FROM config.material WHERE code = 'zz_box'", expect: REFUSED_BY_RULE }] },
+  { name: "rated speed in force: never changed or deleted; only its note may be edited", steps: [
+    { as: "ofm_config", sql: ADD_PRODUCT },
+    { as: "ofm_config", sql: "INSERT INTO config.material_line_rate (line_id, material_id, rate_per_hour, valid_from) VALUES ($line, " + ZZ_MIX + ", 6000, now() - interval '1 day')" },
+    { as: "ofm_config", sql: "UPDATE config.material_line_rate SET rate_per_hour = 7000 WHERE line_id = $line", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "UPDATE config.material_line_rate SET note = 'measured on trial' WHERE line_id = $line" },
+    { as: "ofm_config", sql: "DELETE FROM config.material_line_rate WHERE line_id = $line", expect: REFUSED_BY_RULE }] },
+  { name: "rated speed not yet in force: may be deleted (a typo caught in time)", steps: [
+    { as: "ofm_config", sql: ADD_PRODUCT },
+    { as: "ofm_config", sql: "INSERT INTO config.material_line_rate (line_id, material_id, rate_per_hour, valid_from) VALUES ($line, " + ZZ_MIX + ", 60000, now() + interval '1 day')" },
+    { as: "ofm_config", sql: "DELETE FROM config.material_line_rate WHERE line_id = $line" }] },
+  { name: "rated speed at a time: the newest rate valid then", steps: [
+    { as: "ofm_config", sql: ADD_PRODUCT },
+    { as: "ofm_config", sql: "INSERT INTO config.material_line_rate (line_id, material_id, rate_per_hour, valid_from) VALUES ($line, " + ZZ_MIX + ", 5000, '2026-01-01'), ($line, " + ZZ_MIX + ", 6000, '2026-06-01')" },
+    { as: "ofm_runtime", sql: "SELECT config.fn_material_rate($line, " + ZZ_MIX + ", '2026-03-01') AS a, config.fn_material_rate($line, " + ZZ_MIX + ", '2026-07-01') AS b, config.fn_material_rate($line, " + ZZ_MIX + ", '2025-12-01') AS c",
+      expect: r => r[0].a === 5000 && r[0].b === 6000 && r[0].c === null }] },
+  { name: "KPI rule: the constraint machine must be a machine of that line", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.line (area_id, name, display_name) VALUES ($area, 'line2', 'Line 2')" },
+    { as: "ofm_config", sql: "INSERT INTO config.line_kpi_rule (line_id, constraint_machine_id) SELECT id, $machine FROM config.line WHERE name = 'line2' AND area_id = $area", expect: NO_SUCH_PARENT },
+    { as: "ofm_config", sql: "INSERT INTO config.line_kpi_rule (line_id, constraint_machine_id) VALUES ($line, $machine)" }] },
+  { name: "KPI rule in force: never changed (threshold, constraint); the rule at a time is the newest valid then", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, minor_stop_threshold_s) VALUES ($line, '2026-01-01', $machine, 300), ($line, '2026-06-01', $machine, 120)" },
+    { as: "ofm_config", sql: "UPDATE config.line_kpi_rule SET minor_stop_threshold_s = 60 WHERE line_id = $line", expect: REFUSED_BY_RULE },
+    { as: "ofm_runtime", sql: "SELECT (config.fn_line_kpi_rule($line, '2026-03-01')).minor_stop_threshold_s AS a, (config.fn_line_kpi_rule($line, now())).minor_stop_threshold_s AS b",
+      expect: r => r[0].a === 300 && r[0].b === 120 }] },
+  { name: "schedule: a window needs at least one day of the week", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, start_time, end_time) VALUES ($line, 'production', '06:00', '14:00')", expect: REFUSED_BY_RULE }] },
+  { name: "schedule: Mon-Fri 06:00-22:00 and cleaning 21:30-22:00 are 16 h and 30 min a day, Melbourne time", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, mon, tue, wed, thu, fri, start_time, end_time, valid_from) VALUES ($line, 'production', true, true, true, true, true, '06:00', '22:00', '2026-01-01'), ($line, 'cleaning', true, true, true, true, true, '21:30', '22:00', '2026-01-01')" },
+    { as: "ofm_reader", sql: "SELECT kind, extract(epoch FROM ends_at - starts_at) / 3600 AS hours, to_char(starts_at AT TIME ZONE 'Australia/Melbourne', 'Dy HH24:MI') AS local_start FROM config.fn_line_schedule($line, '2026-11-01 00:00 Australia/Melbourne', '2026-11-08 00:00 Australia/Melbourne') ORDER BY starts_at, kind",
+      expect: r => r.length === 10 && r[0].local_start === "Mon 06:00" && r.filter(x => x.kind === "production").every(x => Number(x.hours) === 16) &&
+                   r.filter(x => x.kind === "cleaning").every(x => Number(x.hours) === 0.5) }] },
+  { name: "schedule on daylight-saving days: Sunday 00:00-06:00 is 5 h on 4 Oct 2026 and 7 h on 5 Apr 2026", steps: [
+    { as: "ofm_config", sql: SUNDAY_EARLY },
+    { as: "ofm_reader", sql: "SELECT extract(epoch FROM ends_at - starts_at) / 3600 AS hours FROM config.fn_line_schedule($line, '2026-10-01', '2026-10-08')", expect: r => hoursOf(r).join() === "5" },
+    { as: "ofm_reader", sql: "SELECT extract(epoch FROM ends_at - starts_at) / 3600 AS hours FROM config.fn_line_schedule($line, '2026-04-01', '2026-04-08')", expect: r => hoursOf(r).join() === "7" }] },
+  { name: "schedule: a night window (Sat 22:00-06:00) runs into Sunday; windows are cut to the range asked for", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, sat, start_time, end_time, valid_from) VALUES ($line, 'production', true, '22:00', '06:00', '2026-01-01')" },
+    { as: "ofm_reader", sql: "SELECT extract(epoch FROM ends_at - starts_at) / 3600 AS hours FROM config.fn_line_schedule($line, '2026-11-07 00:00 Australia/Melbourne', '2026-11-09 00:00 Australia/Melbourne')", expect: r => hoursOf(r).join() === "8" },
+    { as: "ofm_reader", sql: "SELECT extract(epoch FROM ends_at - starts_at) / 3600 AS hours FROM config.fn_line_schedule($line, '2026-11-08 00:00 Australia/Melbourne', '2026-11-09 00:00 Australia/Melbourne')", expect: r => hoursOf(r).join() === "6" }] },
+  { name: "schedule: valid_from and valid_to bound the days a window starts on", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, mon, tue, wed, thu, fri, sat, sun, start_time, end_time, valid_from, valid_to) VALUES ($line, 'production', true, true, true, true, true, true, true, '06:00', '14:00', '2026-11-03', '2026-11-04')" },
+    { as: "ofm_reader", sql: "SELECT count(*)::int AS n FROM config.fn_line_schedule($line, '2026-11-01', '2026-11-10')", expect: r => r[0].n === 2 }] },
+  { name: "production context: ofm_runtime and ofm_reader read it, neither changes it", steps: [
+    { as: "ofm_config", sql: ADD_PRODUCT },
+    { as: "ofm_runtime", sql: "SELECT count(*) FROM config.material_line_rate, config.line_kpi_rule, config.line_schedule, config.material" },
+    { as: "ofm_reader", sql: "SELECT count(*) FROM config.material_line_rate, config.line_kpi_rule, config.line_schedule, config.material" },
+    { as: "ofm_runtime", sql: "UPDATE config.material SET name = 'x'", expect: NO_PERMISSION },
+    { as: "ofm_reader", sql: "INSERT INTO config.line_schedule (line_id, kind, mon, start_time, end_time) VALUES ($line, 'production', true, '06:00', '14:00')", expect: NO_PERMISSION }] },
+  { name: "production context: a new rate is audited", steps: [
+    { as: "ofm_config", sql: ADD_PRODUCT },
+    { as: "ofm_config", sql: "INSERT INTO config.material_line_rate (line_id, material_id, rate_per_hour) VALUES ($line, " + ZZ_MIX + ", 6000)" },
+    { as: "ofm_reader", sql: "SELECT action, new_row->>'rate_per_hour' AS rate FROM audit.audit_log WHERE table_name = 'config.material_line_rate' ORDER BY id DESC LIMIT 1",
+      expect: r => r.length === 1 && r[0].action === "INSERT" && Number(r[0].rate) === 6000 }] },
 
   // --- audit (Overview §11) -----------------------------------------------------------------
   { name: "a model change is audited with old and new values", steps: [

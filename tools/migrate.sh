@@ -12,6 +12,8 @@
 #   docker compose run --rm migrate adduser NAME create a personal model-editing login
 #   docker compose run --rm migrate loadtest [N] add the load-test line, N values/s (step 2.9)
 #   docker compose run --rm migrate loadtest-remove   remove it and all its history
+#   docker compose run --rm migrate demo         add or refresh the simulated packing line (ADR-0023)
+#   docker compose run --rm migrate demo-remove  remove it and all its history
 #
 # The stack also runs "up" automatically on every "docker compose up".
 # After applying migrations, "up" sets the passwords of the platform roles
@@ -210,6 +212,25 @@ cmd_loadtest_remove() {
   echo "Load-test line removed, with its history. Stop its simulator: docker compose --profile loadtest stop opcplc-load"
 }
 
+# Simulated packing line, OFM's demo (ADR-0023): db/examples/demo-packline.sql.
+cmd_demo() {
+  { echo "BEGIN;"; cat "$REPO/db/examples/demo-packline.sql"; echo; echo "COMMIT;"; } | sql
+  props=$(sql -At -c "SELECT count(*) FROM config.vw_runtime_model WHERE topic LIKE 'acme/melbourne/packing/packline01/%' AND cache_key IS NOT NULL")
+  echo "Demo line ready: $props properties on acme/melbourne/packing/packline01, read from linesim_m1 ... linesim_m6."
+  echo "The simulator must run: COMPOSE_PROFILES containing demo in .env, then docker compose up -d"
+}
+
+cmd_demo_remove() {
+  # As for the load-test line: stop acquisition first and let the historian
+  # writer flush, then delete; then recompute the averages of the removed period.
+  sql -c "UPDATE config.plc_mapping SET retired_at = now() WHERE retired_at IS NULL AND source_id IN (SELECT id FROM config.source WHERE name ~ '^linesim_m[0-9]+\$')"
+  sleep 3
+  { echo "BEGIN;"; cat "$REPO/db/examples/demo-packline-remove.sql"; echo; echo "COMMIT;"; } | sql
+  sql -c "CALL refresh_continuous_aggregate('hist.measurement_1m', now() - interval '30 days', now())"
+  sql -c "CALL refresh_continuous_aggregate('hist.measurement_1h', now() - interval '30 days', now())"
+  echo "Demo line removed, with its history. The simulator keeps running until COMPOSE_PROFILES no longer contains demo."
+}
+
 # Creates a personal login for editing the model. It has exactly the rights
 # of ofm_config, but the audit log and updated_by record the person's name.
 cmd_adduser() {
@@ -244,5 +265,7 @@ case "${1:-up}" in
   adduser) cmd_adduser "${2:-}" ;;
   loadtest) cmd_loadtest "${2:-}" ;;
   loadtest-remove) cmd_loadtest_remove ;;
-  *) echo "Usage: migrate [up|status|example|erd|adduser NAME|loadtest [N]|loadtest-remove]" >&2; exit 2 ;;
+  demo) cmd_demo ;;
+  demo-remove) cmd_demo_remove ;;
+  *) echo "Usage: migrate [up|status|example|erd|adduser NAME|loadtest [N]|loadtest-remove|demo|demo-remove]" >&2; exit 2 ;;
 esac
