@@ -4,7 +4,9 @@
 // nine signals, each Good; the heartbeat moves; the state is a valid code.
 // When the demo model is loaded (migrate demo, step 3a.3): every machine has
 // a valid retained state on .../{machine}/state and state events in the
-// historian. Skipped when the simulator is not running.
+// historian; while the line produces, every machine's good counter has
+// minute rows and the line has good cartons (step 3a.4). Skipped when the
+// simulator is not running.
 "use strict";
 const path = require("path");
 const { ROOT, readJson, fromNodeRed, stack, connectDb } = require("../lib/harness");
@@ -97,6 +99,7 @@ module.exports.run = async function (t) {
       if (packet.retain && buf.length) got[topic.split("/")[4]] = JSON.parse(buf.toString());
     });
   });
+  await checkCounts(t);
   for (const m of machines) {
     const s = states[m.name], e = events.find(x => x.name === m.name);
     const problem = s ? contracts.validate("machine-state", s) : "no retained state";
@@ -105,3 +108,26 @@ module.exports.run = async function (t) {
             (problem || "state " + s.v) + "; " + (e ? e.n + " event(s), last " + e.last : "no events"));
   }
 };
+
+// Counts per minute (step 3a.4): over the last 10 minutes.
+async function checkCounts(t) {
+  const db = await connectDb();
+  try {
+    const r = (await db.query(`SELECT m.name, count(c.*)::int AS minutes, coalesce(sum(c.increment), 0)::int AS units
+      FROM config.machine m JOIN config.line l ON l.id = m.line_id
+      JOIN config.machine_property p ON p.machine_id = m.id AND p.role = 'count_good'
+      LEFT JOIN hist.production_count c ON c.property_id = p.id AND c.ts > now() - interval '10 minutes'
+      WHERE l.name = 'packline01' AND l.retired_at IS NULL AND m.retired_at IS NULL GROUP BY m.name ORDER BY m.name`)).rows;
+    const line = (await db.query(`SELECT coalesce(sum(good), 0)::int AS good FROM hist.vw_line_count c JOIN config.line l ON l.id = c.line_id
+      WHERE l.name = 'packline01' AND l.retired_at IS NULL AND c.ts > now() - interval '10 minutes'`)).rows[0];
+    if (r.every(x => x.minutes === 0)) {
+      t.skip("demo counts per minute", "no production in the last 10 minutes (outside the shift pattern, or just started?)");
+      return;
+    }
+    t.check("demo counts per minute: every machine's good counter has minute rows (last 10 minutes)",
+            r.length === 6 && r.every(x => x.minutes > 0), r.map(x => x.name + " " + x.minutes + " min, " + x.units).join("; "));
+    t.check("demo counts per minute: the line has good cartons (closer)", line.good > 0, line.good + " good");
+  } finally {
+    await db.end().catch(() => {});
+  }
+}

@@ -9,7 +9,8 @@
 -- area "packing", line "packline01" with six machines, each read from its
 -- own simulated OPC UA PLC (sources linesim_m1 ... linesim_m6); the products
 -- mix150, mix250, mix500 with their rated speeds; the line's KPI rules
--- (constraint: filler, minor stops under 5 minutes); its shift pattern
+-- (constraint: filler, minor stops under 5 minutes, output counted at the
+-- closer); its shift pattern
 -- (Mon-Fri 06:00-22:00, cleaning 21:30-22:00, Melbourne time); and the flow
 -- order of the machines (ADR-0024); each machine's property roles, heartbeat
 -- and state rules (ADR-0006, ADR-0025). Rename anything in Mathesar afterwards:
@@ -162,10 +163,14 @@ FROM demo_line,
 JOIN config.material mat ON mat.code = v.code AND mat.retired_at IS NULL
 ON CONFLICT (line_id, material_id, valid_from) DO NOTHING;
 
--- KPI rules: the filler is the constraint; stops under 5 minutes are minor stops.
-INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, minor_stop_threshold_s, note)
-SELECT demo_line.id, '2026-01-01 00:00 Australia/Melbourne', m.id, 300, 'Demo default'
-FROM demo_line JOIN config.machine m ON m.line_id = demo_line.id AND m.name = 'filler' AND m.retired_at IS NULL
+-- KPI rules: the filler is the constraint; stops under 5 minutes are minor
+-- stops; good cartons are counted at the closer, rejects from the filler to
+-- the closer (ADR-0008 amendment; demo README section 3).
+INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, output_machine_id, minor_stop_threshold_s, note)
+SELECT demo_line.id, '2026-01-01 00:00 Australia/Melbourne', m.id, o.id, 300, 'Demo default'
+FROM demo_line
+JOIN config.machine m ON m.line_id = demo_line.id AND m.name = 'filler' AND m.retired_at IS NULL
+JOIN config.machine o ON o.line_id = demo_line.id AND o.name = 'closer' AND o.retired_at IS NULL
 ON CONFLICT (line_id, valid_from) DO NOTHING;
 
 -- Shift pattern as in line.json: Mon-Fri 06:00-22:00, cleaning 21:30-22:00.

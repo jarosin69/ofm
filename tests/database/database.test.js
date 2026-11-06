@@ -35,6 +35,26 @@ const FAULT_BIT = "(SELECT id FROM config.machine_property WHERE machine_id = $m
 const RULE = (priority, prop, op, value, state) =>
   "INSERT INTO config.machine_state_rule (machine_id, priority, property_id, operator, value, state_id) VALUES ($machine, " +
   priority + ", " + prop + ", '" + op + "', '" + value + "', " + state + ")";
+// Production counts (migration 014): a small line mach0 -> mach1 -> mach2 -> mach3
+// (feeds), each machine with count_good and count_reject; mach1 is the constraint.
+const ADD_MACHINES = "INSERT INTO config.machine (line_id, name, display_name) SELECT $line, n, n FROM unnest(ARRAY['mach0', 'mach2', 'mach3']) AS n";
+const ADD_FEEDS = "INSERT INTO config.asset_relationship (from_machine_id, to_machine_id, relation_type) SELECT a.id, b.id, 'feeds' " +
+  "FROM (VALUES ('mach0', 'mach1'), ('mach1', 'mach2'), ('mach2', 'mach3')) AS v (f, t) " +
+  "JOIN config.machine a ON a.name = v.f AND a.line_id = $line JOIN config.machine b ON b.name = v.t AND b.line_id = $line";
+const ADD_COUNTERS = "INSERT INTO config.machine_property (machine_id, name, display_name, datatype, engineering_unit_id, role) " +
+  "SELECT m.id, r, r, 'int', " + PCS + ", r FROM config.machine m CROSS JOIN unnest(ARRAY['count_good', 'count_reject']) AS r WHERE m.line_id = $line";
+const MACH = name => "(SELECT id FROM config.machine WHERE line_id = $line AND name = '" + name + "')";
+const KPI_RULE = (from, output) => "INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, output_machine_id) VALUES ($line, '" +
+  from + "', $machine, " + (output ? MACH(output) : "NULL") + ")";
+// Units per minute: machine number x 10, + 1 for good, + 2 for reject (mach2: good 21, reject 22).
+const COUNTS_AT = ts => "INSERT INTO hist.production_count (ts, property_id, increment, last_value) " +
+  "SELECT '" + ts + "', p.id, substr(m.name, 5)::int * 10 + CASE p.role WHEN 'count_good' THEN 1 ELSE 2 END, 1000 " +
+  "FROM config.machine_property p JOIN config.machine m ON m.id = p.machine_id WHERE m.line_id = $line AND p.role IN ('count_good', 'count_reject')";
+const LINE_COUNTS = "SELECT to_char(ts AT TIME ZONE 'UTC', 'HH24:MI') AS t, good, reject FROM hist.vw_line_count WHERE line_id = $line ORDER BY ts";
+const LINE_SETUP = [
+  { as: "ofm_config", sql: ADD_MACHINES },
+  { as: "ofm_config", sql: ADD_FEEDS },
+  { as: "ofm_config", sql: ADD_COUNTERS }];
 const EVENT = (ts, state, cause) =>
   "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES ($machine, '" + ts + "', " + state + ", '" + (cause || "rule") + "') ON CONFLICT (machine_id, ts) DO NOTHING";
 
@@ -280,6 +300,46 @@ const CASES = [
     { as: "ofm_config", sql: RULE(1, STATE_CODE, "=", "1", 1) },
     { as: "ofm_reader", sql: "SELECT action FROM audit.audit_log WHERE table_name = 'config.machine_state_rule' ORDER BY id DESC LIMIT 1",
       expect: r => r.length === 1 && r[0].action === "INSERT" }] },
+
+  // --- production counts (migration 014, step 3a.4) ---------------------------------------------
+  { name: "production counts: the runtime appends whole minutes; a replayed row is ignored; never changed", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_runtime", sql: COUNTS_AT("2026-11-06T01:00:00Z") },
+    { as: "ofm_runtime", sql: COUNTS_AT("2026-11-06T01:00:00Z") + " ON CONFLICT (property_id, ts) DO NOTHING" },
+    { as: "ofm_runtime", sql: COUNTS_AT("2026-11-06T01:00:30Z"), expect: REFUSED_BY_RULE },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.production_count (ts, property_id, increment, last_value) VALUES ('2026-11-06T01:01:00Z', $temp, 0, 5)", expect: REFUSED_BY_RULE },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.production_count (ts, property_id, increment, last_value, resets) VALUES ('2026-11-06T01:01:00Z', $temp, 0, 0, 1)" },
+    { as: "ofm_runtime", sql: "UPDATE hist.production_count SET increment = 1", expect: NO_PERMISSION },
+    { as: "ofm_runtime", sql: "DELETE FROM hist.production_count", expect: NO_PERMISSION },
+    { as: "ofm_config", sql: "SELECT 1 FROM hist.production_count LIMIT 1", expect: NO_PERMISSION },
+    { as: "ofm_reader", sql: "SELECT count(*)::int AS n, sum(increment)::int AS units FROM hist.vw_production_count WHERE line_id = $line AND role IS NOT NULL",
+      expect: r => r[0].n === 8 && r[0].units === 132 }] },
+  { name: "line counts: good at the output machine, rejects from the constraint to it (ADR-0008 amendment)", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: KPI_RULE("2026-01-01", "mach3") },
+    { as: "ofm_runtime", sql: COUNTS_AT("2026-11-06T01:00:00Z") },
+    { as: "ofm_reader", sql: LINE_COUNTS, expect: r => r.length === 1 && Number(r[0].good) === 31 && Number(r[0].reject) === 12 + 22 + 32 }] },
+  { name: "line counts: no output machine = the constraint machine", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: KPI_RULE("2026-01-01", null) },
+    { as: "ofm_runtime", sql: COUNTS_AT("2026-11-06T01:00:00Z") },
+    { as: "ofm_reader", sql: LINE_COUNTS, expect: r => Number(r[0].good) === 11 && Number(r[0].reject) === 12 }] },
+  { name: "line counts: an output machine the constraint does not feed counts only those two machines' rejects", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: KPI_RULE("2026-01-01", "mach0") },
+    { as: "ofm_runtime", sql: COUNTS_AT("2026-11-06T01:00:00Z") },
+    { as: "ofm_reader", sql: LINE_COUNTS, expect: r => Number(r[0].good) === 1 && Number(r[0].reject) === 2 + 12 }] },
+  { name: "line counts: each minute under the KPI rule in force then; a rule in force keeps its output machine", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: KPI_RULE("2026-01-01", "mach2") },
+    { as: "ofm_config", sql: KPI_RULE("2026-11-06T01:30:00Z", "mach3") },
+    { as: "ofm_runtime", sql: COUNTS_AT("2026-11-06T01:00:00Z") },
+    { as: "ofm_runtime", sql: COUNTS_AT("2026-11-06T02:00:00Z") },
+    { as: "ofm_reader", sql: LINE_COUNTS,
+      expect: r => r.map(x => x.t + " " + Number(x.good) + "/" + Number(x.reject)).join() === "01:00 21/34,02:00 31/66" },
+    { as: "ofm_config", sql: "UPDATE config.line_kpi_rule SET output_machine_id = " + MACH("mach3") + " WHERE line_id = $line AND valid_from = '2026-01-01'", expect: REFUSED_BY_RULE }] },
+  { name: "KPI rule: the output machine must be a machine of the same line", steps: [
+    { as: "ofm_config", sql: "INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, output_machine_id) VALUES ($line, '2026-01-01', $machine, -1)", expect: NO_SUCH_PARENT }] },
 
   // --- audit (Overview §11) -----------------------------------------------------------------
   { name: "a model change is audited with old and new values", steps: [

@@ -1,5 +1,5 @@
 -- Removes the simulated packing line (db/examples/demo-packline.sql)
--- completely: its history (values and state events), state rules, mappings,
+-- completely: its history (values, state events and counts), state rules, mappings,
 -- properties, KPI rules, rates, schedule,
 -- flow order, machines, line, its sources linesim_m1 ... linesim_m6, the
 -- area "packing" if nothing else is in it, and the demo products if no other
@@ -10,6 +10,12 @@
 -- of the removal. The example line eggline01 is not touched.
 
 SET LOCAL ofm.removing = 'on';      -- lets rates and KPI rules in force be deleted (migration 012)
+
+-- Values still arriving for the demo (a runtime still reading it, or a disk
+-- queue being replayed) would block the deletion of its properties: the
+-- history tables take no new rows until this removal is done. The runtime
+-- waits a few seconds and then writes what it has; nothing is lost.
+LOCK TABLE hist.measurement, hist.measurement_text, hist.production_count, hist.machine_state_event IN SHARE MODE;
 
 CREATE TEMP TABLE rm_line AS
 SELECT l.id
@@ -33,6 +39,7 @@ DECLARE ids int[] := ARRAY(SELECT id FROM rm_props);
 BEGIN
   EXECUTE format('DELETE FROM hist.measurement WHERE property_id = ANY (%L::int[])', ids);
   EXECUTE format('DELETE FROM hist.measurement_text WHERE property_id = ANY (%L::int[])', ids);
+  EXECUTE format('DELETE FROM hist.production_count WHERE property_id = ANY (%L::int[])', ids);
 END $$;
 DELETE FROM hist.machine_state_event WHERE machine_id IN (SELECT id FROM rm_machines);
 DELETE FROM config.machine_state_rule WHERE machine_id IN (SELECT id FROM rm_machines);

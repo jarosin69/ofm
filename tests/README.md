@@ -322,6 +322,25 @@ demo README section 12.
 | MS6 | **Runtime outage:** `docker compose stop nodered`; wait 2 minutes; `docker compose start nodered` | Events: each machine `unknown` (cause `runtime_outage`) from the last runtime heartbeat before the stop (at most a minute before it), then its actual state from when it was read again; nothing in between |
 | MS7 | **Lost source:** `docker compose stop linesim`; wait 20 s; `docker compose start linesim` | all six states `unknown` (cause `communication_loss`) within a few seconds; back about 15 s after the start |
 
+**Step 3a.4, counts** (migration 014; ADR-0026, ADR-0008 amendment).
+Automated: `flows` (`counts`: increments, resets, held readings before
+start-up, late readings, minute rows, the writer, the reconciliation
+baseline); `database` (production counts append-only and whole minutes,
+line good and reject from the right counters, dated by the KPI rule, the
+demo's output machine, `demo-remove` takes the counts too); `live`
+(`linesim`: minute rows for the demo's counters). By hand, with the
+simulator running and the queries in demo README section 12.
+
+| # | Do | Expect |
+|---|---|---|
+| CT1 | `docker compose up -d`, then `docker compose logs migrate`; `docker compose restart nodered` | `Applying 014-production-counts.sql`, `Database is up to date` |
+| CT2 | `docker compose run --rm migrate demo-remove`, then `migrate demo` (once, to give the demo's KPI rule its output machine, the closer; before CT3, whose checks expect it) | both finish without an error |
+| CT3 | `docker compose run --rm test offline`, then `docker compose run --rm test database` | all checks pass |
+| CT4 | After 10 minutes: the line-count query (demo README section 12); per minute: `SELECT * FROM hist.vw_production_count WHERE machine_name = 'closer' ORDER BY ts DESC LIMIT 6;` | good about 80–97 cartons a minute while the line runs; rejects a few; no row for the current minute |
+| CT5 | Panel: *New run* (confirm); after 2 minutes, `docker compose logs nodered --tail 40` and the per-minute query | `counter … was reset: … -> 0` once per counter; the minute of the reset shows `resets` 1 and only the cartons made after it; no negative or missing minute |
+| CT6 | **Runtime outage:** note the closer's `CountGood` in the panel or MQTT Explorer; `docker compose stop nodered`; wait 2 minutes; `docker compose start nodered`; after 2 more minutes note `CountGood` again | the closer's `count_good` minutes from before the stop to now add up to the difference of the two readings (give or take the cartons of the minute still open); the units made during the stop are in the first minute after the start |
+| CT7 | `docker compose run --rm test live` | all checks pass, including *counts per minute* for the demo |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

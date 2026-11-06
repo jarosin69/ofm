@@ -1,6 +1,6 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-05. Update this file at the end of every working session.*
+*Updated: 2026-11-06. Update this file at the end of every working session.*
 
 **▶ We are here: Phase 3a, detailed design for review.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
@@ -21,7 +21,11 @@ passed on the laptop 2026-11-05 (PC7 after a fix to `demo-remove`).
 roles, state rules, state events, runtime heartbeat), machine states and
 frozen-data detection in the runtime flow, `…/{machine}/state` with its
 schema; MS1–MS7 and drill F1 passed on the laptop 2026-11-05 (drill F2,
-bench S7 in STOP, still to do); next: step 3a.4, counts. Stage C
+bench S7 in STOP, still to do). **Step 3a.4 built:** migration 014
+(production counts per counter and minute, the line's output machine, line
+good and reject), node *counts* in the runtime, ADR-0026; tested on the
+replica; next: checks CT1–CT7 on the laptop, then step 3a.5, work orders.
+Stage C
 decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
 
 ## The plan in one view
@@ -186,7 +190,7 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.1 | Simulator: line engine, six simulated OPC UA PLCs, `line.json`, Compose profile `demo`, HTTPS port 1881 (part 1); control panel with presets and commands (part 2) | ✅ 2026-11-03 (P1–P11 on the laptop) |
 | 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ✅ 2026-11-05 (migration 012; PC1–PC7 on the laptop) |
 | 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ✅ 2026-11-05 (migration 013; MS1–MS7 and F1 on the laptop; F2 to do with the bench S7) |
-| 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ⬜ |
+| 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ▶ built 2026-11-06 (migration 014, ADR-0026), tested on the replica; CT1–CT7 on the laptop to do |
 | 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ⬜ |
 | 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ⬜ |
 | 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ⬜ |
@@ -262,9 +266,9 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 3a.4, counts (count roles, counter increments with reset
-   handling, line good and reject). Drill F2 (bench S7-1200 in STOP) when
-   the bench is next set up.
+1. Step 3a.4 on the laptop: checks CT1–CT7 (tests/README, Phase 3a);
+   then step 3a.5, work orders. Drill F2 (bench S7-1200 in STOP) when the
+   bench is next set up.
 2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
    the management decision at C0).
 3. Update the Claude Project instructions: model editor is Mathesar (not
@@ -281,7 +285,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 3 | Employer policy on open-sourcing work developed for or at the site | Going public |
 | 6 | Default `max_publish_interval_ms`: 60 000 assumed (ADR-0007) | Phase 2 |
 | 7 | Minor-stop threshold per line: 5 min assumed (ADR-0009); now a setting of each line's KPI rule (`config.line_kpi_rule`, default 300 s) — confirm 5 min for the real lines | Plant pilot |
-| 8 | Source of good and reject counts per line: PLC counters, or manual reject entry | Phase 3a |
+| 8 | Source of good and reject counts per line: PLC counters with a count role, per minute (ADR-0026, step 3a.4); still open: manual reject entry (rejects not counted by any PLC) | Phase 3a |
 | 9 | Source of rated speeds, shift calendar and schedule: manual in Mathesar for now (`material_line_rate`, `line_schedule`, migration 012); ERP/SAP later | ERP integration |
 | 10 | Ramp-up after a changeover: inside the changeover window, or speed loss (ADR-0010) | Phase 3a |
 | 11 | Defined capacity per line for CU: manual or from ERP/SAP | Phase 3b |
@@ -564,6 +568,25 @@ Numbers are stable; answered questions are removed rather than renumbered.
   `starved` of 1 ms seen once on resume is real simulator data (the
   palletiser flaps starved → running), split over two OPC UA batches. Not
   tested here: Docker Compose, Mathesar, Grafana, drill F2.
+- Step 3a.4 was tested on the local replica: `flows` 259 checks (new:
+  `counts`), `database` 82, `live` with the new demo count checks (the same
+  10 replica-only failures as for 3a.3). By hand: about 96 cartons a minute
+  at the closer, checkweigher rejects in the line total; *New run*: one
+  reset warning per counter, the reset minute counting only cartons made
+  after it; runtime killed for 2 minutes: the closer's minutes since the
+  reset added up to exactly its counter reading (69 + 97 + 288 + 97 = 551),
+  the outage's cartons in the first minute after the restart.
+- 2026-11-06, CT2 on the laptop: the `database` check that rehearses
+  `demo-remove` failed with 23503 (a measurement written for a demo
+  property between the script's deletes), because the runtime was still
+  writing the live demo; too fast to happen on the replica. The real
+  `migrate demo-remove` stops acquisition first, but a disk-queue replay
+  could hit it too. Fixed: the removal script locks the history tables
+  against new rows until it is done (the runtime waits a few seconds); new
+  check proving it, failed without the lock (23503), passes with it. The
+  other failure there was the demo still loaded without its output machine
+  (CT3 not yet done); checks CT2 and CT3 swapped, and the check now says
+  what to do.
 - Docker Desktop stays on the laptop for development (decided 2026-11-02).
   Its licence applies to development use too: within an organisation above
   Docker's small-business limit, the laptop needs a paid seat.

@@ -226,6 +226,7 @@ module.exports.run = async function (t) {
         queries.push({ text, params });
         if (/runtime_heartbeat/.test(text)) return { rows: [{ ts: opts && opts.noBeat ? null : HB }] };
         if (/machine_state_event/.test(text)) return { rows };
+        if (/production_count/.test(text)) return { rows: [] };
         throw new Error("unexpected " + text);
       }
       async end() {}
@@ -278,7 +279,7 @@ module.exports.run = async function (t) {
   setTimeout(() => { r.glob.ofm_historian.queueRows = 0; }, 1200);
   const waitFrom = Date.now();
   await r.fn.run({ payload: "reconcile", trigger: "startup" });
-  t.check("reconcile: waits for the historian queue to empty before reading", Date.now() - waitFrom >= 1000 && r.queries.length === 2);
+  t.check("reconcile: waits for the historian queue to empty before reading", Date.now() - waitFrom >= 1000 && r.queries.length === 3);
 
   // --- 6. runtime heartbeat --------------------------------------------------------------------------
   const rg = {};

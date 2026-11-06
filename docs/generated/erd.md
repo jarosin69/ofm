@@ -48,6 +48,7 @@ erDiagram
     int4 constraint_machine_id FK
     int4 minor_stop_threshold_s
     text note
+    int4 output_machine_id FK
   }
   line_schedule {
     int4 id PK
@@ -167,6 +168,13 @@ erDiagram
     bool is_enabled
     timestamptz retired_at
   }
+  production_count {
+    timestamptz ts PK
+    int4 property_id PK,FK
+    float8 increment
+    float8 last_value
+    int2 resets
+  }
   runtime_heartbeat {
     text runtime_name PK
     timestamptz ts PK
@@ -213,11 +221,13 @@ erDiagram
   machine_property ||--o{ measurement_text : "property_id"
   machine_property ||--o{ measurement : "property_id"
   machine_property ||--o{ plc_mapping : "property_id"
+  machine_property ||--o{ production_count : "property_id"
   machine_state ||--o{ machine_state_event : "state_id"
   machine_state ||--o{ machine_state_rule : "state_id"
   machine ||--o{ asset_relationship : "from_machine_id"
   machine ||--o{ asset_relationship : "to_machine_id"
   machine ||--o{ line_kpi_rule : "line_id, constraint_machine_id"
+  machine |o--o{ line_kpi_rule : "line_id, output_machine_id"
   machine ||--o{ machine_property : "machine_id"
   machine ||--o{ machine_state_event : "machine_id"
   machine ||--o{ sub_asset : "machine_id"

@@ -95,8 +95,10 @@ Melbourne time, cleaning 21:30–22:00 (planned). Outside it the line is idle
 and OFM books *No activity*.
 
 **How OFM counts the line:** good output = cartons out of the closer;
-rejects = checkweigher rejects plus closer rejects (cartons that used filler
-time). The erector's spoiled blanks count on the erector only.
+rejects = filler, checkweigher and closer rejects (cartons that used filler
+time). The erector's spoiled blanks count on the erector only. In the model:
+the line's KPI rule has the filler as constraint and the closer as output
+machine (ADR-0008 amendment, step 3a.4).
 
 ## 4. The machine interface
 
@@ -354,6 +356,25 @@ ORDER BY machine_name, starts_at;
 (in `docker exec -it ofm-timescaledb psql -U ofm_admin -d ofm`, with the
 administrator name from your `.env`). Charts of states come with the line
 view in step 3a.8.
+
+**Counts** (step 3a.4): OFM turns every machine's counters into cartons
+(or cases) made per minute, and the line's good and reject cartons per
+minute. The last hour, per hour and in total, in Melbourne time, to compare
+with the panel's *This hour*:
+
+```sql
+SELECT date_trunc('hour', ts AT TIME ZONE 'Australia/Melbourne') AS hour,
+       sum(good) AS good, sum(reject) AS reject
+FROM hist.vw_line_count
+WHERE line_id = (SELECT id FROM config.line WHERE name = 'packline01' AND retired_at IS NULL)
+  AND ts > now() - interval '2 hours'
+GROUP BY 1 ORDER BY 1;
+```
+
+Per machine and minute: `hist.vw_production_count` (columns `machine_name`,
+`role`, `increment`, `resets`). A minute is written about 5 seconds after it
+ends, so the current minute is not there yet. *New run* resets the counters
+to 0: OFM logs `counter … was reset: 290 -> 0` for each and loses nothing.
 
 **Outside the shift pattern**, to see the line run: set
 `"schedule": { "enabled": false, … }` in `line.json`, then

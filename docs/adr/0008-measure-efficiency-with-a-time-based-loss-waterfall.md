@@ -124,3 +124,13 @@ reduced by speed and quality losses even though neither is a failure.
   in force (a new rule is a new row). Rated speeds are versioned the same
   way in `config.material_line_rate` (ADR-0010 amendment); the waterfall
   mapping is versioned with the KPI views themselves (migrations).
+- 2026-11-06: **Line counts (decision 5; step 3a.4, migration 014).** The
+  KPI rule names the line's **output machine** (`output_machine_id`, empty
+  = the constraint machine). Line good count = `count_good` of the output
+  machine; line reject count = `count_reject` of every machine from the
+  constraint to the output machine along the flow order (`feeds`,
+  ADR-0024), both included: units rejected after they used constraint
+  time, so the quality loss is reject count × ICT. Rejects before the
+  constraint (e.g. spoiled packaging) are machine counts only. Being part
+  of the KPI rule, the output machine is dated with it. Counts per minute:
+  `hist.vw_line_count`, from `hist.production_count` (ADR-0026).
