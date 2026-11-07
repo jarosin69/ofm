@@ -89,3 +89,15 @@ line produces many short stops per shift, far too many to code by hand.
 - 2026-11-02: ADR-0024 adds one classification rule, after rule 5: starved
   and blocked time of the constraint takes the reason of the machine that
   caused it. The other rules are unchanged.
+- 2026-11-07: **As built (step 3a.6, migration 016).** `config.reason`
+  carries code, name and position (4, 5, 6, 7, 9 or 12), and optionally the
+  one machine it applies to (empty = every machine). `config.fault_code_reason`
+  maps a machine's PLC fault codes to reasons; unmapped codes give no
+  reason. A built-in reason `waiting_for_order` (Pos 7) is used for stopped
+  time without an active work order on lines whose KPI rule has
+  `order_required`; it sits after rule 3 (and ADR-0024's rule), before the
+  changeover and planned windows. Rules 2 and 3 and ADR-0024's rule are
+  implemented in `hist.fn_line_stops(line, from, to)`, the line's stop list
+  (causes `unknown`, `reason`, `attributed`, `flow`, `waiting_for_order`,
+  `none`); rules 1 and 4–7 and the positions follow with `vw_time_ledger`
+  in step 3a.7.

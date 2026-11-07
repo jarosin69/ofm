@@ -32,6 +32,10 @@ const COUNTS = `
           WHERE m.line_id IN (SELECT id FROM line))::int AS state_events,
          (SELECT count(*) FROM hist.vw_production_count WHERE line_id IN (SELECT id FROM line))::int AS counts,
          (SELECT count(*) FROM config.work_order WHERE line_id IN (SELECT id FROM line))::int AS orders,
+         (SELECT count(*) FROM config.fault_code_reason f JOIN config.machine m ON m.id = f.machine_id WHERE m.line_id IN (SELECT id FROM line))::int AS fault_codes,
+         (SELECT count(*) FROM config.reason r JOIN config.machine m ON m.id = r.machine_id WHERE m.line_id IN (SELECT id FROM line))::int AS machine_reasons,
+         (SELECT count(*) FROM config.reason WHERE code IN ('breakdown_other', 'meal_break') AND description LIKE 'Demo:%')::int AS general_reasons,
+         (SELECT bool_and(order_required) FROM config.line_kpi_rule WHERE line_id IN (SELECT id FROM line)) AS order_required,
          (SELECT count(*) FROM pg_namespace WHERE nspname = 'demo')::int AS demo_schema,
          (SELECT count(*) FROM pg_roles WHERE rolname = 'ofm_demo')::int AS demo_role,
          (SELECT name FROM config.machine WHERE id = (SELECT constraint_machine_id FROM config.line_kpi_rule
@@ -68,6 +72,9 @@ module.exports.run = async function (t) {
         has_table_privilege('ofm_demo', 'config.plc_mapping', 'SELECT') AS read_model`)).rows[0];
     t.check("demo: the simulator's role ofm_demo may start and complete the demo line's orders, nothing else (step 3a.5)",
             door.start && door.complete && !door.read_orders && !door.start_any && !door.read_model, JSON.stringify(door));
+    t.check("demo line: 18 fault codes mapped to their machines' reasons, general reasons, orders required (step 3a.6)",
+            once.fault_codes === 18 && once.machine_reasons === 18 && once.general_reasons === 2 && once.order_required === true,
+            JSON.stringify(once) + (once.order_required === false ? " - the demo was loaded before step 3a.6: run migrate demo-remove, then migrate demo" : ""));
     t.check("demo line: 6 roles per machine, a 5 s heartbeat, 8 state rules per machine (step 3a.3)",
             once.roles === 36 && once.heartbeats === 6 && once.state_rules === 48, JSON.stringify(once));
     await db.query(read("demo-packline.sql"));
@@ -130,6 +137,8 @@ module.exports.run = async function (t) {
             gone.lines === 0 && gone.machines === 0 && gone.mapped === 0 && gone.sources === 0 && gone.products === 0, JSON.stringify(gone));
     t.check("demo-remove takes away its state rules, state events and counts too",
             gone.state_rules === 0 && gone.state_events === 0 && gone.counts === 0, JSON.stringify(gone));
+    t.check("demo-remove takes away its reasons and fault codes",
+            gone.fault_codes === 0 && gone.machine_reasons === 0 && gone.general_reasons === 0, JSON.stringify(gone));
     t.check("demo-remove takes away its work orders, schema demo and role ofm_demo",
             gone.orders === 0 && gone.demo_schema === 0 && gone.demo_role === 0, JSON.stringify(gone));
     t.check("demo-remove leaves the rest of the model alone (eggline01, if loaded, is still there)",

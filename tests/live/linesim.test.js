@@ -6,7 +6,9 @@
 // a valid retained state on .../{machine}/state and state events in the
 // historian; while the line produces, every machine's good counter has
 // minute rows and the line has good cartons (step 3a.4); once an order has
-// been started, the retained .../workorder matches the database (step 3a.5).
+// been started, the retained .../workorder matches the database (step 3a.5);
+// faults with a mapped fault code carry the PLC's reason, and the line's
+// stop list can be read (step 3a.6).
 // Skipped when the
 // simulator is not running.
 "use strict";
@@ -103,6 +105,7 @@ module.exports.run = async function (t) {
   });
   await checkCounts(t);
   await checkOrder(t);
+  await checkReasons(t);
   for (const m of machines) {
     const s = states[m.name], e = events.find(x => x.name === m.name);
     const problem = s ? contracts.validate("machine-state", s) : "no retained state";
@@ -164,4 +167,26 @@ async function checkOrder(t) {
   t.check("demo work order: retained on .../workorder, valid, and the same as in the database",
           !problem && got.active === row.active && (!row.active || got.woNumber === row.wo_number),
           problem || (got.active ? got.woNumber + " " + got.sku + (got.changeover ? ", changeover" : "") : "no active order"));
+}
+
+// PLC reasons and the stop list (step 3a.6), over the last 24 hours.
+async function checkReasons(t) {
+  const db = await connectDb();
+  try {
+    const r = (await db.query(`SELECT count(*)::int AS faults, count(er.reason_id)::int AS coded
+      FROM hist.machine_state_event e JOIN config.machine m ON m.id = e.machine_id
+      JOIN config.line l ON l.id = m.line_id AND l.name = 'packline01' AND l.retired_at IS NULL
+      LEFT JOIN hist.vw_effective_reason er ON er.machine_id = e.machine_id AND er.event_ts = e.ts
+      WHERE e.state_id = 5 AND e.ts > now() - interval '24 hours'`)).rows[0];
+    if (r.faults === 0) {
+      t.skip("demo reasons", "no faults in the last 24 hours");
+    } else {
+      t.check("demo reasons: faults carry the PLC's reason (except unknown fault 999)", r.coded > 0, r.coded + " of " + r.faults + " faults coded");
+    }
+    const s = (await db.query(`SELECT count(*)::int AS n FROM config.line l, hist.fn_line_stops(l.id, now() - interval '24 hours', now())
+      WHERE l.name = 'packline01' AND l.retired_at IS NULL`)).rows[0];
+    t.check("demo stop list: hist.fn_line_stops answers for the last 24 hours", s.n >= 0, s.n + " stop slice(s)");
+  } finally {
+    await db.end().catch(() => {});
+  }
 }

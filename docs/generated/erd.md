@@ -33,6 +33,13 @@ erDiagram
     text description
     timestamptz retired_at
   }
+  fault_code_reason {
+    int4 id PK
+    int4 machine_id FK
+    int4 fault_code
+    int4 reason_id FK
+    text note
+  }
   line {
     int4 id PK
     int4 area_id FK
@@ -49,6 +56,7 @@ erDiagram
     int4 minor_stop_threshold_s
     text note
     int4 output_machine_id FK
+    bool order_required
   }
   line_schedule {
     int4 id PK
@@ -175,6 +183,16 @@ erDiagram
     float8 last_value
     int2 resets
   }
+  reason {
+    int4 id PK
+    text code
+    text display_name
+    int4 loss_category_id FK
+    int4 machine_id FK
+    text description
+    bool is_system
+    timestamptz retired_at
+  }
   runtime_heartbeat {
     text runtime_name PK
     timestamptz ts PK
@@ -199,6 +217,14 @@ erDiagram
     text runtime_name
     bool is_enabled
     timestamptz retired_at
+  }
+  state_reason {
+    int4 machine_id PK,FK
+    timestamptz event_ts PK,FK
+    int4 reason_id FK
+    text assigned_by
+    timestamptz assigned_at PK
+    text comment
   }
   sub_asset {
     int4 id PK
@@ -233,22 +259,28 @@ erDiagram
   line ||--o{ machine : "line_id"
   line ||--o{ material_line_rate : "line_id"
   line ||--o{ work_order : "line_id"
+  loss_category ||--o{ reason : "loss_category_id"
   machine_property ||--o{ machine_state_rule : "machine_id, property_id"
   machine_property ||--o{ measurement_text : "property_id"
   machine_property ||--o{ measurement : "property_id"
   machine_property ||--o{ plc_mapping : "property_id"
   machine_property ||--o{ production_count : "property_id"
+  machine_state_event ||--o{ state_reason : "machine_id, event_ts"
   machine_state ||--o{ machine_state_event : "state_id"
   machine_state ||--o{ machine_state_rule : "state_id"
   machine ||--o{ asset_relationship : "from_machine_id"
   machine ||--o{ asset_relationship : "to_machine_id"
+  machine ||--o{ fault_code_reason : "machine_id"
   machine ||--o{ line_kpi_rule : "line_id, constraint_machine_id"
   machine |o--o{ line_kpi_rule : "line_id, output_machine_id"
   machine ||--o{ machine_property : "machine_id"
   machine ||--o{ machine_state_event : "machine_id"
+  machine |o--o{ reason : "machine_id"
   machine ||--o{ sub_asset : "machine_id"
   material ||--o{ material_line_rate : "material_id"
   material ||--o{ work_order : "material_id"
+  reason ||--o{ fault_code_reason : "reason_id"
+  reason ||--o{ state_reason : "reason_id"
   site ||--o{ area : "site_id"
   source ||--o{ plc_mapping : "source_id"
   sub_asset |o--o{ machine_property : "machine_id, sub_asset_id"

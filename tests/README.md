@@ -367,6 +367,30 @@ README section 13, *Work orders*.
 | WO8 | *Complete* | `…/workorder` becomes `{"active": false, …}`; the line waits; with the auto-operator on, the next order starts 2 minutes later |
 | WO9 | `docker compose run --rm test live` | all checks pass, including *demo work order: retained on …/workorder* |
 
+**Step 3a.6, reasons** (migration 016; ADR-0006, ADR-0009, ADR-0024
+amendments). Automated: `flows` (`reasons`: the PLC's reason for the first
+mapped fault code of a stop, also when the code comes after the state;
+none for unmapped codes or while running; the writer); `database` (the
+catalogue and its built-in reason, fault codes per machine, reasons
+append-only with the newest effective, coding refused for running events
+and other machines' reasons, the stop list: own reason, starved charged
+upstream, the walk past starved machines, blocked charged downstream, flow
+loss, waiting for order, unknown, a line that is not one chain; the demo's
+catalogue; `demo-remove` takes it); `live` (demo faults carry reasons).
+By hand, with the queries in demo README section 13, *Stops and their
+reasons*.
+
+| # | Do | Expect |
+|---|---|---|
+| RS1 | `docker compose up -d`, `docker compose logs migrate`, `docker compose restart nodered` | `Applying 016-reasons.sql` |
+| RS2 | `docker compose run --rm migrate demo-remove`, then `migrate demo` (once: the demo's KPI rule gets `order_required`; the demo's history so far is removed) | both finish without an error |
+| RS3 | `docker compose run --rm test offline`, then `docker compose run --rm test database` | all checks pass |
+| RS4 | Mathesar: `config.reason` and `config.fault_code_reason` | 25 reasons (18 for the demo's machines, 6 general, `waiting_for_order`); 18 fault codes |
+| RS5 | Panel: with an order running, *Break and hold* the erector (code 103); after the filler turns yellow wait a minute; *Repair*; then the stop-list query | the filler's starved time `attributed`, *Erector: glue system fault*, pos 9, charged to `erector`, by `plc`; then a few seconds of `flow` |
+| RS6 | *Break and hold* the closer with code 999 for a minute, *Repair*; code it with `config.fn_assign_reason` (demo README) | the filler's blocked time is `attributed` to the closer with no reason; after coding, *Breakdown, other*, by you, with your comment |
+| RS7 | *Complete* the order (auto-operator off), wait 2 minutes | the stop list shows `waiting_for_order`, pos 7 |
+| RS8 | `docker compose run --rm test live` | all checks pass, including *demo reasons* |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

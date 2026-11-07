@@ -70,3 +70,18 @@ asks is "which machine, and why".
 - This ADR adds one rule to ADR-0009 and changes none of its other rules.
   When accepted, ADR-0009 gets a dated amendment line pointing here.
 - Related: ADR-0006, ADR-0008, ADR-0009, ADR-0023.
+
+## Amendments
+
+- 2026-11-07: **As built (step 3a.6, migration 016, `hist.fn_line_stops`).**
+  The constraint's non-running time is cut wherever any machine of the line
+  changes state, so a long starve is charged to each cause in turn. The
+  walk passes starved machines (upstream) or blocked ones (downstream) and
+  stops at the first other machine: if it is stopped (idle, fault, setup,
+  cleaning, maintenance or unknown) it is the cause; if it is running, or
+  the walk runs out of machines, the slice is flow loss (decision 4).
+  `config.vw_line_flow_problem` lists lines whose feeds are not one chain;
+  their starved and blocked time is not attributed. Checked on the
+  simulator (2026-11-07): the erector held in fault 103 for 2 minutes, the
+  filler starved 8 s later for 112 s, all charged to *erector: glue system
+  fault* (Pos 9), then 1 s of flow loss while cartons arrived again.

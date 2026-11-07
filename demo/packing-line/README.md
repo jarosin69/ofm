@@ -124,8 +124,8 @@ state OFM derives from it itself (step 3a.3). Each machine has eight state
 rules on `state_code` (code 1 → running … 8 → maintenance, Overview §10.1);
 the six signals the KPIs need have their role (`state_code`, `fault_code`,
 `heartbeat`, `count_in`, `count_good`, `count_reject`); `heartbeat` has a
-5-second timeout; `fault_code` gets a fault-code → reason table in step
-3a.6. All of it is in the model, so a real machine with different codes, or
+5-second timeout; each `fault_code` value below is mapped to a reason of
+its machine (step 3a.6). All of it is in the model, so a real machine with different codes, or
 with status bits instead of a code, needs only different rows.
 
 **Frozen data.** If `heartbeat` stops changing for 5 seconds while the PLC or
@@ -145,6 +145,15 @@ shows it.
 | case_packer | 501 case blanks empty (12) · 502 case jam (12) · 503 servo fault (9) |
 | palletiser | 601 waiting for pallet removal (12) · 602 empty pallets out (12) · 604 robot fault (9) |
 | any | 999 unknown fault — no reason; the operator codes it on the line view |
+
+In OFM (step 3a.6) each of these is a reason in `config.reason`, named
+after its machine (`erector_glue_system_fault`, …), mapped in
+`config.fault_code_reason`; six more reasons are there for operators to
+code stops by hand, for any machine: *breakdown, other* (9), *minor stop,
+other* (12), *material quality* (12), *meal break* (7), *planned
+maintenance* (4), *extra cleaning* (5). The line's KPI rule has
+`order_required`: stopped time without an active order is *waiting for
+order* (7).
 
 Position 9 is *Breakdowns*, 12 *Other unplanned downtime* (ADR-0008).
 
@@ -553,6 +562,35 @@ FROM hist.vw_work_order_interval ORDER BY started_at DESC LIMIT 10;
 
 The panel's *Change over* still changes the product without an order (for
 testing); with *Follow* on, the next order's product wins.
+
+### Stops and their reasons (step 3a.6)
+
+When a machine stops with a fault code, OFM records that code's reason for
+the stop at once (`assigned_by` = plc). The filler is the line's
+constraint: when it is starved or blocked, OFM charges that time to the
+stopped machine upstream or downstream and its reason. To see it, *Break
+and hold* the erector, wait until the filler turns yellow (starved), wait a
+minute, *Repair*; then the line's stop list for the last 15 minutes:
+
+```sql
+SELECT slice_start AT TIME ZONE 'Australia/Melbourne' AS started, round(duration_s) AS seconds,
+       state, cause, reason_name, loss_category_id AS pos, cause_machine_name AS charged_to, assigned_by
+FROM hist.fn_line_stops((SELECT id FROM config.line WHERE name = 'packline01' AND retired_at IS NULL),
+                        now() - interval '15 minutes', now());
+```
+
+`cause`: `reason` (the filler's own), `attributed` (charged to
+`charged_to`), `flow` (starved or blocked while its neighbours ran: the
+conveyor refilling), `waiting_for_order`, `unknown`, or `none` (not coded
+yet; a minor stop if short, step 3a.7). To code a stop by hand until the
+line view exists (step 3a.8), e.g. a 999 on the closer, with the event's
+time from `hist.vw_machine_state_interval`:
+
+```sql
+SELECT config.fn_assign_reason(
+  (SELECT id FROM config.machine WHERE name = 'closer' AND retired_at IS NULL),
+  '2026-11-07 11:32:54.123+11', 'breakdown_other', 'Jarek', 'motor overload reset');
+```
 
 ### What restarts do
 

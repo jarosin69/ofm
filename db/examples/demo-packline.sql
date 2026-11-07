@@ -13,7 +13,8 @@
 -- closer); its shift pattern
 -- (Mon-Fri 06:00-22:00, cleaning 21:30-22:00, Melbourne time); and the flow
 -- order of the machines (ADR-0024); each machine's property roles, heartbeat
--- and state rules (ADR-0006, ADR-0025); and the simulator's database role
+-- and state rules (ADR-0006, ADR-0025); reasons for its fault codes and for
+-- operators (ADR-0009); and the simulator's database role
 -- ofm_demo with the functions it may call (schema demo: start and complete
 -- work orders, step 3a.5). Rename anything in Mathesar afterwards:
 -- history is kept by ID (ADR-0004).
@@ -167,9 +168,10 @@ ON CONFLICT (line_id, material_id, valid_from) DO NOTHING;
 
 -- KPI rules: the filler is the constraint; stops under 5 minutes are minor
 -- stops; good cartons are counted at the closer, rejects from the filler to
--- the closer (ADR-0008 amendment; demo README section 3).
-INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, output_machine_id, minor_stop_threshold_s, note)
-SELECT demo_line.id, '2026-01-01 00:00 Australia/Melbourne', m.id, o.id, 300, 'Demo default'
+-- the closer (ADR-0008 amendment; demo README section 3); the line runs on
+-- work orders, so stopped time without one is waiting for order (step 3a.6).
+INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, output_machine_id, minor_stop_threshold_s, order_required, note)
+SELECT demo_line.id, '2026-01-01 00:00 Australia/Melbourne', m.id, o.id, 300, true, 'Demo default'
 FROM demo_line
 JOIN config.machine m ON m.line_id = demo_line.id AND m.name = 'filler' AND m.retired_at IS NULL
 JOIN config.machine o ON o.line_id = demo_line.id AND o.name = 'closer' AND o.retired_at IS NULL
@@ -184,6 +186,55 @@ FROM demo_line,
 WHERE NOT EXISTS (SELECT 1 FROM config.line_schedule w
                   WHERE w.line_id = demo_line.id AND w.kind = v.kind
                     AND w.start_time = v.start_time AND w.end_time = v.end_time);
+
+-- Reasons (step 3a.6, ADR-0009): the machines' fault codes (demo README
+-- section 4), each a reason of its machine, and six reasons for operators,
+-- for any machine. 999 (unknown fault) is deliberately not mapped: the
+-- operator codes those stops.
+CREATE TEMP TABLE demo_fault (machine text, code int, reason text, display_name text, pos int);
+INSERT INTO demo_fault VALUES
+  ('erector',      101, 'erector_blank_magazine_empty', 'Erector: blank magazine empty',      12),
+  ('erector',      102, 'erector_carton_jam',           'Erector: carton jam',                 12),
+  ('erector',      103, 'erector_glue_system_fault',    'Erector: glue system fault',          9),
+  ('erector',      104, 'erector_vacuum_fault',         'Erector: vacuum fault',               9),
+  ('filler',       201, 'filler_product_supply_low',    'Filler: product supply low',          12),
+  ('filler',       202, 'filler_counting_head_fault',   'Filler: counting head fault',         9),
+  ('filler',       203, 'filler_carton_jam',            'Filler: carton jam',                  12),
+  ('checkweigher', 301, 'checkweigher_reject_bin_full', 'Checkweigher: reject bin full',       12),
+  ('checkweigher', 302, 'checkweigher_load_cell_fault', 'Checkweigher: load cell fault',       9),
+  ('closer',       401, 'closer_glue_fault',            'Closer: glue fault',                  9),
+  ('closer',       402, 'closer_carton_jam',            'Closer: carton jam',                  12),
+  ('closer',       403, 'closer_flap_guide_fault',      'Closer: flap guide fault',            9),
+  ('case_packer',  501, 'case_packer_case_blanks_empty','Case packer: case blanks empty',      12),
+  ('case_packer',  502, 'case_packer_case_jam',         'Case packer: case jam',               12),
+  ('case_packer',  503, 'case_packer_servo_fault',      'Case packer: servo fault',            9),
+  ('palletiser',   601, 'palletiser_waiting_for_removal','Palletiser: waiting for pallet removal', 12),
+  ('palletiser',   602, 'palletiser_empty_pallets_out', 'Palletiser: empty pallets out',       12),
+  ('palletiser',   604, 'palletiser_robot_fault',       'Palletiser: robot fault',             9);
+
+INSERT INTO config.reason (code, display_name, loss_category_id, machine_id, description)
+SELECT f.reason, f.display_name, f.pos, m.id, 'Demo: PLC fault ' || f.code
+FROM demo_fault f
+JOIN config.machine m ON m.name = f.machine AND m.retired_at IS NULL
+JOIN demo_line ON demo_line.id = m.line_id
+ON CONFLICT (code) WHERE retired_at IS NULL DO NOTHING;
+
+INSERT INTO config.reason (code, display_name, loss_category_id, description)
+VALUES ('breakdown_other',     'Breakdown, other',     9,  'Demo: a breakdown not on the list; say what in the comment'),
+       ('minor_stop_other',    'Minor stop, other',    12, 'Demo: a short stop not on the list'),
+       ('material_quality',    'Material quality',     12, 'Demo: cartons, glue or product out of specification'),
+       ('meal_break',          'Meal break',           7,  'Demo: line stopped for a break'),
+       ('planned_maintenance', 'Planned maintenance',  4,  'Demo: scheduled maintenance work'),
+       ('extra_cleaning',      'Extra cleaning',       5,  'Demo: cleaning outside the planned window')
+ON CONFLICT (code) WHERE retired_at IS NULL DO NOTHING;
+
+INSERT INTO config.fault_code_reason (machine_id, fault_code, reason_id)
+SELECT m.id, f.code, r.id
+FROM demo_fault f
+JOIN config.machine m ON m.name = f.machine AND m.retired_at IS NULL
+JOIN demo_line ON demo_line.id = m.line_id
+JOIN config.reason r ON r.code = f.reason AND r.retired_at IS NULL
+ON CONFLICT (machine_id, fault_code) DO NOTHING;
 
 -- The simulator's own door into OFM (ADR-0023): the role ofm_demo may call
 -- the functions of schema demo and nothing else. They run with fixed rights
@@ -242,4 +293,4 @@ GRANT EXECUTE ON FUNCTION demo.start_order(text, integer, text), demo.complete_o
 
 -- Working tables of this script only.
 DROP VIEW demo_line;
-DROP TABLE demo_machine, demo_signal;
+DROP TABLE demo_machine, demo_signal, demo_fault;

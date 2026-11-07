@@ -136,3 +136,13 @@ existing decisions:
   the runtime's status topic).
   *Not yet built:* `hist.state_reason` (step 3a.6) and the health query of
   decision 8 (open question 13).
+- 2026-11-07: **Reasons as built (decision 3; step 3a.6, migration 016).**
+  `hist.state_reason (machine_id, event_ts, reason_id, assigned_by,
+  assigned_at, comment)`, primary key `(machine_id, event_ts,
+  assigned_at)`; `hist.vw_effective_reason` gives each event's newest
+  assignment. The runtime records the PLC's reason (`assigned_by = plc`)
+  for the first mapped fault code shown during a stop (the root cause; a
+  later code during the same stop changes nothing). People assign reasons
+  through `config.fn_assign_reason`, which refuses running events and
+  reasons of other machines. There is no "un-code": a wrong reason is
+  corrected by assigning the right one.

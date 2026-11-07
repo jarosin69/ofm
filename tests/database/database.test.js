@@ -17,6 +17,7 @@ const REFUSED_BY_RULE = "23514";     // check_violation: a CHECK constraint said
 const DUPLICATE = "23505";           // unique_violation
 const NO_PERMISSION = "42501";       // insufficient_privilege
 const NO_SUCH_PARENT = "23503";      // foreign_key_violation
+const NOT_FOUND = "P0002";           // no_data_found: a function found nothing to act on
 
 // Production context (migration 012): a product and its rate, as steps.
 const PCS = "(SELECT id FROM config.engineering_unit WHERE code = 'pcs')";
@@ -66,6 +67,18 @@ const ORDER_SETUP = [
   { as: "ofm_config", sql: ADD_RATE },
   { as: "ofm_config", sql: ADD_ORDER("wo1") },
   { as: "ofm_config", sql: ADD_ORDER("wo2") }];
+// Reasons (migration 016): events on the small line mach0 -> mach1 -> mach2 -> mach3, 1 Nov 2026 (UTC).
+const EV = (name, hhmm, state) => "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES (" + MACH(name) +
+  ", '2026-11-01T" + hhmm + ":00Z', " + state + ", 'rule')";
+const ADD_REASON = (code, pos, machine) => "INSERT INTO config.reason (code, display_name, loss_category_id, machine_id) VALUES ('" +
+  code + "', '" + code + "', " + pos + ", " + (machine ? MACH(machine) : "NULL") + ")";
+const ASSIGN = (machine, hhmm, code) => "SELECT config.fn_assign_reason(" + MACH(machine) + ", '2026-11-01T" + hhmm + ":00Z', '" + code + "', 'tester', 'test') AS at";
+const RULE_AT = (constraint, orders) => "INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, order_required) VALUES ($line, '2026-01-01', " +
+  MACH(constraint) + ", " + (orders ? "true" : "false") + ")";
+const STOPS = "SELECT to_char(slice_start AT TIME ZONE 'UTC', 'HH24:MI') || '-' || to_char(slice_end AT TIME ZONE 'UTC', 'HH24:MI') || ' ' || state || ' ' || cause || " +
+  "coalesce(' ' || reason_code, '') || coalesce(' @' || cause_machine_name, '') || coalesce(' pos' || loss_category_id, '') AS s " +
+  "FROM hist.fn_line_stops($line, '2026-11-01T00:00:00Z', '2026-11-01T02:00:00Z')";
+const stops = r => r.map(x => x.s).join(" | ");
 const EVENT = (ts, state, cause) =>
   "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES ($machine, '" + ts + "', " + state + ", '" + (cause || "rule") + "') ON CONFLICT (machine_id, ts) DO NOTHING";
 
@@ -415,6 +428,108 @@ const CASES = [
     { as: "ofm_runtime", sql: "SELECT config.fn_work_order_complete((SELECT work_order_id FROM hist.vw_line_work_order WHERE line_id = $line), 'operator') AS ts" },
     { as: "ofm_reader", sql: "SELECT active, changeover FROM hist.vw_line_work_order WHERE line_id = $line",
       expect: r => r.length === 1 && r[0].active === false && r[0].changeover === false }] },
+
+  // --- reasons (migration 016, step 3a.6) -------------------------------------------------------
+  { name: "reasons: positions 4, 5, 6, 7, 9 or 12 only; one active reason per code; waiting_for_order is built in", steps: [
+    { as: "ofm_config", sql: ADD_REASON("zz_r", 9, null) },
+    { as: "ofm_config", sql: ADD_REASON("zz_r", 12, null), expect: DUPLICATE },
+    { as: "ofm_config", sql: ADD_REASON("zz_bad", 10, null), expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "DELETE FROM config.reason WHERE code = 'waiting_for_order'", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "UPDATE config.reason SET loss_category_id = 12 WHERE code = 'waiting_for_order'", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "UPDATE config.reason SET display_name = 'No order' WHERE code = 'waiting_for_order'" },
+    { as: "ofm_config", sql: "INSERT INTO config.reason (code, display_name, loss_category_id, is_system) VALUES ('zz_sys', 'x', 7, true)", expect: REFUSED_BY_RULE }] },
+  { name: "fault codes: mapped per machine to a reason that applies to it; code 0 is never mapped", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: ADD_REASON("zz_glue", 9, "mach0") },
+    { as: "ofm_config", sql: "INSERT INTO config.fault_code_reason (machine_id, fault_code, reason_id) VALUES (" + MACH("mach2") + ", 103, (SELECT id FROM config.reason WHERE code = 'zz_glue'))", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "INSERT INTO config.fault_code_reason (machine_id, fault_code, reason_id) VALUES (" + MACH("mach0") + ", 0, (SELECT id FROM config.reason WHERE code = 'zz_glue'))", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "INSERT INTO config.fault_code_reason (machine_id, fault_code, reason_id) VALUES (" + MACH("mach0") + ", 103, (SELECT id FROM config.reason WHERE code = 'zz_glue'))" },
+    { as: "ofm_config", sql: "INSERT INTO config.machine_property (machine_id, name, display_name, datatype, engineering_unit_id, role) VALUES (" + MACH("mach0") + ", 'fault_code', 'Fault', 'int', " + CODE + ", 'fault_code')" },
+    { as: "ofm_config", sql: "INSERT INTO config.plc_mapping (property_id, source_id, address) VALUES ((SELECT id FROM config.machine_property WHERE name = 'fault_code' AND machine_id = " + MACH("mach0") + "), $source, 'ns=2;s=Fault')" },
+    { as: "ofm_runtime", sql: "SELECT fault_reasons FROM config.vw_runtime_model WHERE property_name = 'fault_code' AND runtime_name = 'zz_runtime'",
+      expect: r => r.length === 1 && Object.keys(r[0].fault_reasons).join() === "103" }] },
+  { name: "state reasons: append-only, only for real events; the newest assignment is effective", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: ADD_REASON("zz_jam", 12, null) },
+    { as: "ofm_config", sql: ADD_REASON("zz_glue", 9, "mach0") },
+    { as: "ofm_runtime", sql: EV("mach1", "01:00", 5) },
+    { as: "ofm_runtime", sql: ASSIGN("mach1", "01:00", "zz_jam") },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.state_reason (machine_id, event_ts, reason_id, assigned_by, assigned_at) VALUES (" + MACH("mach1") +
+        ", '2026-11-01T01:00:00Z', (SELECT id FROM config.reason WHERE code = 'zz_jam'), 'plc', now() + interval '1 hour')" },
+    { as: "ofm_runtime", sql: ASSIGN("mach1", "01:00", "zz_glue"), expect: REFUSED_BY_RULE },
+    { as: "ofm_runtime", sql: ASSIGN("mach1", "01:05", "zz_jam"), expect: NOT_FOUND },
+    { as: "ofm_runtime", sql: "UPDATE hist.state_reason SET reason_id = reason_id", expect: NO_PERMISSION },
+    { as: "ofm_runtime", sql: "DELETE FROM hist.state_reason", expect: NO_PERMISSION },
+    { as: "ofm_config", sql: ASSIGN("mach1", "01:00", "zz_jam"), expect: NO_PERMISSION },
+    { as: "ofm_reader", sql: "SELECT assigned_by FROM hist.vw_effective_reason WHERE machine_id = " + MACH("mach1"), expect: r => r.length === 1 && r[0].assigned_by === "plc" }] },
+  { name: "state reasons: a running machine has no stop to code", steps: [
+    { as: "ofm_config", sql: ADD_REASON("zz_jam", 12, null) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:00", 1) },
+    { as: "ofm_runtime", sql: ASSIGN("mach1", "01:00", "zz_jam"), expect: REFUSED_BY_RULE }] },
+  { name: "line stops: the constraint's own reason; running time is not a stop; a later correction wins", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", false) },
+    { as: "ofm_config", sql: ADD_REASON("zz_jam", 12, null) },
+    { as: "ofm_config", sql: ADD_REASON("zz_motor", 9, null) },
+    { as: "ofm_runtime", sql: EV("mach1", "00:30", 1) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:00", 5) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:10", 1) },
+    { as: "ofm_runtime", sql: ASSIGN("mach1", "01:00", "zz_jam") },
+    { as: "ofm_reader", sql: STOPS, expect: r => stops(r) === "01:00-01:10 fault reason zz_jam pos12" },
+    { as: "ofm_runtime", sql: ASSIGN("mach1", "01:00", "zz_motor") },
+    { as: "ofm_reader", sql: STOPS, expect: r => stops(r) === "01:00-01:10 fault reason zz_motor pos9" }] },
+  { name: "line stops: starved time charged to the stopped machine upstream, then flow loss while the buffer refills", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", false) },
+    { as: "ofm_config", sql: ADD_REASON("zz_glue", 9, "mach0") },
+    { as: "ofm_runtime", sql: EV("mach0", "00:30", 1) },
+    { as: "ofm_runtime", sql: EV("mach1", "00:30", 1) },
+    { as: "ofm_runtime", sql: EV("mach0", "01:00", 5) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:01", 4) },
+    { as: "ofm_runtime", sql: EV("mach0", "01:05", 1) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:06", 1) },
+    { as: "ofm_runtime", sql: ASSIGN("mach0", "01:00", "zz_glue") },
+    { as: "ofm_reader", sql: STOPS, expect: r => stops(r) === "01:01-01:05 starved attributed zz_glue @mach0 pos9 | 01:05-01:06 starved flow" }] },
+  { name: "line stops: the walk passes starved machines; a cause without a reason is named, not coded", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach2", false) },
+    { as: "ofm_runtime", sql: EV("mach0", "01:00", 5) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:01", 4) },
+    { as: "ofm_runtime", sql: EV("mach2", "01:02", 4) },
+    { as: "ofm_runtime", sql: EV("mach0", "01:10", 1) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:10", 1) },
+    { as: "ofm_runtime", sql: EV("mach2", "01:11", 1) },
+    { as: "ofm_reader", sql: STOPS, expect: r => stops(r) === "01:02-01:10 starved attributed @mach0 | 01:10-01:11 starved flow" }] },
+  { name: "line stops: blocked time charged downstream; waiting for order without an active order; unknown stays unknown", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", true) },
+    ...ORDER_SETUP.slice(0, 2),
+    { as: "ofm_config", sql: ADD_REASON("zz_servo", 9, "mach3") },
+    { as: "ofm_runtime", sql: EV("mach1", "00:10", 2) },
+    { as: "ofm_runtime", sql: EV("mach1", "00:20", 9) },
+    { as: "ofm_runtime", sql: EV("mach3", "01:00", 5) },
+    { as: "ofm_runtime", sql: EV("mach2", "01:01", 3) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:02", 3) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:20", 1) },
+    { as: "ofm_runtime", sql: ASSIGN("mach3", "01:00", "zz_servo") },
+    { as: "ofm_reader", sql: STOPS,
+      expect: r => stops(r) === "00:10-00:20 idle waiting_for_order waiting_for_order pos7 | 00:20-01:02 unknown unknown | 01:02-01:20 blocked attributed zz_servo @mach3 pos9" }] },
+  { name: "line stops: with an active order, an idle stop has no reason yet", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", true) },
+    ...ORDER_SETUP,
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'start', now() - interval '10 minutes', 'tester')" },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES ($machine, now() - interval '30 seconds', 2, 'rule')" },
+    { as: "ofm_reader", sql: "SELECT cause FROM hist.fn_line_stops($line, now() - interval '1 minute', now())", expect: r => r.length === 1 && r[0].cause === "none" }] },
+  { name: "line stops: a line whose feeds are not one chain is listed, and its starved time is not attributed", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", false) },
+    { as: "ofm_config", sql: "INSERT INTO config.asset_relationship (from_machine_id, to_machine_id, relation_type) VALUES (" + MACH("mach0") + ", " + MACH("mach2") + ", 'feeds')" },
+    { as: "ofm_reader", sql: "SELECT problem FROM config.vw_line_flow_problem WHERE line_id = $line", expect: r => r.length === 1 && /feeds two/.test(r[0].problem) },
+    { as: "ofm_runtime", sql: EV("mach0", "01:00", 5) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:01", 4) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:05", 1) },
+    { as: "ofm_reader", sql: STOPS, expect: r => stops(r) === "01:01-01:05 starved none" }] },
 
   // --- audit (Overview §11) -----------------------------------------------------------------
   { name: "a model change is audited with old and new values", steps: [
