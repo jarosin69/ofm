@@ -99,3 +99,27 @@ performance figure.
   have a rate. A rate in force is never changed or deleted (enforced by a
   trigger); a rate whose `valid_from` is still in the future may be deleted,
   so a typo can be fixed before it takes effect.
+- 2026-11-06: **As built (step 3a.5, migration 015).**
+  *Events:* `hist.work_order_event (work_order_id, event_type, ts,
+  entered_by)`, each event type at most once per order (primary key), so a
+  completed order is not started again (a new order continues the product)
+  and the first `changeover_end` is the one that counts.
+  *Recording:* only through `config.fn_work_order_start`, `_complete`,
+  `_changeover_end` and `_start_new` (an order created and started from SKU
+  and quantity, numbered `adhoc-<id>`), which run with fixed rights and
+  check first: the order exists, is not running or complete, and its
+  product has a rated speed on the line. The time is the database's clock.
+  Granted to the runtime (operator screens, step 3a.8); `ofm_config` may
+  plan orders in Mathesar but not start them.
+  *Changeover end (decision 4):* the runtime records `changeover_end`
+  (entered_by `ofm`) at the first good unit counted at the line's output
+  machine (ADR-0008 amendment) that is at least 10 s after the start;
+  earlier units are the previous order's, still on their way. An operator's
+  earlier *Changeover done* wins; a later one changes nothing. **Ramp-up
+  after the first good unit is therefore speed loss** (former open
+  question 10).
+  *UNS (decision 7):* every event notifies the runtime (channel
+  `work_order`), which publishes the line's newest order on `…/workorder`
+  (`schemas/workorder.schema.json`, unchanged); `ratePerHour` is the rate in
+  force at publication. `hist.vw_work_order_interval` holds each order's
+  start, end of changeover and completion for step 3a.7.

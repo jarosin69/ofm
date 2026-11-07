@@ -99,3 +99,19 @@ CompactLogix (step 1.7).
 
 - Related: ADR-0006, ADR-0008, ADR-0009, ADR-0010, ADR-0017, ADR-0018,
   ADR-0024, ADR-0025.
+
+## Amendments
+
+- 2026-11-06: **Work orders as built (decision 6, step 3a.5).** `migrate
+  demo` creates the role `ofm_demo` (password `OFM_DEMO_DB_PASSWORD` in
+  `.env`) and the schema `demo` with `demo.start_order(sku, qty, by)` and
+  `demo.complete_order(by)`, which call OFM's work order functions for the
+  demo line only; `demo-remove` drops both. The simulator reads
+  `…/workorder` as OFM's read-only MQTT user (`orders.ofmLine` in
+  `line.json`), changes over to a new product, stops at the planned
+  quantity of good cartons at its output machine and waits without an
+  order; a panel switch turns following off. The auto-operator (on by
+  default) starts the plan's next order 2 minutes after the line ran out of
+  work, inside the shift pattern only. A restarted simulator makes the
+  active order's whole quantity again (it cannot know what was made
+  before).

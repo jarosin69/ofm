@@ -209,6 +209,21 @@ erDiagram
     text external_ref
     timestamptz retired_at
   }
+  work_order {
+    int4 id PK
+    text wo_number
+    int4 line_id FK
+    int4 material_id FK
+    int4 planned_qty
+    timestamptz planned_start
+    text note
+  }
+  work_order_event {
+    int4 work_order_id PK,FK
+    text event_type PK
+    timestamptz ts
+    text entered_by
+  }
   area ||--o{ line : "area_id"
   engineering_unit |o--o{ machine_property : "engineering_unit_id"
   engineering_unit ||--o{ material : "base_unit_id"
@@ -217,6 +232,7 @@ erDiagram
   line ||--o{ line_schedule : "line_id"
   line ||--o{ machine : "line_id"
   line ||--o{ material_line_rate : "line_id"
+  line ||--o{ work_order : "line_id"
   machine_property ||--o{ machine_state_rule : "machine_id, property_id"
   machine_property ||--o{ measurement_text : "property_id"
   machine_property ||--o{ measurement : "property_id"
@@ -232,8 +248,10 @@ erDiagram
   machine ||--o{ machine_state_event : "machine_id"
   machine ||--o{ sub_asset : "machine_id"
   material ||--o{ material_line_rate : "material_id"
+  material ||--o{ work_order : "material_id"
   site ||--o{ area : "site_id"
   source ||--o{ plc_mapping : "source_id"
   sub_asset |o--o{ machine_property : "machine_id, sub_asset_id"
   sub_asset |o--o{ machine_property : "sub_asset_id"
+  work_order ||--o{ work_order_event : "work_order_id"
 ```

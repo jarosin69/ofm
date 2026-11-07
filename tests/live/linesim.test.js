@@ -5,7 +5,9 @@
 // When the demo model is loaded (migrate demo, step 3a.3): every machine has
 // a valid retained state on .../{machine}/state and state events in the
 // historian; while the line produces, every machine's good counter has
-// minute rows and the line has good cartons (step 3a.4). Skipped when the
+// minute rows and the line has good cartons (step 3a.4); once an order has
+// been started, the retained .../workorder matches the database (step 3a.5).
+// Skipped when the
 // simulator is not running.
 "use strict";
 const path = require("path");
@@ -100,6 +102,7 @@ module.exports.run = async function (t) {
     });
   });
   await checkCounts(t);
+  await checkOrder(t);
   for (const m of machines) {
     const s = states[m.name], e = events.find(x => x.name === m.name);
     const problem = s ? contracts.validate("machine-state", s) : "no retained state";
@@ -130,4 +133,35 @@ async function checkCounts(t) {
   } finally {
     await db.end().catch(() => {});
   }
+}
+
+// The active work order (step 3a.5): retained on the UNS as in the database.
+async function checkOrder(t) {
+  const db = await connectDb();
+  let row;
+  try {
+    row = (await db.query(`SELECT w.active, w.wo_number FROM hist.vw_line_work_order w JOIN config.line l ON l.id = w.line_id
+      WHERE l.name = 'packline01' AND l.retired_at IS NULL`)).rows[0];
+  } finally {
+    await db.end().catch(() => {});
+  }
+  if (!row) {
+    t.skip("demo work order", "no order started yet (auto-operator off, or outside the shift pattern)");
+    return;
+  }
+  const got = await new Promise(resolve => {
+    let payload = null;
+    const client = fromNodeRed("mqtt").connect(stack.mqttUrl, {
+      username: "ofm_reader", password: process.env.OFM_MQTT_READER_PASSWORD,
+      clientId: "ofm-test-" + Math.random().toString(16).slice(2, 10), connectTimeout: 5000, reconnectPeriod: 0
+    });
+    const done = () => { client.end(true); resolve(payload); };
+    client.on("error", done);
+    client.on("connect", () => client.subscribe(LINE + "/workorder", { qos: 0 }, () => setTimeout(done, 2000)));
+    client.on("message", (topic, buf) => { if (buf.length) payload = JSON.parse(buf.toString()); });
+  });
+  const problem = got ? contracts.validate("workorder", got) : "nothing retained on " + LINE + "/workorder";
+  t.check("demo work order: retained on .../workorder, valid, and the same as in the database",
+          !problem && got.active === row.active && (!row.active || got.woNumber === row.wo_number),
+          problem || (got.active ? got.woNumber + " " + got.sku + (got.changeover ? ", changeover" : "") : "no active order"));
 }

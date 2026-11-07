@@ -148,7 +148,8 @@ EOSQL
 sync_role_passwords() {
   synced=""
   for pair in ofm_runtime:OFM_RUNTIME_DB_PASSWORD ofm_config:OFM_CONFIG_DB_PASSWORD \
-              ofm_reader:OFM_READER_DB_PASSWORD ofm_mathesar:OFM_MATHESAR_DB_PASSWORD; do
+              ofm_reader:OFM_READER_DB_PASSWORD ofm_mathesar:OFM_MATHESAR_DB_PASSWORD \
+              ofm_demo:OFM_DEMO_DB_PASSWORD; do
     role=${pair%%:*}
     var=${pair#*:}
     eval "pw=\${$var:-}"
@@ -217,6 +218,8 @@ cmd_demo() {
   { echo "BEGIN;"; cat "$REPO/db/examples/demo-packline.sql"; echo; echo "COMMIT;"; } | sql
   props=$(sql -At -c "SELECT count(*) FROM config.vw_runtime_model WHERE topic LIKE 'acme/melbourne/packing/packline01/%' AND cache_key IS NOT NULL")
   echo "Demo line ready: $props properties on acme/melbourne/packing/packline01, read from linesim_m1 ... linesim_m6."
+  sync_role_passwords
+  [ -n "${OFM_DEMO_DB_PASSWORD:-}" ] || echo "WARNING: OFM_DEMO_DB_PASSWORD is not set: the simulator cannot start work orders. Run make-env.sh, then docker compose up -d." >&2
   echo "The simulator must run: COMPOSE_PROFILES containing demo in .env, then docker compose up -d"
 }
 

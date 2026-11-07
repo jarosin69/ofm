@@ -19,6 +19,20 @@
   ],
   "freeRunSku": "mix250",
   "lineOutput": "closer",
+  "orders_about": "Work orders (step 3a.5): with follow on, the line makes only what OFM's active order asks for and stops at its planned quantity of good cartons at the closer. ofmLine = the line's topic in OFM (change it if you rename the line in Mathesar). The auto-operator starts the plan's next order, in turn, delayMin minutes after the line has run out of work inside the shift pattern.",
+  "orders": {
+    "follow": true,
+    "ofmLine": "acme/melbourne/packing/packline01",
+    "autoOperator": {
+      "enabled": true,
+      "delayMin": 2,
+      "plan": [
+        { "sku": "mix250", "qty": 6000 },
+        { "sku": "mix500", "qty": 4000 },
+        { "sku": "mix150", "qty": 5000 }
+      ]
+    }
+  },
   "quality": { "weightSigmaPct": 0.8, "rejectBelowPct": -2, "rejectAbovePct": 5 },
   "palletCases": 60,
   "unknownFaultPct": 10,

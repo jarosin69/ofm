@@ -55,6 +55,17 @@ const LINE_SETUP = [
   { as: "ofm_config", sql: ADD_MACHINES },
   { as: "ofm_config", sql: ADD_FEEDS },
   { as: "ofm_config", sql: ADD_COUNTERS }];
+// Work orders (migration 015): product zz_mix with a rate on the test line.
+const ADD_RATE = "INSERT INTO config.material_line_rate (line_id, material_id, rate_per_hour, valid_from) VALUES ($line, " + ZZ_MIX + ", 6000, '2026-01-01')";
+const ADD_ORDER = n => "INSERT INTO config.work_order (wo_number, line_id, material_id, planned_qty) VALUES ('" + n + "', $line, " + ZZ_MIX + ", 1000)";
+const WO = n => "(SELECT id FROM config.work_order WHERE wo_number = '" + n + "')";
+const START = n => "SELECT config.fn_work_order_start(" + WO(n) + ", 'tester') AS ts";
+const WO_EVENTS = "SELECT w.wo_number, e.event_type, e.entered_by, e.ts = now() AS now FROM hist.work_order_event e JOIN config.work_order w ON w.id = e.work_order_id WHERE w.line_id = $line ORDER BY w.wo_number, e.event_type";
+const ORDER_SETUP = [
+  { as: "ofm_config", sql: ADD_PRODUCT },
+  { as: "ofm_config", sql: ADD_RATE },
+  { as: "ofm_config", sql: ADD_ORDER("wo1") },
+  { as: "ofm_config", sql: ADD_ORDER("wo2") }];
 const EVENT = (ts, state, cause) =>
   "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES ($machine, '" + ts + "', " + state + ", '" + (cause || "rule") + "') ON CONFLICT (machine_id, ts) DO NOTHING";
 
@@ -341,6 +352,70 @@ const CASES = [
   { name: "KPI rule: the output machine must be a machine of the same line", steps: [
     { as: "ofm_config", sql: "INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, output_machine_id) VALUES ($line, '2026-01-01', $machine, -1)", expect: NO_SUCH_PARENT }] },
 
+  // --- work orders (migration 015, step 3a.5) -------------------------------------------------
+  { name: "work orders: only products; planned in the model by ofm_config; started only through the functions", steps: [
+    ...ORDER_SETUP,
+    { as: "ofm_config", sql: "INSERT INTO config.material (code, name, material_type, base_unit_id) VALUES ('zz_film', 'Film', 'packaging', " + PCS + ")" },
+    { as: "ofm_config", sql: "INSERT INTO config.work_order (wo_number, line_id, material_id, planned_qty) VALUES ('wo3', $line, (SELECT id FROM config.material WHERE code = 'zz_film'), 10)", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: START("wo1"), expect: NO_PERMISSION },
+    { as: "ofm_config", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'start', now(), 'x')", expect: NO_PERMISSION },
+    { as: "ofm_reader", sql: START("wo1"), expect: NO_PERMISSION },
+    { as: "ofm_runtime", sql: START("wo1") },
+    { as: "ofm_reader", sql: WO_EVENTS, expect: r => r.length === 1 && r[0].event_type === "start" && r[0].entered_by === "tester" }] },
+  { name: "work orders: no start without a rated speed for the product on the line", steps: [
+    { as: "ofm_config", sql: ADD_PRODUCT },
+    { as: "ofm_config", sql: ADD_ORDER("wo1") },
+    { as: "ofm_runtime", sql: START("wo1"), expect: REFUSED_BY_RULE }] },
+  { name: "work orders: starting one completes the line's running order at the same time; never started twice", steps: [
+    ...ORDER_SETUP,
+    { as: "ofm_runtime", sql: START("wo1") },
+    { as: "ofm_runtime", sql: START("wo2") },
+    { as: "ofm_reader", sql: WO_EVENTS,
+      expect: r => r.map(x => x.wo_number + ":" + x.event_type).join() === "wo1:complete,wo1:start,wo2:start" && r.every(x => x.now) },
+    { as: "ofm_runtime", sql: START("wo2"), expect: REFUSED_BY_RULE },
+    { as: "ofm_runtime", sql: START("wo1"), expect: REFUSED_BY_RULE }] },
+  { name: "work orders: once started, line and product are locked and the order cannot be deleted; the quantity may change", steps: [
+    ...ORDER_SETUP,
+    { as: "ofm_config", sql: "UPDATE config.work_order SET planned_qty = 2000 WHERE wo_number = 'wo2'" },
+    { as: "ofm_config", sql: "DELETE FROM config.work_order WHERE wo_number = 'wo2'" },
+    { as: "ofm_runtime", sql: START("wo1") },
+    { as: "ofm_config", sql: "UPDATE config.work_order SET material_id = (SELECT id FROM config.material WHERE code = 'zz_mix') WHERE wo_number = 'wo1'" },
+    { as: "ofm_config", sql: "INSERT INTO config.line (area_id, name, display_name) VALUES ($area, 'line2', 'Line 2')" },
+    { as: "ofm_config", sql: "UPDATE config.work_order SET line_id = (SELECT id FROM config.line WHERE name = 'line2' AND area_id = $area) WHERE wo_number = 'wo1'", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "UPDATE config.work_order SET planned_qty = 1500 WHERE wo_number = 'wo1'" },
+    { as: "ofm_config", sql: "DELETE FROM config.work_order WHERE wo_number = 'wo1'", expect: NO_SUCH_PARENT }] },
+  { name: "work orders: the first changeover_end counts; none before the start or after the completion", steps: [
+    ...ORDER_SETUP,
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'changeover_end', now(), 'ofm')", expect: REFUSED_BY_RULE },
+    { as: "ofm_runtime", sql: START("wo1") },
+    { as: "ofm_runtime", sql: "SELECT config.fn_work_order_changeover_end(" + WO("wo1") + ", 'operator') AS ts" },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'changeover_end', now() + interval '1 minute', 'ofm') ON CONFLICT (work_order_id, event_type) DO NOTHING" },
+    { as: "ofm_runtime", sql: "SELECT config.fn_work_order_changeover_end(" + WO("wo1") + ", 'operator 2') AS ts", expect: r => r[0].ts !== null },
+    { as: "ofm_reader", sql: "SELECT entered_by FROM hist.work_order_event WHERE event_type = 'changeover_end' AND work_order_id = " + WO("wo1"),
+      expect: r => r.length === 1 && r[0].entered_by === "operator" },
+    { as: "ofm_runtime", sql: START("wo2") },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'changeover_end', now(), 'x') ON CONFLICT DO NOTHING", expect: REFUSED_BY_RULE },
+    { as: "ofm_runtime", sql: "SELECT config.fn_work_order_complete(" + WO("wo2") + ", 'tester') AS ts" },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo2") + ", 'changeover_end', now(), 'ofm')", expect: REFUSED_BY_RULE }] },
+  { name: "work order events: append-only for the runtime", steps: [
+    ...ORDER_SETUP,
+    { as: "ofm_runtime", sql: START("wo1") },
+    { as: "ofm_runtime", sql: "UPDATE hist.work_order_event SET entered_by = 'x'", expect: NO_PERMISSION },
+    { as: "ofm_runtime", sql: "DELETE FROM hist.work_order_event", expect: NO_PERMISSION }] },
+  { name: "work orders: each line's newest order, active and in changeover, with its rate and the counter that ends the changeover", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: KPI_RULE("2026-01-01", "mach3") },
+    ...ORDER_SETUP,
+    { as: "ofm_runtime", sql: "SELECT config.fn_work_order_start_new($line, 'zz_mix', 500, 'operator') AS id" },
+    { as: "ofm_runtime", sql: "SELECT line_topic, active, changeover, planned_qty, rate_per_hour, wo_number, " +
+        "good_property_id = (SELECT p.id FROM config.machine_property p WHERE p.machine_id = " + MACH("mach3") + " AND p.role = 'count_good') AS good_ok " +
+        "FROM hist.vw_line_work_order WHERE line_id = $line",
+      expect: r => r.length === 1 && r[0].line_topic === "zz_test/site1/area1/line1" && r[0].active && r[0].changeover && r[0].planned_qty === 500 &&
+                   Number(r[0].rate_per_hour) === 6000 && /^adhoc-[0-9]+$/.test(r[0].wo_number) && r[0].good_ok },
+    { as: "ofm_runtime", sql: "SELECT config.fn_work_order_complete((SELECT work_order_id FROM hist.vw_line_work_order WHERE line_id = $line), 'operator') AS ts" },
+    { as: "ofm_reader", sql: "SELECT active, changeover FROM hist.vw_line_work_order WHERE line_id = $line",
+      expect: r => r.length === 1 && r[0].active === false && r[0].changeover === false }] },
+
   // --- audit (Overview §11) -----------------------------------------------------------------
   { name: "a model change is audited with old and new values", steps: [
     { as: "ofm_config", sql: "UPDATE config.machine_property SET alarm_high = 75 WHERE id = $temp" },
@@ -452,8 +527,9 @@ module.exports.run = async function (t) {
     const silent = (await db.query(
       "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
       "WHERE n.nspname = 'config' AND c.relkind IN ('r', 'p') AND NOT EXISTS (" +
-      "SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'trg_notify_model_changed') ORDER BY 1")).rows;
-    t.check("every configuration table notifies the runtime of changes (step 2.1)", silent.length === 0,
+      "SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'trg_notify_model_changed') ORDER BY 1")).rows
+      .filter(r => r.relname !== "work_order");   // not part of the runtime model; its events notify on their own channel (migration 015)
+    t.check("every configuration table notifies the runtime of changes (step 2.1; work orders by their events)", silent.length === 0,
       "no trigger on: " + silent.map(r => r.relname).join(", "));
 
     // --- cases ------------------------------------------------------------------------

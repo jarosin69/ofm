@@ -341,6 +341,32 @@ simulator running and the queries in demo README section 12.
 | CT6 | **Runtime outage:** note the closer's `CountGood` in the panel or MQTT Explorer; `docker compose stop nodered`; wait 2 minutes; `docker compose start nodered`; after 2 more minutes note `CountGood` again | the closer's `count_good` minutes from before the stop to now add up to the difference of the two readings (give or take the cartons of the minute still open); the units made during the stop are in the first minute after the start |
 | CT7 | `docker compose run --rm test live` | all checks pass, including *counts per minute* for the demo |
 
+**Step 3a.5, work orders** (migration 015; ADR-0010 and ADR-0023
+amendments). Automated: `flows` (`workorders`: the active order on
+`…/workorder`, the changeover closed at the first good unit after 10 s,
+renamed and removed lines, retry; `linesim-orders`: the simulator follows
+orders, stops at the quantity, waits without one, the auto-operator, the
+panel's Start and Complete, the UNS connection, the database calls);
+`database` (orders only for products, started only through the functions,
+starting completes the running order, no start without a rated speed,
+locked after the start, the first changeover_end counts, events
+append-only, each line's newest order; the demo's role `ofm_demo` may do
+nothing else; `demo-remove` takes orders, schema and role); `live` (the
+retained order equals the database's). By hand, with the queries in demo
+README section 13, *Work orders*.
+
+| # | Do | Expect |
+|---|---|---|
+| WO1 | In `C:\ofm\deploy`: `docker run --rm -v "${PWD}:/work" -w /work alpine:3.22 sh make-env.sh`, then `docker compose up -d`, `docker compose logs migrate`, `docker compose restart nodered linesim` | make-env adds `OFM_DEMO_DB_PASSWORD`; `Applying 015-work-orders.sql` |
+| WO2 | `docker compose run --rm migrate demo` | `Role passwords set from .env: … ofm_demo`; no warning about `OFM_DEMO_DB_PASSWORD` |
+| WO3 | `docker compose run --rm test offline`, then `docker compose run --rm test database` | all checks pass |
+| WO4 | Panel (`https://localhost:1881/dashboard`), inside the shift pattern or with it off: the order row | *Follow OFM work orders: on*, *Auto-operator: on*; with no order the badge says WAITING FOR ORDER and *next mix250 × 6000 in 1:59* counts down |
+| WO5 | Wait for it (or *Start order* mix500 × 300, *Start*) | within seconds the row shows the order, the badge CHANGEOVER and the countdown; MQTT Explorer: `…/packline01/workorder` with `"changeover": true` |
+| WO6 | For a quick test: product list = the order's product, minutes 1, *Change over*; wait about 2 minutes | at the first good carton at the closer `"changeover": false`; the order query shows `changeover_end` by `ofm` |
+| WO7 | With a small order (mix500 × 300) let it finish | the line stops at 300 good cartons (badge WAITING FOR ORDER); the line-count query adds up to 300 for the order's minutes; 2 minutes later the auto-operator starts the next order, which completes this one (`completed_by` auto-operator) |
+| WO8 | *Complete* | `…/workorder` becomes `{"active": false, …}`; the line waits; with the auto-operator on, the next order starts 2 minutes later |
+| WO9 | `docker compose run --rm test live` | all checks pass, including *demo work order: retained on …/workorder* |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

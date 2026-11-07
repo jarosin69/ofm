@@ -13,7 +13,9 @@
 -- closer); its shift pattern
 -- (Mon-Fri 06:00-22:00, cleaning 21:30-22:00, Melbourne time); and the flow
 -- order of the machines (ADR-0024); each machine's property roles, heartbeat
--- and state rules (ADR-0006, ADR-0025). Rename anything in Mathesar afterwards:
+-- and state rules (ADR-0006, ADR-0025); and the simulator's database role
+-- ofm_demo with the functions it may call (schema demo: start and complete
+-- work orders, step 3a.5). Rename anything in Mathesar afterwards:
 -- history is kept by ID (ADR-0004).
 -- Running it again changes nothing that is already there.
 
@@ -182,6 +184,61 @@ FROM demo_line,
 WHERE NOT EXISTS (SELECT 1 FROM config.line_schedule w
                   WHERE w.line_id = demo_line.id AND w.kind = v.kind
                     AND w.start_time = v.start_time AND w.end_time = v.end_time);
+
+-- The simulator's own door into OFM (ADR-0023): the role ofm_demo may call
+-- the functions of schema demo and nothing else. They run with fixed rights
+-- (SECURITY DEFINER), like a key switch that allows exactly one operation;
+-- the audit log and the events record what they did. Its password is set
+-- from OFM_DEMO_DB_PASSWORD in .env (migrate.sh).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ofm_demo') THEN
+    CREATE ROLE ofm_demo LOGIN;
+  END IF;
+END $$;
+CREATE SCHEMA IF NOT EXISTS demo;
+REVOKE ALL ON SCHEMA demo FROM PUBLIC;
+GRANT USAGE ON SCHEMA demo TO ofm_demo;
+
+-- The operator's "start this product, this many" (step 3a.5): an order is
+-- created and started on the demo line (config.fn_work_order_start_new),
+-- which completes the running one. Called by the auto-operator and by the
+-- panel's Start order. Returns the new order's id.
+CREATE OR REPLACE FUNCTION demo.start_order(p_sku text, p_planned_qty integer, p_entered_by text)
+RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $fn$
+DECLARE line integer;
+BEGIN
+  SELECT l.id INTO line
+  FROM config.line l JOIN config.area a ON a.id = l.area_id
+  JOIN config.site s ON s.id = a.site_id JOIN config.enterprise e ON e.id = s.enterprise_id
+  WHERE e.name = 'acme' AND s.name = 'melbourne' AND a.name = 'packing' AND l.name = 'packline01' AND l.retired_at IS NULL;
+  IF line IS NULL THEN
+    RAISE EXCEPTION 'the demo line acme/melbourne/packing/packline01 is not in the model' USING ERRCODE = 'no_data_found';
+  END IF;
+  RETURN config.fn_work_order_start_new(line, p_sku, p_planned_qty, left(p_entered_by, 128));
+END $fn$;
+
+-- The operator's "Complete" without a next order: the line then waits.
+CREATE OR REPLACE FUNCTION demo.complete_order(p_entered_by text)
+RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $fn$
+DECLARE wo integer;
+BEGIN
+  SELECT work_order_id INTO wo
+  FROM hist.vw_line_work_order w JOIN config.line l ON l.id = w.line_id
+  JOIN config.area a ON a.id = l.area_id JOIN config.site s ON s.id = a.site_id JOIN config.enterprise e ON e.id = s.enterprise_id
+  WHERE e.name = 'acme' AND s.name = 'melbourne' AND a.name = 'packing' AND l.name = 'packline01' AND w.active;
+  IF wo IS NULL THEN RETURN NULL; END IF;
+  PERFORM config.fn_work_order_complete(wo, left(p_entered_by, 128));
+  RETURN wo;
+END $fn$;
+REVOKE ALL ON FUNCTION demo.start_order(text, integer, text), demo.complete_order(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION demo.start_order(text, integer, text), demo.complete_order(text) TO ofm_demo;
 
 -- Working tables of this script only.
 DROP VIEW demo_line;

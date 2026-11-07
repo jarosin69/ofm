@@ -248,11 +248,17 @@ The **auto-operator** (on/off in the panel) does steps 1 and 5 by itself
 from a production plan in `line.json`, through `demo.start_order(...)`, so
 the line can run unattended for weeks with realistic changeovers.
 
+*As built (step 3a.5):* until OFM's line view exists (step 3a.8), the
+panel's *Start order* and *Complete* stand in for the operator; step 4's
+*Changeover done* button comes with the line view. Starting an order
+completes the running one, so step 5 is one action. Operating details:
+section 13, *Work orders*.
+
 ## 8. Screens
 
 | Screen | Where | Shows |
 |---|---|---|
-| Simulator control panel | linesim, `https://<server>:1881/dashboard` | the line with conveyor levels; per machine: speed %, MTBF, MTTR, jams/h, rejects; buttons *Break*, *Break and hold*, *Jam*, *Repair*; run/stop the line, stop the simulator, shift pattern on/off, product changeover, presets; this hour's output against rated *(built, step 3a.1)*. Later: backend per machine (3a.9), auto-operator (3a.5), the simulator's own OEE (3a.10) |
+| Simulator control panel | linesim, `https://<server>:1881/dashboard` | the line with conveyor levels; per machine: speed %, MTBF, MTTR, jams/h, rejects; buttons *Break*, *Break and hold*, *Jam*, *Repair*; run/stop the line, stop the simulator, shift pattern on/off, product changeover, presets; this hour's output against rated *(built, step 3a.1)*; work orders: follow on/off, auto-operator, start and complete an order *(built, step 3a.5)*. Later: backend per machine (3a.9), the simulator's own OEE (3a.10) |
 | Line view | OFM, `https://<server>:1880/dashboard` | the line drawn from the UNS only: machine colours by state, speeds, counts, fault; active order with *Start*, *Changeover done*, *Complete*; stops waiting for a reason |
 | Line OEE | Grafana | OEE with availability, performance and quality per shift and hour; loss waterfall; downtime Pareto by reason and by machine; MTBF and MTTR per machine |
 
@@ -417,6 +423,7 @@ the top left of the panel shows the result.
 | OFF SHIFT | shift pattern on, outside Mon–Fri 06:00–22:00 | all idle (grey) |
 | CLEANING | shift pattern on, 21:30–22:00 | all cleaning (teal) |
 | CHANGEOVER | a changeover is counting down | all setup (blue) |
+| WAITING FOR ORDER | *Follow OFM work orders* on, and no active order, or its planned quantity is made | all idle (grey) |
 | RUN | none of the above | producing, with random breakdowns, jams, shortages and rejects |
 
 ### The buttons at the top
@@ -498,15 +505,60 @@ of rated output on average, about ±10 points on any one day.
 A changeover can start while the line is running or stopped. The conveyors
 are not emptied: cartons of the old product finish their way down the line
 (a simplification). The countdown is clock time, so it keeps running while
-the line is stopped or off shift. From step 3a.5 changeovers normally start
-from OFM's work orders and the simulator follows them; the panel's *Change
-over* stays for testing without OFM.
+the line is stopped or off shift. Since step 3a.5 changeovers normally
+start from OFM's work orders and the simulator follows them (below); the
+panel's *Change over* stays for testing.
+
+### Work orders (step 3a.5)
+
+OFM owns the work orders; the simulator plays the line and its operator.
+The blue-grey row under the top bar shows the active order (number,
+product, cartons made of planned) and three controls.
+
+- **Follow OFM work orders: on** (the default). The line makes only what
+  OFM's active order asks for: a new product means a changeover; at the
+  planned quantity of good cartons at the closer the line stops; with no
+  active order it waits (badge WAITING FOR ORDER). *Off*: the line runs
+  freely, as before step 3a.5, for testing the simulator alone.
+- **Auto-operator: on** (the default). When the line has run out of work
+  inside the shift pattern, it waits 2 minutes (an operator's reaction) and
+  starts the next order of the plan in `line.json` (`orders.autoOperator`:
+  mix250 × 6000, mix500 × 4000, mix150 × 5000, in turn), which completes the
+  finished one. The panel shows the next order and when it starts. With it
+  on and the shift pattern on, the line runs unattended for weeks with
+  realistic changeovers.
+- **Start order** (product, quantity, *Start*) and **Complete** do what an
+  operator will do on OFM's line view (step 3a.8): *Start* creates the
+  order in OFM and starts it, completing the running one; *Complete* ends
+  the running one, and the line waits.
+
+What happens with an order: the simulator asks OFM's database
+(`demo.start_order`, as the role `ofm_demo`); OFM records the start and
+publishes the order on `acme/melbourne/packing/packline01/workorder`; the
+simulator reads that and changes over. OFM closes the changeover window at
+the first good carton at the closer (`changeover_end`, entered by `ofm`).
+A red message in the row means the database refused, e.g. *the demo is
+not loaded in OFM* or a password problem (`OFM_DEMO_DB_PASSWORD`, step
+3a.5 in `tests/README.md`).
+
+The orders and their events, in Melbourne time:
+
+```sql
+SELECT wo_number, sku, planned_qty,
+       started_at AT TIME ZONE 'Australia/Melbourne' AS started,
+       changeover_end_at AT TIME ZONE 'Australia/Melbourne' AS changeover_end,
+       completed_at AT TIME ZONE 'Australia/Melbourne' AS completed, started_by
+FROM hist.vw_work_order_interval ORDER BY started_at DESC LIMIT 10;
+```
+
+The panel's *Change over* still changes the product without an order (for
+testing); with *Follow* on, the next order's product wins.
 
 ### What restarts do
 
 | Action | Counters | Product | Panel settings and presets |
 |---|---|---|---|
-| `docker compose restart linesim` | back to 0 | back to mix250 | back to `line.json` |
+| `docker compose restart linesim` | back to 0 | back to mix250, then the active order's | back to `line.json`; the active order's full quantity is made again |
 | *New run* | back to 0 | kept | kept |
 | Preset *As in line.json* | kept | kept | back to `line.json` |
 

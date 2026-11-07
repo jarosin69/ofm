@@ -39,6 +39,7 @@ add OFM_RUNTIME_DB_PASSWORD    "$(pw)"    "Database roles; set from this file at
 add OFM_CONFIG_DB_PASSWORD     "$(pw)"
 add OFM_READER_DB_PASSWORD     "$(pw)"
 add OFM_MATHESAR_DB_PASSWORD   "$(pw)"
+add OFM_DEMO_DB_PASSWORD       "$(pw)"    "The demo simulator's database role (ofm_demo), used only with COMPOSE_PROFILES containing demo"
 add OFM_MQTT_RUNTIME_PASSWORD  "$(pw)"    "MQTT users; set from this file at every start"
 add OFM_MQTT_READER_PASSWORD   "$(pw)"
 add NODERED_ADMIN_USER         admin      "Node-RED editor login"

@@ -1,6 +1,6 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-06. Update this file at the end of every working session.*
+*Updated: 2026-11-06 (evening). Update this file at the end of every working session.*
 
 **▶ We are here: Phase 3a, detailed design for review.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
@@ -23,9 +23,13 @@ frozen-data detection in the runtime flow, `…/{machine}/state` with its
 schema; MS1–MS7 and drill F1 passed on the laptop 2026-11-05 (drill F2,
 bench S7 in STOP, still to do). **Step 3a.4 built:** migration 014
 (production counts per counter and minute, the line's output machine, line
-good and reject), node *counts* in the runtime, ADR-0026; tested on the
-replica; next: checks CT1–CT7 on the laptop, then step 3a.5, work orders.
-Stage C
+good and reject), node *counts* in the runtime, ADR-0026; CT1–CT7 passed
+on the laptop 2026-11-06. **Step 3a.5 built:** migration 015 (work orders,
+append-only execution events, the functions that record them), node *work
+orders* in the runtime (`…/workorder`, changeover closed at the first good
+carton), and the simulator following orders with an auto-operator; tested
+on the replica; next: checks WO1–WO9 on the laptop, then step 3a.6,
+reasons. Stage C
 decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
 
 ## The plan in one view
@@ -190,8 +194,8 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.1 | Simulator: line engine, six simulated OPC UA PLCs, `line.json`, Compose profile `demo`, HTTPS port 1881 (part 1); control panel with presets and commands (part 2) | ✅ 2026-11-03 (P1–P11 on the laptop) |
 | 3a.2 | Production context and demo model: `config.material` with `material_type` (ADR-0014), rated speeds per line, shift calendar, flow order (`feeds`), constraint machine, minor-stop threshold; `migrate demo` / `demo-remove` | ✅ 2026-11-05 (migration 012; PC1–PC7 on the laptop) |
 | 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ✅ 2026-11-05 (migration 013; MS1–MS7 and F1 on the laptop; F2 to do with the bench S7) |
-| 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ▶ built 2026-11-06 (migration 014, ADR-0026), tested on the replica; CT1–CT7 on the laptop to do |
-| 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ⬜ |
+| 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ✅ 2026-11-06 (migration 014, ADR-0026; CT1–CT7 on the laptop) |
+| 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ▶ built 2026-11-06 (migration 015), tested on the replica; WO1–WO9 on the laptop to do |
 | 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ⬜ |
 | 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ⬜ |
 | 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ⬜ |
@@ -266,8 +270,8 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 3a.4 on the laptop: checks CT1–CT7 (tests/README, Phase 3a);
-   then step 3a.5, work orders. Drill F2 (bench S7-1200 in STOP) when the
+1. Step 3a.5 on the laptop: checks WO1–WO9 (tests/README, Phase 3a);
+   then step 3a.6, reasons. Drill F2 (bench S7-1200 in STOP) when the
    bench is next set up.
 2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
    the management decision at C0).
@@ -287,7 +291,6 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 7 | Minor-stop threshold per line: 5 min assumed (ADR-0009); now a setting of each line's KPI rule (`config.line_kpi_rule`, default 300 s) — confirm 5 min for the real lines | Plant pilot |
 | 8 | Source of good and reject counts per line: PLC counters with a count role, per minute (ADR-0026, step 3a.4); still open: manual reject entry (rejects not counted by any PLC) | Phase 3a |
 | 9 | Source of rated speeds, shift calendar and schedule: manual in Mathesar for now (`material_line_rate`, `line_schedule`, migration 012); ERP/SAP later | ERP integration |
-| 10 | Ramp-up after a changeover: inside the changeover window, or speed loss (ADR-0010) | Phase 3a |
 | 11 | Defined capacity per line for CU: manual or from ERP/SAP | Phase 3b |
 | 12 | Verify KPI terminology against ISO 22400-2 (ADR-0008) | Going public |
 | 13 | Schemas still to write: line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
@@ -587,6 +590,16 @@ Numbers are stable; answered questions are removed rather than renumbered.
   other failure there was the demo still loaded without its output machine
   (CT3 not yet done); checks CT2 and CT3 swapped, and the check now says
   what to do.
+- Step 3a.5 was tested on the local replica: `flows` 304 checks (new:
+  `workorders`, `linesim-orders`; the earlier simulator tests now run with
+  *follow* off), `database` 93, `live` with the new work order check (the
+  same 10 replica-only failures). End to end: *Start order* mix500 × 300
+  in the panel → order in the database → `…/workorder` → the simulator
+  changed over; `changeover_end` by `ofm` at the first good carton; the
+  line stopped at exactly 300 good cartons (31 + 78 + 59 + 10 + 78 + 44 in
+  the minute counts); the auto-operator started mix250 × 6000 2 minutes
+  later, completing the first order. Open question 10 answered in the
+  ADR-0010 amendment: ramp-up after the first good carton is speed loss.
 - Docker Desktop stays on the laptop for development (decided 2026-11-02).
   Its licence applies to development use too: within an organisation above
   Docker's small-business limit, the laptop needs a paid seat.

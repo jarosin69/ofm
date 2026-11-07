@@ -31,6 +31,9 @@ const COUNTS = `
          (SELECT count(*) FROM hist.machine_state_event e JOIN config.machine m ON m.id = e.machine_id
           WHERE m.line_id IN (SELECT id FROM line))::int AS state_events,
          (SELECT count(*) FROM hist.vw_production_count WHERE line_id IN (SELECT id FROM line))::int AS counts,
+         (SELECT count(*) FROM config.work_order WHERE line_id IN (SELECT id FROM line))::int AS orders,
+         (SELECT count(*) FROM pg_namespace WHERE nspname = 'demo')::int AS demo_schema,
+         (SELECT count(*) FROM pg_roles WHERE rolname = 'ofm_demo')::int AS demo_role,
          (SELECT name FROM config.machine WHERE id = (SELECT constraint_machine_id FROM config.line_kpi_rule
            WHERE line_id IN (SELECT id FROM line) LIMIT 1)) AS constraint_machine`;
 
@@ -58,6 +61,13 @@ module.exports.run = async function (t) {
     t.check("demo line: good counted at the closer, rejects from the filler to the closer (step 3a.4)",
             lc.counters === "closer:good,checkweigher:reject,closer:reject,filler:reject",
             lc.counters + (/^filler:good/.test(lc.counters || "") ? " - the demo was loaded before step 3a.4: run migrate demo-remove, then migrate demo" : ""));
+    const door = (await db.query(`SELECT has_function_privilege('ofm_demo', 'demo.start_order(text, integer, text)', 'EXECUTE') AS start,
+        has_function_privilege('ofm_demo', 'demo.complete_order(text)', 'EXECUTE') AS complete,
+        has_table_privilege('ofm_demo', 'config.work_order', 'SELECT') AS read_orders,
+        has_function_privilege('ofm_demo', 'config.fn_work_order_start(integer, text)', 'EXECUTE') AS start_any,
+        has_table_privilege('ofm_demo', 'config.plc_mapping', 'SELECT') AS read_model`)).rows[0];
+    t.check("demo: the simulator's role ofm_demo may start and complete the demo line's orders, nothing else (step 3a.5)",
+            door.start && door.complete && !door.read_orders && !door.start_any && !door.read_model, JSON.stringify(door));
     t.check("demo line: 6 roles per machine, a 5 s heartbeat, 8 state rules per machine (step 3a.3)",
             once.roles === 36 && once.heartbeats === 6 && once.state_rules === 48, JSON.stringify(once));
     await db.query(read("demo-packline.sql"));
@@ -89,6 +99,13 @@ module.exports.run = async function (t) {
       SELECT date_trunc('minute', now()) - interval '10 days', p.id, 5, 5 FROM config.machine_property p
       JOIN config.machine m ON m.id = p.machine_id JOIN config.line l ON l.id = m.line_id
       WHERE l.name = 'packline01' AND p.role = 'count_good' ON CONFLICT DO NOTHING`);
+    const started = (await db.query("SELECT demo.start_order('mix500', 100, 'test') AS id")).rows[0].id;
+    await db.query("SELECT demo.start_order('mix250', 100, 'test')");
+    const orders = (await db.query(`SELECT line_topic, sku, active FROM hist.vw_line_work_order w
+      JOIN config.line l ON l.id = w.line_id WHERE l.name = 'packline01' AND l.retired_at IS NULL`)).rows;
+    t.check("demo.start_order starts an order on the demo line, completing the running one",
+            started > 0 && orders.length === 1 && orders[0].sku === "mix250" && orders[0].active && orders[0].line_topic === "acme/melbourne/packing/packline01",
+            JSON.stringify(orders));
     await db.query("SAVEPOINT before_remove");
     await db.query(read("demo-packline-remove.sql"));
     // While the removal is open, a value written by anyone else must wait
@@ -113,6 +130,8 @@ module.exports.run = async function (t) {
             gone.lines === 0 && gone.machines === 0 && gone.mapped === 0 && gone.sources === 0 && gone.products === 0, JSON.stringify(gone));
     t.check("demo-remove takes away its state rules, state events and counts too",
             gone.state_rules === 0 && gone.state_events === 0 && gone.counts === 0, JSON.stringify(gone));
+    t.check("demo-remove takes away its work orders, schema demo and role ofm_demo",
+            gone.orders === 0 && gone.demo_schema === 0 && gone.demo_role === 0, JSON.stringify(gone));
     t.check("demo-remove leaves the rest of the model alone (eggline01, if loaded, is still there)",
             eggline === (await (async () => { await db.query("ROLLBACK TO SAVEPOINT before_remove");
               return (await db.query("SELECT count(*)::int AS n FROM config.line WHERE name = 'eggline01'")).rows[0].n; })()), eggline);

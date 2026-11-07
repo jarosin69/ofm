@@ -66,6 +66,7 @@ services:
       OFM_CONFIG_DB_PASSWORD: ${OFM_CONFIG_DB_PASSWORD}
       OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD}
       OFM_MATHESAR_DB_PASSWORD: ${OFM_MATHESAR_DB_PASSWORD:?run make-env.sh to add OFM_MATHESAR_DB_PASSWORD to .env}
+      OFM_DEMO_DB_PASSWORD: ${OFM_DEMO_DB_PASSWORD:-}   # the demo simulator's role, only if the demo is loaded
       # Historian retention, set after every run (step 2.5). Lengthening is
       # safe; shortening DELETES the older data at the next daily run.
       OFM_RAW_RETENTION_DAYS: ${OFM_RAW_RETENTION_DAYS:-365}
@@ -331,6 +332,10 @@ services:
       FLOWS: /demo/linesim-flows.json                  # the simulator's flows (ADR-0016); Deploy writes here
       OFM_LINESIM_CONFIG: /demo/line.json               # the line: machines, speeds, failures, products
       OFM_LINESIM_PKI_DIR: /data/linesim-pki            # the simulated PLCs' OPC UA certificates
+      # Work orders (step 3a.5): reads .../workorder as OFM's read-only MQTT
+      # user; starts orders through the demo's database functions (role ofm_demo).
+      OFM_MQTT_READER_PASSWORD: ${OFM_MQTT_READER_PASSWORD:?set OFM_MQTT_READER_PASSWORD in .env}
+      OFM_DEMO_DB_PASSWORD: ${OFM_DEMO_DB_PASSWORD:-}
       NODERED_ADMIN_USER: ${NODERED_ADMIN_USER:?set NODERED_ADMIN_USER in .env}
       NODERED_ADMIN_PASSWORD: ${NODERED_ADMIN_PASSWORD:?set NODERED_ADMIN_PASSWORD in .env}
       NODE_RED_CREDENTIAL_SECRET: ${NODE_RED_CREDENTIAL_SECRET:?set NODE_RED_CREDENTIAL_SECRET in .env}

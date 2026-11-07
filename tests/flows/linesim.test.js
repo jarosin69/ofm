@@ -13,12 +13,14 @@ const FLOW = path.join(ROOT, "demo", "packing-line", "linesim-flows.json");
 const LINE = path.join(ROOT, "demo", "packing-line", "line.json");
 const S = { running: 1, idle: 2, blocked: 3, starved: 4, fault: 5, setup: 6, cleaning: 7 };
 
-// A copy of line.json with the shift pattern off and a fixed seed; "ideal"
-// also switches off every random stop and reject.
+// A copy of line.json with the shift pattern off, a fixed seed, and work
+// orders not followed (the line runs freely; orders: linesim-orders.test.js);
+// "ideal" also switches off every random stop and reject.
 function makeLine(change, ideal) {
   const l = readJson(LINE);
   l.seed = 12345;
   l.schedule.enabled = false;
+  l.orders.follow = false;
   if (ideal) {
     l.unknownFaultPct = 0;
     l.quality.weightSigmaPct = 0;
@@ -67,6 +69,8 @@ async function start(line, t0) {
 }
 const by = (snap, name) => snap.machines.find(m => m.name === name);
 
+module.exports.makeLine = makeLine;
+module.exports.start = start;
 module.exports.run = async function (t) {
   // --- line.json ---------------------------------------------------------------------------
   const flow = loadFlow(FLOW);

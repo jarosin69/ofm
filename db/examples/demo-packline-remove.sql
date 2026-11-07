@@ -1,5 +1,6 @@
 -- Removes the simulated packing line (db/examples/demo-packline.sql)
--- completely: its history (values, state events and counts), state rules, mappings,
+-- completely: its history (values, state events, counts, work orders and
+-- their events), state rules, mappings,
 -- properties, KPI rules, rates, schedule,
 -- flow order, machines, line, its sources linesim_m1 ... linesim_m6, the
 -- area "packing" if nothing else is in it, and the demo products if no other
@@ -15,7 +16,8 @@ SET LOCAL ofm.removing = 'on';      -- lets rates and KPI rules in force be dele
 -- queue being replayed) would block the deletion of its properties: the
 -- history tables take no new rows until this removal is done. The runtime
 -- waits a few seconds and then writes what it has; nothing is lost.
-LOCK TABLE hist.measurement, hist.measurement_text, hist.production_count, hist.machine_state_event IN SHARE MODE;
+LOCK TABLE hist.measurement, hist.measurement_text, hist.production_count, hist.machine_state_event,
+           hist.work_order_event IN SHARE MODE;
 
 CREATE TEMP TABLE rm_line AS
 SELECT l.id
@@ -42,6 +44,8 @@ BEGIN
   EXECUTE format('DELETE FROM hist.production_count WHERE property_id = ANY (%L::int[])', ids);
 END $$;
 DELETE FROM hist.machine_state_event WHERE machine_id IN (SELECT id FROM rm_machines);
+DELETE FROM hist.work_order_event WHERE work_order_id IN (SELECT id FROM config.work_order WHERE line_id IN (SELECT id FROM rm_line));
+DELETE FROM config.work_order WHERE line_id IN (SELECT id FROM rm_line);
 DELETE FROM config.machine_state_rule WHERE machine_id IN (SELECT id FROM rm_machines);
 DELETE FROM config.plc_mapping WHERE property_id IN (SELECT id FROM rm_props)
    OR source_id IN (SELECT id FROM config.source WHERE name ~ '^linesim_m[0-9]+$');
@@ -61,5 +65,15 @@ DELETE FROM config.source WHERE name ~ '^linesim_m[0-9]+$';
 DELETE FROM config.material m
 WHERE m.code IN ('mix150', 'mix250', 'mix500')
   AND NOT EXISTS (SELECT 1 FROM config.material_line_rate r WHERE r.material_id = m.id);
+
+-- The simulator's database door (schema demo, role ofm_demo).
+DROP SCHEMA IF EXISTS demo CASCADE;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ofm_demo') THEN
+    EXECUTE format('REVOKE ALL ON DATABASE %I FROM ofm_demo', current_database());
+    DROP ROLE ofm_demo;
+  END IF;
+END $$;
 
 DROP TABLE rm_line, rm_machines, rm_props;
