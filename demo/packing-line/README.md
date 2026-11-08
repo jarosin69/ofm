@@ -582,15 +582,93 @@ FROM hist.fn_line_stops((SELECT id FROM config.line WHERE name = 'packline01' AN
 `cause`: `reason` (the filler's own), `attributed` (charged to
 `charged_to`), `flow` (starved or blocked while its neighbours ran: the
 conveyor refilling), `waiting_for_order`, `unknown`, or `none` (not coded
-yet; a minor stop if short, step 3a.7). To code a stop by hand until the
-line view exists (step 3a.8), e.g. a 999 on the closer, with the event's
-time from `hist.vw_machine_state_interval`:
+yet; a minor stop if short, see the time ledger below). To code a stop by hand until the
+line view exists (step 3a.8), e.g. the closer's latest fault (a 999, or
+correcting the PLC's reason):
 
 ```sql
-SELECT config.fn_assign_reason(
-  (SELECT id FROM config.machine WHERE name = 'closer' AND retired_at IS NULL),
-  '2026-11-07 11:32:54.123+11', 'breakdown_other', 'Jarek', 'motor overload reset');
+SELECT config.fn_assign_reason(e.machine_id, e.ts, 'breakdown_other', 'Jarek', 'motor overload reset')
+FROM hist.machine_state_event e
+WHERE e.machine_id = (SELECT id FROM config.machine WHERE name = 'closer' AND retired_at IS NULL)
+  AND e.state_id = 5                     -- 5 = fault
+ORDER BY e.ts DESC LIMIT 1;
 ```
+
+The panel's *Break* always uses the machine's first fault code; a 999
+(unknown fault) only comes at random.
+
+### Efficiency: the time ledger and KPIs (step 3a.7)
+
+OFM puts every second of the line's time into one position of the loss
+waterfall (ADR-0008, ADR-0009) and calculates the KPIs from it, always from
+the history, so a reason coded late changes the figures at once. The
+filler is the constraint, so its state decides the line's time; cartons
+are counted at the closer (good) and from the filler to the closer
+(rejects).
+
+**Live, in the UNS** (MQTT Explorer), republished every minute:
+`acme/melbourne/packing/packline01/kpi/hour`, `.../kpi/day` (from midnight,
+Melbourne time) and `.../kpi/order` (since the running order started;
+cleared while no order runs). Ratios are 0–1 (`0.712` = 71.2 %).
+
+**Outside the schedule nothing counts.** The demo's schedule is Monday to
+Friday 06:00–22:00 (cleaning 21:30–22:00); outside it every second is
+position 2 (no activity) and the KPIs are empty (`null`), even if the line
+runs. To try it on a weekend, switch *Shift pattern* off in the panel and
+add a production window for today only (remove it afterwards):
+
+```sql
+INSERT INTO config.line_schedule (line_id, kind, sat, sun, start_time, end_time, valid_from, valid_to, note)
+SELECT id, 'production', true, true, '00:00', '23:59', current_date, current_date, 'weekend test'
+FROM config.line WHERE name = 'packline01' AND retired_at IS NULL;
+-- afterwards:
+DELETE FROM config.line_schedule WHERE note = 'weekend test';
+```
+
+**Today's waterfall and KPIs** (the same figures as `.../kpi/day`):
+
+```sql
+SELECT round(pos1_s) AS calendar_s, round(pos2_s) AS no_activity_s, round(pos3_s) AS scheduled_s,
+       round(pos6_s) AS changeover_s, round(pos7_s) AS other_planned_s, round(pos9_s) AS breakdown_s,
+       round(pos12_s) AS minor_stops_s, round(unaccounted_s) AS unaccounted_s, round(running_s) AS running_s,
+       good, reject, round(oee::numeric, 3) AS oee, round(availability::numeric, 3) AS a,
+       round(performance::numeric, 3) AS p, round(quality::numeric, 3) AS q
+FROM hist.fn_line_kpi((SELECT id FROM config.line WHERE name = 'packline01' AND retired_at IS NULL),
+                      date_trunc('day', now() AT TIME ZONE 'Australia/Melbourne') AT TIME ZONE 'Australia/Melbourne', now());
+```
+
+Per hour of today: `hist.fn_line_kpi_series(line, from, to, 'hour')` with
+the same columns plus `period_start` (also `'day'`, `'week'`, `'month'`).
+
+**The time ledger**, slice by slice, for the last 15 minutes:
+
+```sql
+SELECT slice_start AT TIME ZONE 'Australia/Melbourne' AS started, round(duration_s) AS seconds,
+       loss_category_id AS pos, rule, state, reason_name, cause_machine_name AS charged_to, round(stop_s) AS stop_s
+FROM hist.fn_time_ledger((SELECT id FROM config.line WHERE name = 'packline01' AND retired_at IS NULL),
+                         now() - interval '15 minutes', now());
+```
+
+`rule` says why the slice landed in its position: `running` (no position:
+split into speed loss, quality loss and operating time by the counts),
+`reason`, `attributed`, `waiting_for_order` (the reason's position), `flow`
+(12), `changeover` (6), `planned_window` (the cleaning window: 5),
+`minor_stop` (12: a stop of the filler shorter than 5 minutes, not coded),
+`unaccounted` (a longer stop nobody has coded yet), `unknown`,
+`no_activity` (2). `stop_s` is the length of the whole stop the slice
+belongs to.
+
+**Breakdowns per machine** (MTBF in hours, MTTR in minutes), last 24 hours:
+
+```sql
+SELECT machine_name, round(running_s) AS running_s, breakdowns, round(mtbf_h::numeric, 2) AS mtbf_h,
+       round(mttr_min::numeric, 1) AS mttr_min
+FROM hist.fn_machine_reliability((SELECT id FROM config.line WHERE name = 'packline01' AND retired_at IS NULL),
+                                 now() - interval '24 hours', now());
+```
+
+A breakdown is a machine's own stop with a position 9 reason (e.g. the
+erector's glue system fault, 103).
 
 ### What restarts do
 

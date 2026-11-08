@@ -79,6 +79,42 @@ const STOPS = "SELECT to_char(slice_start AT TIME ZONE 'UTC', 'HH24:MI') || '-' 
   "coalesce(' ' || reason_code, '') || coalesce(' @' || cause_machine_name, '') || coalesce(' pos' || loss_category_id, '') AS s " +
   "FROM hist.fn_line_stops($line, '2026-11-01T00:00:00Z', '2026-11-01T02:00:00Z')";
 const stops = r => r.map(x => x.s).join(" | ");
+// Time ledger and KPIs (migration 017): a worked example on Monday 2 Nov 2026,
+// Melbourne time (+11). Scheduled 09:00-10:00, cleaning window 09:50-10:00;
+// product zz_mix at 6000/h (ICT 0.6 s), order started 08:55, changeover
+// ended 09:05; mach1 is the constraint and output. Its states:
+//   08:50 idle | 09:00 setup (changeover window) | 09:05 running |
+//   09:15 fault, coded zz_motor (Pos 9) | 09:20 running | 09:30 idle, 2 min
+//   (minor stop) | 09:32 running | 09:40 fault, uncoded, 7 min (unaccounted) |
+//   09:47 running | 09:50 cleaning (cleaning window) | 10:00 idle (unscheduled)
+// Counts: 2000 good and 50 rejects in scheduled minutes, 500 good at 10:05.
+// Expected for 08:30-10:30: Pos 1 7200, Pos 2 3600, Pos 3 3600, Pos 5 600,
+// Pos 6 300, Pos 8 2700, Pos 9 300, Pos 12 120, unaccounted 420, running
+// 1860, Pos 13 1200, Pos 11 30, Pos 10 630; A 0.68889, P 0.66129,
+// Q 0.97561, OEE 0.44444.
+const L = hhmm => "'2026-11-02 " + hhmm + ":00+11'";
+const EVL = (hhmm, state) => "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES ($machine, " + L(hhmm) + ", " + state + ", 'rule')";
+const COUNT_ROWS = (role, n, from, minutes) => "INSERT INTO hist.production_count (ts, property_id, increment, last_value) " +
+  "SELECT " + L(from) + "::timestamptz + make_interval(mins => g), (SELECT id FROM config.machine_property WHERE machine_id = $machine AND role = '" + role + "'), " +
+  n + ", 1000 + g FROM generate_series(0, " + (minutes - 1) + ") g";
+const LEDGER_SETUP = [
+  ...LINE_SETUP,
+  { as: "ofm_config", sql: RULE_AT("mach1", false) },
+  ...ORDER_SETUP.slice(0, 3),
+  { as: "ofm_config", sql: ADD_REASON("zz_motor", 9, null) },
+  { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, mon, start_time, end_time, valid_from) VALUES ($line, 'production', true, '09:00', '10:00', '2026-01-01')" },
+  { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, mon, start_time, end_time, valid_from) VALUES ($line, 'cleaning', true, '09:50', '10:00', '2026-01-01')" },
+  { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'start', " + L("08:55") + ", 'tester')" },
+  { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'changeover_end', " + L("09:05") + ", 'ofm')" },
+  ...[["08:50", 2], ["09:00", 6], ["09:05", 1], ["09:15", 5], ["09:20", 1], ["09:30", 2], ["09:32", 1], ["09:40", 5], ["09:47", 1], ["09:50", 7], ["10:00", 2]]
+    .map(([t, st]) => ({ as: "ofm_runtime", sql: EVL(t, st) })),
+  { as: "ofm_runtime", sql: "SELECT config.fn_assign_reason($machine, " + L("09:15") + ", 'zz_motor', 'tester') AS at" },
+  { as: "ofm_runtime", sql: COUNT_ROWS("count_good", 100, "09:05", 20) },
+  { as: "ofm_runtime", sql: COUNT_ROWS("count_reject", 50, "09:10", 1) },
+  { as: "ofm_runtime", sql: COUNT_ROWS("count_good", 500, "10:05", 1) }];
+const KPI = "SELECT * FROM hist.fn_line_kpi($line, " + L("08:30") + ", " + L("10:30") + ")";
+const near = (a, b) => a !== null && Math.abs(Number(a) - b) < 0.0001;
+const closes = k => Math.abs(k.pos2_s + k.pos4_s + k.pos5_s + k.pos6_s + k.pos7_s + k.pos9_s + k.pos12_s + k.unaccounted_s + k.running_s - k.pos1_s) < 0.001;
 const EVENT = (ts, state, cause) =>
   "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES ($machine, '" + ts + "', " + state + ", '" + (cause || "rule") + "') ON CONFLICT (machine_id, ts) DO NOTHING";
 
@@ -530,6 +566,67 @@ const CASES = [
     { as: "ofm_runtime", sql: EV("mach1", "01:01", 4) },
     { as: "ofm_runtime", sql: EV("mach1", "01:05", 1) },
     { as: "ofm_reader", sql: STOPS, expect: r => stops(r) === "01:01-01:05 starved none" }] },
+
+  // --- time ledger and KPIs (migration 017, step 3a.7) -------------------------------------------
+  { name: "time ledger: each slice by the first rule that applies (ADR-0009), the worked example", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_reader", sql: "SELECT to_char(slice_start AT TIME ZONE 'Australia/Melbourne', 'HH24:MI') || ' ' || round(duration_s) || ' ' || rule || coalesce(' ' || loss_category_id, '') || coalesce(' ' || reason_code, '') AS s " +
+        "FROM hist.fn_time_ledger($line, " + L("08:30") + ", " + L("10:30") + ")",
+      expect: r => r.map(x => x.s).join(" | ") ===
+        "08:30 1800 no_activity 2 | 09:00 300 changeover 6 | 09:05 600 running | 09:15 300 reason 9 zz_motor | 09:20 600 running | " +
+        "09:30 120 minor_stop 12 | 09:32 480 running | 09:40 420 unaccounted 90 | 09:47 180 running | 09:50 600 planned_window 5 | 10:00 1800 no_activity 2" }] },
+  { name: "line KPIs: the waterfall of the worked example, to the second; it closes; OEE = A x P x Q", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_reader", sql: KPI, expect: r => {
+        const k = r[0];
+        const pos = [k.pos1_s, k.pos2_s, k.pos3_s, k.pos4_s, k.pos5_s, k.pos6_s, k.pos7_s, k.pos8_s, k.pos9_s, k.pos10_s, k.pos11_s, k.pos12_s, k.unaccounted_s, k.pos13_s, k.running_s].map(Math.round).join();
+        return pos === "7200,3600,3600,0,600,300,0,2700,300,630,30,120,420,1200,1860" && k.good === 2000 && k.reject === 50 &&
+          near(k.availability, 1860 / 2700) && near(k.performance, 1230 / 1860) && near(k.quality, 2000 / 2050) && near(k.oee, 1200 / 2700) &&
+          near(k.availability * k.performance * k.quality, k.oee) && closes(k) &&
+          Math.abs(k.pos10_s + k.pos11_s + k.pos13_s - k.running_s) < 0.001 && near(k.downtime_h, 840 / 3600) &&
+          k.kpi_rule_id !== null && k.performance_over_100 === false;
+      } }] },
+  { name: "line KPIs: a correction reclassifies history at once (the uncoded fault coded later)", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_runtime", sql: "SELECT config.fn_assign_reason($machine, " + L("09:40") + ", 'zz_motor', 'supervisor') AS at" },
+    { as: "ofm_reader", sql: KPI, expect: r => Math.round(r[0].pos9_s) === 720 && Math.round(r[0].unaccounted_s) === 0 && closes(r[0]) }] },
+  { name: "line KPIs: a rated speed set too low shows as performance above 100 %, flagged, not clipped", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_runtime", sql: COUNT_ROWS("count_good", 4000, "09:25", 1) },
+    { as: "ofm_reader", sql: KPI, expect: r => r[0].performance > 1 && r[0].pos10_s < 0 && r[0].performance_over_100 === true && closes(r[0]) }] },
+  { name: "line KPIs: without any order, downtime but no OEE", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", false) },
+    { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, mon, start_time, end_time, valid_from) VALUES ($line, 'production', true, '09:00', '10:00', '2026-01-01')" },
+    { as: "ofm_runtime", sql: EVL("09:00", 1) },
+    { as: "ofm_runtime", sql: EVL("09:30", 5) },
+    { as: "ofm_runtime", sql: COUNT_ROWS("count_good", 100, "09:05", 5) },
+    { as: "ofm_reader", sql: KPI, expect: r => r[0].oee === null && r[0].pos13_s === null && Math.round(r[0].unaccounted_s) === 1800 && closes(r[0]) }] },
+  { name: "line KPIs: hourly, daily and DST days in local time; every period closes", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_reader", sql: "SELECT to_char(period_start AT TIME ZONE 'Australia/Melbourne', 'HH24') AS h, round(pos13_s) AS p13 FROM hist.fn_line_kpi_series($line, " + L("08:00") + ", " + L("11:00") + ", 'hour')",
+      expect: r => r.map(x => x.h + ":" + x.p13).join() === "08:0,09:1200,10:0" },
+    { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, sun, start_time, end_time, valid_from) VALUES ($line, 'production', true, '00:00', '06:00', '2026-01-01')" },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES ($machine, '2026-10-03 23:00+10', 1, 'rule'), ($machine, '2026-04-04 23:00+11', 1, 'rule')" },
+    { as: "ofm_reader", sql: "SELECT round(pos1_s) AS p1, round(pos2_s) AS p2, round(running_s) AS run, round(pos2_s + pos4_s + pos5_s + pos6_s + pos7_s + pos9_s + pos12_s + unaccounted_s + running_s) AS sum " +
+        "FROM hist.fn_line_kpi_series($line, '2026-10-03 00:00+10', '2026-10-06 00:00+11', 'day')",
+      expect: r => r.map(x => x.p1 + "/" + x.sum + "/" + x.run).join() === "86400/86400/0,82800/82800/18000,86400/86400/3600" },   // Mon 5 Oct: 09:00-10:00
+    { as: "ofm_reader", sql: "SELECT round(pos1_s) AS p1, round(running_s) AS run FROM hist.fn_line_kpi_series($line, '2026-04-05 00:00+11', '2026-04-06 00:00+10', 'day')",
+      expect: r => r.length === 1 && Number(r[0].p1) === 90000 && Number(r[0].run) === 25200 },
+    { as: "ofm_reader", sql: "SELECT count(*)::int AS n FROM hist.fn_line_kpi_series($line, '2026-10-04 00:00+10', '2026-10-05 00:00+11', 'hour')", expect: r => r[0].n === 23 }] },
+  { name: "machine reliability: breakdowns are own Pos 9 stops; MTBF on running time, MTTR on their length", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_runtime", sql: "SELECT config.fn_assign_reason($machine, " + L("09:40") + ", 'zz_motor', 'supervisor') AS at" },
+    { as: "ofm_reader", sql: "SELECT machine_name, round(running_s) AS run, breakdowns, round(breakdown_s) AS brk, round(mtbf_h::numeric, 4) AS mtbf, round(mttr_min::numeric, 2) AS mttr " +
+        "FROM hist.fn_machine_reliability($line, " + L("08:30") + ", " + L("10:30") + ") WHERE machine_name = 'mach1'",
+      expect: r => Number(r[0].run) === 1860 && r[0].breakdowns === 2 && Number(r[0].brk) === 720 && Number(r[0].mtbf) === Number((1860 / 3600 / 2).toFixed(4)) && Number(r[0].mttr) === 6 }] },
+  { name: "live KPIs: hour, day and the running order of a line with a KPI rule; the runtime may read them", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", true) },
+    ...ORDER_SETUP,
+    { as: "ofm_runtime", sql: START("wo1") },
+    { as: "ofm_runtime", sql: "SELECT period, line_topic, wo_number FROM hist.fn_live_line_kpi() WHERE line_id = $line ORDER BY period",
+      expect: r => r.map(x => x.period).join() === "day,hour,order" && r[0].line_topic === "zz_test/site1/area1/line1" && r[2].wo_number === "wo1" }] },
 
   // --- audit (Overview §11) -----------------------------------------------------------------
   { name: "a model change is audited with old and new values", steps: [

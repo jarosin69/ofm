@@ -106,6 +106,7 @@ module.exports.run = async function (t) {
   await checkCounts(t);
   await checkOrder(t);
   await checkReasons(t);
+  await checkKpis(t);
   for (const m of machines) {
     const s = states[m.name], e = events.find(x => x.name === m.name);
     const problem = s ? contracts.validate("machine-state", s) : "no retained state";
@@ -189,4 +190,53 @@ async function checkReasons(t) {
   } finally {
     await db.end().catch(() => {});
   }
+}
+
+// Live line KPIs (step 3a.7): retained on .../kpi/hour|day|order, valid, at
+// most two minutes old, and the same as the database calculates; the day's
+// ledger closes (every second of the day in exactly one loss position, or
+// running time where no ideal cycle time splits it into 10, 11 and 13).
+async function checkKpis(t) {
+  const got = await new Promise(resolve => {
+    const payloads = {};
+    const client = fromNodeRed("mqtt").connect(stack.mqttUrl, {
+      username: "ofm_reader", password: process.env.OFM_MQTT_READER_PASSWORD,
+      clientId: "ofm-test-" + Math.random().toString(16).slice(2, 10), connectTimeout: 5000, reconnectPeriod: 0
+    });
+    const done = () => { client.end(true); resolve(payloads); };
+    client.on("error", done);
+    client.on("connect", () => client.subscribe(LINE + "/kpi/+", { qos: 0 }, () => setTimeout(done, 2000)));
+    client.on("message", (topic, buf, packet) => { if (packet.retain && buf.length) payloads[topic.split("/")[5]] = JSON.parse(buf.toString()); });
+  });
+  const db = await connectDb();
+  let live, ledger;
+  try {
+    live = (await db.query(`SELECT k.period, k.good, k.reject, round(extract(epoch FROM k.period_start) * 1000)::bigint AS from_ms FROM hist.fn_live_line_kpi() k
+      WHERE k.line_topic = $1`, [LINE])).rows;
+    ledger = (await db.query(`SELECT k.pos1_s, k.pos2_s + k.pos4_s + k.pos5_s + k.pos6_s + k.pos7_s + k.pos9_s + k.pos12_s + k.unaccounted_s
+        + coalesce(k.pos10_s + k.pos11_s + k.pos13_s, k.running_s) AS parts
+      FROM config.line l, hist.fn_line_kpi(l.id, date_trunc('day', now() AT TIME ZONE 'Australia/Melbourne') AT TIME ZONE 'Australia/Melbourne', now()) k
+      WHERE l.name = 'packline01' AND l.retired_at IS NULL`)).rows[0];
+  } finally {
+    await db.end().catch(() => {});
+  }
+  if (!live.length) {
+    t.skip("demo line KPIs", "the line has no KPI rule in force");
+    return;
+  }
+  for (const r of live) {
+    const p = got[r.period];
+    const problem = !p ? "nothing retained on " + LINE + "/kpi/" + r.period
+      : contracts.validate("line-kpi", p) || (Date.now() - p.ts > 120000 ? "ts is " + Math.round((Date.now() - p.ts) / 1000) + " s old" : null);
+    // the database's figures may have moved on since the runtime published them, by at most a minute's units
+    t.check("demo line KPIs: retained on .../kpi/" + r.period + ", valid, under two minutes old, close to the database",
+            !problem && (p.fromTs !== Number(r.from_ms) ||                  // a new hour, day or order began since
+                         (p.good <= Number(r.good) && Number(r.good) - p.good <= 200)),
+            problem || "OEE " + (p.oee === null ? "-" : Math.round(p.oee * 1000) / 10 + " %") + ", good " + p.good + " (database " + Number(r.good) + ")");
+  }
+  if (!live.some(r => r.period === "order")) {
+    t.check("demo line KPIs: no order running, so no .../kpi/order", !got.order, got.order ? "a stale order topic is retained" : "none");
+  }
+  t.check("demo time ledger: today's loss positions add up to the calendar time",
+          ledger && Math.abs(ledger.pos1_s - ledger.parts) < 0.01, ledger ? ledger.pos1_s + " s = " + ledger.parts + " s" : "no result");
 }

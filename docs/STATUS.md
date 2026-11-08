@@ -2,7 +2,7 @@
 
 *Updated: 2026-11-07. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 3a, detailed design for review.** Decided
+**▶ We are here: Phase 3a, step 3a.7 built (checks on the laptop to do).** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -31,9 +31,12 @@ carton), and the simulator following orders with an auto-operator;
 WO1–WO9 passed on the laptop 2026-11-07. **Step 3a.6 built:** migration 016
 (reason catalogue, PLC fault codes → reasons, reasons on state events,
 `order_required`, the line's stop list with starved/blocked attribution and
-waiting for order), PLC reasons recorded by the runtime; tested on the
-replica; next: checks RS1–RS8 on the laptop, then step 3a.7, time ledger and
-KPIs. Stage C
+waiting for order), PLC reasons recorded by the runtime; RS1–RS8 passed
+on the laptop 2026-11-07. **Step 3a.7 built:** migration 017 (time ledger,
+line waterfall and KPIs per period and per hour/day/week/month, MTBF/MTTR
+per machine, live KPIs), node *line KPIs* in the runtime
+(`…/kpi/hour|day|order` with its schema); tested on the replica; next:
+checks KP1–KP8 on the laptop, then step 3a.8, the screens. Stage C
 decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
 
 ## The plan in one view
@@ -200,8 +203,8 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.3 | Machine states (ADR-0006): property roles, state rules in the model, state events, `unknown`, runtime heartbeat, startup reconciliation, `.../state` topic; frozen-data detection by heartbeat property (ADR-0025), drills F1 (simulator stopped, PLC still answering) and F2 (S7 CPU in STOP) | ✅ 2026-11-05 (migration 013; MS1–MS7 and F1 on the laptop; F2 to do with the bench S7) |
 | 3a.4 | Counts: count roles, counter increments with reset handling, line good and reject | ✅ 2026-11-06 (migration 014, ADR-0026; CT1–CT7 on the laptop) |
 | 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ✅ 2026-11-07 (migration 015; WO1–WO9 on the laptop) |
-| 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ▶ built 2026-11-07 (migration 016), tested on the replica; RS1–RS8 on the laptop to do |
-| 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ⬜ |
+| 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ✅ 2026-11-07 (migration 016; RS1–RS8 on the laptop) |
+| 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ▶ built 2026-11-07 (migration 017; also GE, LU, TEEP), tested on the replica; KP1–KP8 on the laptop to do |
 | 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ⬜ |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
 | 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |
@@ -213,7 +216,7 @@ operations dashboard moved to Phase 3a (2026-11-02).
 
 | Step | What |
 |---|---|
-| 3b.1 | KPI views: GE, CU, LU, TEEP |
+| 3b.1 | KPI views: CU (defined capacity per line); GE, LU and TEEP were built in step 3a.7 |
 | 3b.2 | Grafana management dashboards (week, month, year) |
 | 3b.3 | Disaster-recovery rehearsal; release `v0.4` |
 
@@ -274,8 +277,8 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 3a.6 on the laptop: checks RS1–RS8 (tests/README, Phase 3a);
-   then step 3a.7, time ledger and KPIs. Drill F2 (bench S7-1200 in STOP) when the
+1. Step 3a.7 on the laptop: checks KP1–KP8 (tests/README, Phase 3a);
+   then step 3a.8, the screens. Drill F2 (bench S7-1200 in STOP) when the
    bench is next set up.
 2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
    the management decision at C0).
@@ -297,7 +300,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 9 | Source of rated speeds, shift calendar and schedule: manual in Mathesar for now (`material_line_rate`, `line_schedule`, migration 012); ERP/SAP later | ERP integration |
 | 11 | Defined capacity per line for CU: manual or from ERP/SAP | Phase 3b |
 | 12 | Verify KPI terminology against ISO 22400-2 (ADR-0008) | Going public |
-| 13 | Schemas still to write: line KPIs (3b), state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
+| 13 | Schemas still to write: state health (3a), SPC state (3c), food safety check state (3d), `_cmd` write-back (when first needed) | Their phase |
 | 14 | First SPC characteristics and their plans (pack weight, temper index?); how lab results arrive (manual entry or instrument interface) | Phase 3c |
 | 21 | Food safety: which checks first; who verifies; electronic records replacing or accompanying paper under the site's certification scheme | Phase 3d |
 | 22 | Traceability: lot identification on the floor, tipping points, mass-balance tolerance, mixing-attribution rules (own ADR) | Phase 3e |
@@ -310,6 +313,7 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 30 | Plant server: VM on plant IT's servers or an industrial PC near the line; who administers and patches it; Docker from IT's package mirror or as packages with the offline bundle | C1.4 |
 | 31 | Pilot line: which line, which controllers (S7-1200/1500, S7-300, Logix, OPC UA) and roughly how many properties | C1.3 |
 | 32 | Pilot: duration and success criteria (for example: values agree with the HMI/SCADA, no unexplained gaps, no effect on PLC scan or communication load, operators' and engineers' feedback) | C1.3 |
+| 35 | Shift periods for KPIs (ADR-0008 decision 6): the shift model — shift names and times per line, or derived from the production windows of `line_schedule`? Until then KPIs are per hour, day, week, month and order | Step 3a.8 (whiteboard) |
 | 34 | Schedule exceptions: public holidays, overtime, shutdowns — the weekly `line_schedule` has none yet; a table of one-off windows (added or removed time) when the first real line needs it | Plant pilot |
 
 ## Known gaps and notes
@@ -610,6 +614,21 @@ Numbers are stable; answered questions are removed rather than renumbered.
   2 minutes; OFM recorded *erector: glue system fault* by `plc` at once;
   the filler starved 8 s later for 112 s, all charged to the erector's
   fault (Pos 9) in the stop list, then 1 s of flow loss.
+- Step 3a.7 was tested on the local replica: `flows` 327 checks (new:
+  `kpi`), `schemas` with `line-kpi`, `database` 113 (a worked example to
+  the second, both daylight-saving days), `live` with the new KPI and
+  ledger checks. Speed, on a simulated busy week (25 000 state events):
+  KPIs of a day 0.2 s, a week 0.7 s, a day by hour 1.6 s, the ledger of a
+  day 0.1 s; the stop list of migration 016 rewritten in 017 (16 s → 0.1 s
+  a day). The first version took 4–9 s a call because PostgreSQL compiled
+  the large queries to machine code (JIT) first; the functions now run
+  with it off. End to end: `…/kpi/hour|day|order` every minute, equal to
+  the database's figures. A period with units counted before the line's
+  first order (or a product without a rated speed) has no P, OEE, GE,
+  TEEP: shown empty, not guessed.
+- KPI topics of a line removed while the runtime is stopped stay retained
+  (with an old `ts`) until cleared by hand; while it runs they are cleared
+  within a minute. The same holds for `…/workorder`.
 - Docker Desktop stays on the laptop for development (decided 2026-11-02).
   Its licence applies to development use too: within an organisation above
   Docker's small-business limit, the laptop needs a paid seat.

@@ -101,3 +101,18 @@ line produces many short stops per shift, far too many to code by hand.
   (causes `unknown`, `reason`, `attributed`, `flow`, `waiting_for_order`,
   `none`); rules 1 and 4–7 and the positions follow with `vw_time_ledger`
   in step 3a.7.
+- 2026-11-07: **As built (step 3a.7, migration 017).** The classification
+  is the function `hist.fn_time_ledger(line, from, to)` rather than a view,
+  because it needs a line and a period; it is still computed at read time
+  and never stored (decision 5). First match wins, as decided, with the
+  rules added since: outside every schedule window → Pos 2; constraint
+  `unknown` (or no state) → unaccounted; running → split into Pos 10, 11
+  and 13 by counts (ADR-0008); a reason, an attributed reason (ADR-0024)
+  or `waiting_for_order` → the reason's position; the constraint starved
+  or blocked while the machines around it run (`flow`) → Pos 12; inside a
+  changeover window → Pos 6; inside a planned window of the schedule →
+  that window's position; a stop shorter than the threshold → Pos 12;
+  anything else → unaccounted. **A stop**, for the threshold, is the
+  constraint's whole continuous non-running period, whatever states it
+  passed through: a 3-minute fault followed by 4 minutes idle is one
+  7-minute stop.

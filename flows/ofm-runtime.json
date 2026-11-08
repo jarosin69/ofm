@@ -190,7 +190,8 @@
                 "ofm_rt_recon"
             ],
             [
-                "ofm_rt_wo"
+                "ofm_rt_wo",
+                "ofm_rt_kpi"
             ]
         ],
         "info": ""
@@ -622,7 +623,7 @@
         "id": "ofm_rt_c5",
         "type": "comment",
         "z": "ofm_rt_tab",
-        "name": "5  Machine states, counts, work orders (ADR-0006, ADR-0025, ADR-0026, ADR-0010): .../state, units per minute, .../workorder",
+        "name": "5  Machine states, counts, work orders, line KPIs (ADR-0006, ADR-0025, ADR-0026, ADR-0010, ADR-0008): .../state, units per minute, .../workorder, .../kpi/{hour|day|order}",
         "info": "",
         "x": 520,
         "y": 800,
@@ -765,6 +766,50 @@
             ],
             [
                 "ofm_rt_writer"
+            ]
+        ],
+        "info": ""
+    },
+    {
+        "id": "ofm_rt_kpi_tick",
+        "type": "inject",
+        "z": "ofm_rt_tab",
+        "name": "every minute",
+        "props": [
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "60",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "20",
+        "topic": "tick60",
+        "x": 130,
+        "y": 980,
+        "wires": [
+            [
+                "ofm_rt_kpi"
+            ]
+        ]
+    },
+    {
+        "id": "ofm_rt_kpi",
+        "type": "function",
+        "z": "ofm_rt_tab",
+        "name": "line KPIs",
+        "func": "// Live line KPIs (ADR-0008, step 3a.7). Every minute, asks the database for\n// every line's KPIs of the current hour, today and the running order\n// (hist.fn_live_line_kpi, which calculates everything from the history) and\n// publishes them retained on {enterprise}/{site}/{area}/{line}/kpi/hour,\n// .../kpi/day and .../kpi/order (schemas/line-kpi.schema.json). The runtime\n// calculates nothing itself: the topics always show what the KPI queries\n// show, late reasons and schedule corrections included.\n// Inputs:\n// - \"tick60\": every minute (and once shortly after start);\n// - \"refresh\": after every model load, so a renamed line moves at once.\n// Nothing is published before start-up reconciliation is done (until then\n// the time the runtime was not running is not yet recorded as unknown).\n// A topic that no longer applies is cleared (empty retained message): the\n// order topic when no order is running, every topic of a line that was\n// renamed, retired or lost its KPI rule. If the database cannot be read,\n// nothing is published: the topics keep their last values, whose ts shows\n// their age (ADR-0007).\n// Output 1: UNS.\nconst PERIODS = [\"hour\", \"day\", \"order\"];\nif (!global.get(\"ofm_states_ready\")) return null;\nif (context.get(\"busy\")) return null;                      // the previous read is still running\nconst pg = global.get(\"pg\");\nif (!pg) { node.error(\"the pg library is not available (see nodered/settings.js)\"); return null; }\nconst pool = context.get(\"pool\") || new pg.Pool({\n    host: \"timescaledb\", port: 5432, database: \"ofm\",\n    user: env.get(\"OFM_RUNTIME_DB_USER\"), password: env.get(\"OFM_RUNTIME_DB_PASSWORD\"),\n    application_name: \"ofm-runtime-kpi\", max: 1, connectionTimeoutMillis: 5000, statement_timeout: 30000\n});\nif (!context.get(\"pool\")) { pool.on(\"error\", () => { /* reconnects on the next query */ }); context.set(\"pool\", pool); }\n\nlet rows;\ncontext.set(\"busy\", true);\ntry {\n    rows = (await pool.query(\n        \"SELECT line_id, line_topic, period, work_order_id, wo_number, \" +\n        \"extract(epoch FROM period_start) * 1000 AS from_ms, extract(epoch FROM period_end) * 1000 AS to_ms, \" +\n        \"oee, availability, performance, quality, good, reject, running_s, unaccounted_s, kpi_rule_id, performance_over_100 \" +\n        \"FROM hist.fn_live_line_kpi()\")).rows;\n} catch (e) {\n    node.status({ fill: \"red\", shape: \"ring\", text: \"cannot read KPIs: \" + e.message });\n    return null;\n} finally {\n    context.set(\"busy\", false);\n}\n\nconst ratio = x => (x === null || x === undefined || !Number.isFinite(Number(x))) ? null : Math.round(Number(x) * 10000) / 10000;\nconst num = (x, d) => Math.round(Number(x || 0) * d) / d;\nconst now = Date.now();\nconst out = [];\nconst published = context.get(\"published\") || {};          // topic -> true, for clearing\nconst fresh = {};\nlet shown = null;\nfor (const r of rows) {\n    if (!PERIODS.includes(r.period)) continue;\n    const topic = r.line_topic + \"/kpi/\" + r.period;\n    const payload = {\n        ts: now, period: r.period, fromTs: Math.round(Number(r.from_ms)), toTs: Math.round(Number(r.to_ms)),\n        oee: ratio(r.oee), availability: ratio(r.availability), performance: ratio(r.performance), quality: ratio(r.quality),\n        good: num(r.good, 1000), reject: num(r.reject, 1000),\n        runningS: num(r.running_s, 10), unaccountedS: num(r.unaccounted_s, 10),\n        performanceOver100: r.performance_over_100 === true, kpiRuleId: r.kpi_rule_id\n    };\n    if (r.period === \"order\") Object.assign(payload, { workOrderId: r.work_order_id, woNumber: r.wo_number });\n    out.push({ topic, payload, retain: true, qos: 1 });\n    fresh[topic] = true;\n    if (r.period === \"day\" && !shown) shown = payload;\n}\nfor (const topic of Object.keys(published)) {\n    if (!fresh[topic]) out.push({ topic, payload: \"\", retain: true, qos: 1 });\n}\ncontext.set(\"published\", fresh);\nconst lines = new Set(rows.map(r => r.line_id)).size;\nnode.status({ fill: \"green\", shape: \"dot\", text: lines + \" line(s)\" +\n              (lines === 1 && shown ? \", today OEE \" + (shown.oee === null ? \"-\" : Math.round(shown.oee * 1000) / 10 + \" %\") : \"\") });\nreturn out.length ? [out] : null;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "libs": [],
+        "x": 400,
+        "y": 980,
+        "wires": [
+            [
+                "ofm_rt_out_uns"
             ]
         ],
         "info": ""

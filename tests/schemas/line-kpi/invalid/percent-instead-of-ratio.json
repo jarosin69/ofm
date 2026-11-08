@@ -1,0 +1,1 @@
+{"ts": 1783948980000, "period": "hour", "fromTs": 1783947600000, "toTs": 1783948980000, "oee": 68.4, "availability": 81.2, "performance": 90.1, "quality": 93.5, "good": 1290, "reject": 90, "runningS": 1120, "unaccountedS": 0, "performanceOver100": false, "kpiRuleId": 1}

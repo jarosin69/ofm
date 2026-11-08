@@ -387,9 +387,38 @@ reasons*.
 | RS3 | `docker compose run --rm test offline`, then `docker compose run --rm test database` | all checks pass |
 | RS4 | Mathesar: `config.reason` and `config.fault_code_reason` | 25 reasons (18 for the demo's machines, 6 general, `waiting_for_order`); 18 fault codes |
 | RS5 | Panel: with an order running, *Break and hold* the erector (code 103); after the filler turns yellow wait a minute; *Repair*; then the stop-list query | the filler's starved time `attributed`, *Erector: glue system fault*, pos 9, charged to `erector`, by `plc`; then a few seconds of `flow` |
-| RS6 | *Break and hold* the closer with code 999 for a minute, *Repair*; code it with `config.fn_assign_reason` (demo README) | the filler's blocked time is `attributed` to the closer with no reason; after coding, *Breakdown, other*, by you, with your comment |
-| RS7 | *Complete* the order (auto-operator off), wait 2 minutes | the stop list shows `waiting_for_order`, pos 7 |
+| RS6 | *Break and hold* the closer (fault 401) for a minute, *Repair*; then correct its reason by hand: `SELECT config.fn_assign_reason(e.machine_id, e.ts, 'breakdown_other', 'Jarek', 'test RS6') FROM hist.machine_state_event e WHERE e.machine_id = (SELECT id FROM config.machine WHERE name = 'closer' AND retired_at IS NULL) AND e.state_id = 5 ORDER BY e.ts DESC LIMIT 1;` | before: the filler's blocked time `attributed` to *Closer: glue fault*, by `plc`; after: *Breakdown, other*, pos 9, by Jarek; `hist.state_reason` keeps both rows |
+| RS7 | Auto-operator off, *Complete*, wait 2 minutes; then the stop list for the last 5 minutes; auto-operator on again | the filler `idle`, `waiting_for_order`, *Waiting for order*, pos 7, by `ofm` |
 | RS8 | `docker compose run --rm test live` | all checks pass, including *demo reasons* |
+
+**Step 3a.7, time ledger and KPIs** (migration 017; ADR-0008, ADR-0009
+amendments). Automated: `schemas` (`line-kpi`); `flows` (`kpi`: hour, day
+and order published retained from `hist.fn_live_line_kpi()`, only after
+start-up reconciliation, the order topic cleared when no order runs, old
+topics cleared after a rename or when a line loses its KPI rule, nothing
+published while the database cannot be read); `database` (a worked
+example to the second: every ledger rule, the waterfall, closure,
+OEE = A × P × Q, a late reason reclassifying history, performance above
+100 % flagged, no order → no OEE, hours and days in local time on both
+daylight-saving days, MTBF/MTTR, live KPIs readable by the runtime);
+`live` (*demo line KPIs* on all three topics, close to the database;
+*demo time ledger* closes for today). By hand, after unpacking (the demo
+running, inside its schedule Monday–Friday 06:00–22:00; on a weekend first
+do the two steps in demo README section 13, *Efficiency*). The queries are
+in that section too; run them in
+`docker exec -it ofm-timescaledb psql -U ofm_admin -d ofm` (your
+administrator name from `.env`).
+
+| # | Do | Expect |
+|---|---|---|
+| KP1 | `docker compose up -d`, `docker compose logs migrate`, `docker compose restart nodered` | `Applying 017-time-ledger-and-kpis.sql` |
+| KP2 | `docker compose run --rm test offline`, then `docker compose run --rm test database` | all checks pass |
+| KP3 | MQTT Explorer: `acme/melbourne/packing/packline01/kpi` | three retained topics `hour`, `day`, `order`; their `ts` moves on every minute; `order` shows the panel's order number |
+| KP4 | The *today's waterfall* query | the same `good`, `oee`, `a`, `p`, `q` as `kpi/day` (give or take the last minute) |
+| KP5 | Panel: *Jam* the filler (a 30-second stop); when it runs again, *Stop line*, wait 1 minute, *Run*; a minute later the *time ledger* query | the jam: `reason`, *Filler: carton jam*, pos 12, `stop_s` about 30; the line stop: `minor_stop`, pos 12, `stop_s` about 60 (nobody coded it, and it is shorter than 5 minutes; longer, it would be `unaccounted`, 90) |
+| KP6 | Panel: *Break and hold* the erector (code 103) for 6 minutes, *Repair*; the *time ledger*, then *breakdowns per machine* | the filler's starved time `attributed`, *Erector: glue system fault*, pos 9, charged to `erector`; the erector has at least one breakdown, with MTBF and MTTR filled in |
+| KP7 | Auto-operator off, *Complete*; wait 2 minutes | `kpi/order` is gone (cleared); `hour` and `day` still update; after auto-operator on, `kpi/order` returns with the new order within a minute or two |
+| KP8 | `docker compose run --rm test live` | all checks pass, including *demo line KPIs* and *demo time ledger* |
 
 ## Adding a test
 

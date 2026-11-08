@@ -134,3 +134,37 @@ reduced by speed and quality losses even though neither is a failure.
   constraint (e.g. spoiled packaging) are machine counts only. Being part
   of the KPI rule, the output machine is dated with it. Counts per minute:
   `hist.vw_line_count`, from `hist.production_count` (ADR-0026).
+- 2026-11-07: **As built (step 3a.7, migration 017).** The KPIs are SQL
+  functions over the historian, because they take a line and a period:
+  `hist.fn_line_kpi(line, from, to)` (positions 1–13 and unaccounted, A, P,
+  Q, OEE, GE, LU, TEEP, downtime), `hist.fn_line_kpi_series(line, from, to,
+  bucket)` (hour, day, week or month, bounded in the site's local time) and
+  `hist.fn_machine_reliability(line, from, to)` (MTBF, MTTR per machine).
+  Decided in the 3a.7 design:
+  - **Scheduled time** (Pos 3) is every schedule window together,
+    production and planned; anything outside is Pos 2, also when the line
+    runs, and units counted outside the schedule are not counted.
+  - **ICT** comes from the rated speed of the running order's product;
+    between orders, from the last order's product. Units without an ICT
+    (counted before the line's first order, or a product without a rated
+    speed) leave positions 10, 11 and 13 of their period, and every KPI that
+    needs them, empty (null): never guessed.
+  - **Version** (decision 7): each result carries `kpi_rule_id`, the KPI
+    rule in force at the start of the period, and `kpi_rule_changed` when
+    another came into force within it.
+  - **MTBF and MTTR** are per machine: a breakdown is the machine's own stop
+    with an effective Pos 9 reason; MTBF = the machine's running time ÷
+    breakdowns.
+  - **Shift periods** (decision 6) wait for a shift model; until then the
+    periods are hour, day, week and month.
+  - **Live KPIs.** The runtime republishes `hist.fn_live_line_kpi()` (the
+    current hour, today and the running order of every line) every minute,
+    retained, on `{line}/kpi/hour`, `/kpi/day` and `/kpi/order`
+    (`schemas/line-kpi.schema.json`); it calculates nothing itself
+    (alternative 3 stays rejected), so the topics always agree with the
+    queries.
+  - **Speed.** The functions run with PostgreSQL's JIT compilation off,
+    which costs seconds for these queries; a day takes about 0.2 s and a
+    week 0.7 s on a simulated busy week. No materialised views needed yet.
+  The waterfall closes (positions add up to Pos 1) in the database tests,
+  including both daylight-saving days.

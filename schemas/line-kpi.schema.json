@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofm:schema:line-kpi:1",
+  "title": "OFM live line KPIs",
+  "description": "Payload of {enterprise}/{site}/{area}/{line}/kpi/hour, .../kpi/day and .../kpi/order: the line's KPIs for the current hour, today (site local time) and the running work order, so far. Calculated by the database from the history (hist.fn_live_line_kpi, ADR-0008) and republished retained by the runtime every minute. The order topic is cleared (empty retained message) while no order is running.",
+  "type": "object",
+  "properties": {
+    "ts": {
+      "$ref": "urn:ofm:schema:common:1#/$defs/ts",
+      "description": "Time the KPIs were calculated. Republished every minute, so an old ts means the runtime cannot read the database (ADR-0007)."
+    },
+    "period": { "description": "Which period the KPIs cover; the same as the last topic level.", "enum": ["hour", "day", "order"] },
+    "fromTs": { "$ref": "urn:ofm:schema:common:1#/$defs/ts", "description": "Start of the period (the order's start for order)." },
+    "toTs": { "$ref": "urn:ofm:schema:common:1#/$defs/ts", "description": "End of the period so far (the calculation time)." },
+    "workOrderId": { "$ref": "urn:ofm:schema:common:1#/$defs/id" },
+    "woNumber": { "$ref": "urn:ofm:schema:common:1#/$defs/text" },
+    "oee": { "$ref": "#/$defs/ratio", "description": "Availability x performance x quality." },
+    "availability": { "$ref": "#/$defs/ratio", "maximum": 1, "description": "Running time / planned production time (ADR-0008)." },
+    "performance": {
+      "$ref": "#/$defs/ratio",
+      "description": "Total units x ideal cycle time / running time. Above 1 means the rated speed is set too low (see performanceOver100)."
+    },
+    "quality": { "$ref": "#/$defs/ratio", "maximum": 1, "description": "Good units / total units." },
+    "good": { "description": "Good units counted at the line's output machine in scheduled time.", "type": "number", "minimum": 0 },
+    "reject": { "description": "Rejected units from the constraint to the output machine in scheduled time.", "type": "number", "minimum": 0 },
+    "runningS": { "description": "Running time in seconds.", "type": "number", "minimum": 0 },
+    "unaccountedS": {
+      "description": "Seconds of scheduled time with no usable state (unknown, or no data). Above zero, the KPIs rest on incomplete data.",
+      "type": "number",
+      "minimum": 0
+    },
+    "performanceOver100": { "description": "True when performance is above 1 in the period.", "type": "boolean" },
+    "kpiRuleId": {
+      "description": "ID of the line KPI rule (config.line_kpi_rule) the KPIs were calculated with.",
+      "oneOf": [{ "$ref": "urn:ofm:schema:common:1#/$defs/id" }, { "type": "null" }]
+    }
+  },
+  "required": ["ts", "period", "fromTs", "toTs", "oee", "availability", "performance", "quality",
+               "good", "reject", "runningS", "unaccountedS", "performanceOver100", "kpiRuleId"],
+  "additionalProperties": false,
+  "if": { "properties": { "period": { "const": "order" } }, "required": ["period"] },
+  "then": { "required": ["workOrderId", "woNumber"] },
+  "else": { "not": { "anyOf": [{ "required": ["workOrderId"] }, { "required": ["woNumber"] }] } },
+  "$defs": {
+    "ratio": {
+      "description": "A ratio, 1 = 100 %. Null when it cannot be calculated: no planned production time yet, no units, or no ideal cycle time (no work order ever ran on the line).",
+      "type": ["number", "null"],
+      "minimum": 0
+    }
+  }
+}
