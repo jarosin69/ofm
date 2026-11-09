@@ -1,6 +1,6 @@
 -- Removes the simulated packing line (db/examples/demo-packline.sql)
 -- completely: its history (values, state events and their reasons, counts,
--- work orders and their events), state rules, reasons, fault codes, mappings,
+-- work orders and their events), the demo people, state rules, reasons, fault codes, mappings,
 -- properties, KPI rules, rates, schedule,
 -- flow order, machines, line, its sources linesim_m1 ... linesim_m6, the
 -- area "packing" if nothing else is in it, and the demo products if no other
@@ -73,6 +73,17 @@ DELETE FROM config.source WHERE name ~ '^linesim_m[0-9]+$';
 DELETE FROM config.material m
 WHERE m.code IN ('mix150', 'mix250', 'mix500')
   AND NOT EXISTS (SELECT 1 FROM config.material_line_rate r WHERE r.material_id = m.id);
+
+-- The demo people (step 3a.8) and their sign-ins; one who also recorded
+-- something on another line is retired instead, as history refers to them.
+CREATE TEMP TABLE rm_people AS SELECT id FROM config.person WHERE note = 'demo (db/examples/demo-packline.sql)';
+DELETE FROM hist.person_sign_in WHERE person_id IN (SELECT id FROM rm_people)
+  AND person_id NOT IN (SELECT person_id FROM hist.work_order_event WHERE person_id IS NOT NULL
+                        UNION SELECT person_id FROM hist.state_reason WHERE person_id IS NOT NULL);
+DELETE FROM config.person p WHERE p.id IN (SELECT id FROM rm_people)
+  AND NOT EXISTS (SELECT 1 FROM hist.person_sign_in s WHERE s.person_id = p.id);
+UPDATE config.person SET retired_at = now() WHERE id IN (SELECT id FROM rm_people) AND retired_at IS NULL;
+DROP TABLE rm_people;
 
 -- The simulator's database door (schema demo, role ofm_demo).
 DROP SCHEMA IF EXISTS demo CASCADE;

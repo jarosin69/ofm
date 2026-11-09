@@ -420,6 +420,31 @@ administrator name from `.env`).
 | KP7 | Auto-operator off, *Complete*; wait 2 minutes | `kpi/order` is gone (cleared); `hour` and `day` still update; after auto-operator on, `kpi/order` returns with the new order within a minute or two |
 | KP8 | `docker compose run --rm test live` | all checks pass, including *demo line KPIs* and *demo time ledger* |
 
+**Step 3a.8a, line view and sign-in** (migration 018; ADR-0027, ADR-0028).
+Automated: `flows` (`screens`: live values and sessions per browser,
+actions refused without a sign-in, signed out after 5 minutes untouched or
+when signing in elsewhere, the database only through the screen functions,
+subscriptions following the model); `deploy` (port 1882); `database`
+(first PIN chosen and stored only as a hash, lockout after five wrong PINs,
+PIN reset, hashes hidden from runtime and Grafana, `ofm_screens` reads no
+table, orders and reasons carry `person_id`, the line view's model, stops
+to code; demo people); `live` (*Line view over HTTPS (port 1882)*). By hand,
+after unpacking, with the demo running inside its schedule (weekend: demo
+README section 13, *Efficiency*). The line view is
+`https://localhost:1882/dashboard`; how to use it: demo README section 13,
+*The line view*.
+
+| # | Do | Expect |
+|---|---|---|
+| LV1 | In `deploy`: `docker run --rm -v "${PWD}:/work" -w /work alpine:3.22 sh make-env.sh`, then `docker compose up -d`, `docker compose logs migrate` | make-env adds `OFM_SCREENS_DB_PASSWORD`; `Applying 018-people-and-screens.sql`; `docker compose ps` shows `ofm-screens` running |
+| LV2 | `docker compose run --rm migrate demo` (adds the demo people), then `docker compose run --rm test offline` and `docker compose run --rm test database` | all checks pass |
+| LV3 | Open `https://localhost:1882/dashboard` | *Packing line 1*: six machines in flow order with live states, KPI tiles, the running order; no sign-in needed to look |
+| LV4 | *Sign in*: `1001`, any PIN | *First sign-in: choose a PIN*; type a PIN of 4–8 digits twice → *Alex Demo* top right with a 5-minute countdown |
+| LV5 | *Sign out*; sign in as `1001` with a wrong PIN five times, then the right one | *Wrong employee number or PIN* five times, then *Too many wrong PINs: try again at hh:mm* |
+| LV6 | (after 10 minutes, or as `1002`) *Start an order…* → new order mix500 × 300; then *Changeover done*; later *Complete* | the order shows at once with its progress; the simulator changes over and follows; in psql `SELECT entered_by, person_id FROM hist.work_order_event ORDER BY ts DESC LIMIT 3;` shows the person's name and ID |
+| LV7 | Panel: *Stop line*, wait 6 minutes, *Run line*; on the line view within 30 s | the filler's idle stop under *Stops waiting for a reason* (with any setup time around it, each its own row); *Code…* → a reason → *Save* (sign in when asked): *Stop coded*, the row leaves the list; the *time ledger* query (demo README, *Efficiency*) shows that time with `rule` = `reason` and the reason's position |
+| LV8 | Leave the screen untouched for 5 minutes; then `docker compose run --rm test live` | signed out (*Signed out: untouched for a while*); all live checks pass, including *Line view over HTTPS (port 1882)* |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

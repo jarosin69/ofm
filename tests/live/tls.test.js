@@ -89,7 +89,8 @@ module.exports.run = async function (t) {
   });
   const pages = [["Grafana", 3000, "/api/health", s => s === 200],
                  ["Mathesar", 8080, "/", s => s < 400],
-                 ["Node-RED editor", 1880, "/", s => s < 400]];
+                 ["Node-RED editor", 1880, "/", s => s < 400],
+                 ["Line view", 1882, "/dashboard/line", s => s === 200]];      // operator screens (step 3a.8)
   for (const [name, port, urlPath, ok] of pages) {
     const r = await get(https, port, urlPath, tlsOptions(stack.proxyHost));
     t.check(name + " over HTTPS (port " + port + "): certificate trusted, page answers",

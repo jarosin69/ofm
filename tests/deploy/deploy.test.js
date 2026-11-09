@@ -48,7 +48,7 @@ module.exports.run = async function (t) {
           load && JSON.stringify(load.profiles) === '["loadtest"]' && !load.ports);
 
   // --- ports (ADR-0019) -------------------------------------------------------------------
-  const NETWORK = { mosquitto: ["8883"], proxy: ["3000", "8080", "1880", "1881"] };
+  const NETWORK = { mosquitto: ["8883"], proxy: ["3000", "8080", "1880", "1881", "1882"] };
   const problems = [];
   for (const [name, s] of Object.entries(services)) {
     for (const p of s.ports || []) {
@@ -61,7 +61,7 @@ module.exports.run = async function (t) {
       problems.push(name + " " + text);
     }
   }
-  t.check("only the encrypted ports (MQTT 8883, HTTPS 3000/8080/1880/1881) may be opened to the network; every other port stays on 127.0.0.1",
+  t.check("only the encrypted ports (MQTT 8883, HTTPS 3000/8080/1880/1881/1882) may be opened to the network; every other port stays on 127.0.0.1",
           problems.length === 0, problems.join(", "));
   t.check("the default listen address is this computer only (127.0.0.1)",
           /OFM_LISTEN_ADDRESS=127\.0\.0\.1/.test(read("deploy", ".env.example")) &&

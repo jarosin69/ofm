@@ -123,3 +123,9 @@ performance figure.
   (`schemas/workorder.schema.json`, unchanged); `ratePerHour` is the rate in
   force at publication. `hist.vw_work_order_interval` holds each order's
   start, end of changeover and completion for step 3a.7.
+- 2026-11-09: **Operator screens (step 3a.8, migration 018).** People start,
+  close the changeover of and complete orders on the line view (ADR-0027)
+  through `config.fn_person_work_order_*`, granted to the screens' role
+  `ofm_screens`; these call the functions above, so their checks apply.
+  `hist.work_order_event` gains `person_id` (ADR-0028); `entered_by` keeps
+  the person's name as it was.

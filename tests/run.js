@@ -13,7 +13,7 @@ const { Results } = require("./lib/harness");
 
 const SUITES = [
   { name: "schemas",  title: "Payload contracts (schemas/ and their examples)", dir: "schemas" },
-  { name: "flows",    title: "Flows, unit tests (flows/ofm-runtime.json; demo/packing-line/linesim-flows.json)", dir: "flows" },
+  { name: "flows",    title: "Flows, unit tests (flows/ofm-runtime.json, flows/ofm-screens.json; demo/packing-line/linesim-flows.json)", dir: "flows" },
   { name: "deploy",   title: "Deployment: pinned images, open ports, secrets, no outbound connections (deploy/)", dir: "deploy" },
   { name: "database", title: "Database: model rules, runtime view, permissions, audit", dir: "database" },
   { name: "live",     title: "Live stack: end to end (exit checks)", dir: "live" },

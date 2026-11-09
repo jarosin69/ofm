@@ -40,6 +40,7 @@ add OFM_CONFIG_DB_PASSWORD     "$(pw)"
 add OFM_READER_DB_PASSWORD     "$(pw)"
 add OFM_MATHESAR_DB_PASSWORD   "$(pw)"
 add OFM_DEMO_DB_PASSWORD       "$(pw)"    "The demo simulator's database role (ofm_demo), used only with COMPOSE_PROFILES containing demo"
+add OFM_SCREENS_DB_PASSWORD    "$(pw)"    "The operator screens' database role (ofm_screens)"
 add OFM_MQTT_RUNTIME_PASSWORD  "$(pw)"    "MQTT users; set from this file at every start"
 add OFM_MQTT_READER_PASSWORD   "$(pw)"
 add NODERED_ADMIN_USER         admin      "Node-RED editor login"
@@ -52,7 +53,7 @@ add MATHESAR_ADMIN_PASSWORD    "$(pw)"
 add MATHESAR_DB_PASSWORD       "$(pw)"    "Mathesar's own settings database, and its session key"
 add MATHESAR_SECRET_KEY        "$(pw 50)"
 add COMPOSE_PROFILES           simulator  "Optional services to run, comma-separated. 'simulator' = the OPC UA simulator, 'demo' = the simulated packing line (development and demos; leave empty at a plant)"
-add OFM_LISTEN_ADDRESS         127.0.0.1  "Who can reach OFM's encrypted ports (MQTT 8883, web pages 3000/8080/1880): 127.0.0.1 = this computer only, 0.0.0.0 = the network"
+add OFM_LISTEN_ADDRESS         127.0.0.1  "Who can reach OFM's encrypted ports (MQTT 8883, web pages 3000/8080/1880/1882): 127.0.0.1 = this computer only, 0.0.0.0 = the network"
 add OFM_TLS_NAMES              ""         "This server's network name(s) and IP address(es), comma-separated, e.g. ofm-server,192.168.10.20: the TLS certificate is valid for these (and localhost)"
 
 # On Linux, give the file to the owner of the folder rather than root.
@@ -72,6 +73,7 @@ else
 fi
 echo
 echo "  Node-RED  https://localhost:1880  user: $(value NODERED_ADMIN_USER)  password: $(value NODERED_ADMIN_PASSWORD)"
+echo "  Line view https://localhost:1882/dashboard  (people sign in on the screen)"
 echo "  Grafana   https://localhost:3000  user: $(value GRAFANA_USER)  password: $(value GRAFANA_PASSWORD)"
 echo "  Mathesar  https://localhost:8080  user: $(value MATHESAR_ADMIN_USER)  password: $(value MATHESAR_ADMIN_PASSWORD)"
 echo

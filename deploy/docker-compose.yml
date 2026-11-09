@@ -67,6 +67,7 @@ services:
       OFM_READER_DB_PASSWORD: ${OFM_READER_DB_PASSWORD}
       OFM_MATHESAR_DB_PASSWORD: ${OFM_MATHESAR_DB_PASSWORD:?run make-env.sh to add OFM_MATHESAR_DB_PASSWORD to .env}
       OFM_DEMO_DB_PASSWORD: ${OFM_DEMO_DB_PASSWORD:-}   # the demo simulator's role, only if the demo is loaded
+      OFM_SCREENS_DB_PASSWORD: ${OFM_SCREENS_DB_PASSWORD:?run make-env.sh to add OFM_SCREENS_DB_PASSWORD to .env}
       # Historian retention, set after every run (step 2.5). Lengthening is
       # safe; shortening DELETES the older data at the next daily run.
       OFM_RAW_RETENTION_DAYS: ${OFM_RAW_RETENTION_DAYS:-365}
@@ -249,6 +250,7 @@ services:
       - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:8080:8080"    # Mathesar
       - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:1880:1880"    # Node-RED editor
       - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:1881:1881"    # simulated line (demo profile); 502 when it is not running
+      - "${OFM_LISTEN_ADDRESS:-127.0.0.1}:1882:1882"    # operator screens: line view at /dashboard
     volumes:
       - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - certs:/certs:ro
@@ -312,6 +314,37 @@ services:
       - --fn=${OFM_LOAD_VALUES:-2000}   # number of fast nodes = values per second
       - --fr=1                          # each changes once a second
       - --ft=uint
+
+  # Operator screens (ADR-0027): a second Node-RED from OFM's own image,
+  # separate from the runtime as an HMI is from the PLC, so a screen can never
+  # stall data collection. The line view is https://<server>:1882/dashboard
+  # (through the proxy); its editor https://<server>:1882. Live values from
+  # the UNS as the read-only MQTT user; everything it reads from or records
+  # in the database goes through the functions granted to ofm_screens
+  # (migration 018). People sign in with employee number and PIN (ADR-0028).
+  screens:
+    image: ofm/node-red:4.1.16-ofm.3
+    pull_policy: never
+    container_name: ofm-screens
+    restart: unless-stopped
+    environment:
+      TZ: Australia/Melbourne      # log readability only; the screens show times in the browser's local time
+      FLOWS: /ofm/flows/ofm-screens.json                # the screens' flows (ADR-0016); Deploy writes here
+      OFM_SCREEN_IDLE_MINUTES: ${OFM_SCREEN_IDLE_MINUTES:-5}   # signed out after this long untouched
+      OFM_SCREENS_DB_PASSWORD: ${OFM_SCREENS_DB_PASSWORD:?run make-env.sh to add OFM_SCREENS_DB_PASSWORD to .env}
+      OFM_MQTT_READER_PASSWORD: ${OFM_MQTT_READER_PASSWORD:?set OFM_MQTT_READER_PASSWORD in .env}
+      NODERED_ADMIN_USER: ${NODERED_ADMIN_USER:?set NODERED_ADMIN_USER in .env}
+      NODERED_ADMIN_PASSWORD: ${NODERED_ADMIN_PASSWORD:?set NODERED_ADMIN_PASSWORD in .env}
+      NODE_RED_CREDENTIAL_SECRET: ${NODE_RED_CREDENTIAL_SECRET:?set NODE_RED_CREDENTIAL_SECRET in .env}
+    volumes:
+      - screens-data:/data
+      - ./nodered/settings.js:/data/settings.js:ro      # the same settings as OFM's runtime
+      - ../flows:/ofm/flows
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mosquitto:
+        condition: service_started
 
   # Simulated packing line, OFM's demo (ADR-0023, demo/packing-line/README.md):
   # a second Node-RED from OFM's own image that plays the plant - six machines,
@@ -389,3 +422,4 @@ volumes:
   certs:                           # TLS keys and certificates (tools/certs.sh)
   proxy-data:
   linesim-data:                    # the simulator's Node-RED data (demo profile)
+  screens-data:                    # the operator screens' Node-RED data

@@ -257,18 +257,19 @@ The **auto-operator** (on/off in the panel) does steps 1 and 5 by itself
 from a production plan in `line.json`, through `demo.start_order(...)`, so
 the line can run unattended for weeks with realistic changeovers.
 
-*As built (step 3a.5):* until OFM's line view exists (step 3a.8), the
-panel's *Start order* and *Complete* stand in for the operator; step 4's
-*Changeover done* button comes with the line view. Starting an order
-completes the running one, so step 5 is one action. Operating details:
-section 13, *Work orders*.
+*As built (step 3a.5):* the panel's *Start order* and *Complete* stand in
+for the operator. Starting an order completes the running one, so step 5 is
+one action. Operating details: section 13, *Work orders*.
+*As built (step 3a.8):* OFM's line view does steps 1, 4 and 5 as a
+signed-in person (section 13, *The line view*); the panel's buttons and the
+auto-operator still work.
 
 ## 8. Screens
 
 | Screen | Where | Shows |
 |---|---|---|
 | Simulator control panel | linesim, `https://<server>:1881/dashboard` | the line with conveyor levels; per machine: speed %, MTBF, MTTR, jams/h, rejects; buttons *Break*, *Break and hold*, *Jam*, *Repair*; run/stop the line, stop the simulator, shift pattern on/off, product changeover, presets; this hour's output against rated *(built, step 3a.1)*; work orders: follow on/off, auto-operator, start and complete an order *(built, step 3a.5)*. Later: backend per machine (3a.9), the simulator's own OEE (3a.10) |
-| Line view | OFM, `https://<server>:1880/dashboard` | the line drawn from the UNS only: machine colours by state, speeds, counts, fault; active order with *Start*, *Changeover done*, *Complete*; stops waiting for a reason |
+| Line view | OFM (container `ofm-screens`, ADR-0027), `https://<server>:1882/dashboard` | the line from the UNS: machines in flow order, coloured by state, time in state, fault code; KPIs of this hour, today and the order; the active order with *Start*, *Changeover done*, *Complete*; stops waiting for a reason, coded by a signed-in person (ADR-0028) *(built, step 3a.8)* |
 | Line OEE | Grafana | OEE with availability, performance and quality per shift and hour; loss waterfall; downtime Pareto by reason and by machine; MTBF and MTTR per machine |
 
 ## 9. Tests
@@ -582,9 +583,9 @@ FROM hist.fn_line_stops((SELECT id FROM config.line WHERE name = 'packline01' AN
 `cause`: `reason` (the filler's own), `attributed` (charged to
 `charged_to`), `flow` (starved or blocked while its neighbours ran: the
 conveyor refilling), `waiting_for_order`, `unknown`, or `none` (not coded
-yet; a minor stop if short, see the time ledger below). To code a stop by hand until the
-line view exists (step 3a.8), e.g. the closer's latest fault (a 999, or
-correcting the PLC's reason):
+yet; a minor stop if short, see the time ledger below). Stops waiting for a
+reason are coded on the line view (below). By hand, as administrator, e.g.
+to correct the PLC's reason of the closer's latest fault:
 
 ```sql
 SELECT config.fn_assign_reason(e.machine_id, e.ts, 'breakdown_other', 'Jarek', 'motor overload reset')
@@ -669,6 +670,45 @@ FROM hist.fn_machine_reliability((SELECT id FROM config.line WHERE name = 'packl
 
 A breakdown is a machine's own stop with a position 9 reason (e.g. the
 erector's glue system fault, 103).
+
+### The line view (step 3a.8)
+
+Open `https://localhost:1882/dashboard` (another computer: the server's
+name instead of localhost). Anyone can look; to change something, sign in.
+
+- **Sign in:** *Sign in*, employee number `1001`, `1002` or `1003` (the demo
+  people), then the PIN. The first time, the screen asks you to choose a PIN
+  (4 to 8 digits, typed twice). The keypad is for touch screens; a keyboard
+  works too. Your name stays at the top right until *Sign out*, 5 minutes
+  without touching the screen (the countdown next to it), a reload, or
+  signing in on another screen. A forgotten PIN: delete the person's row in
+  Mathesar, table *person_pin*; add people in table *person*.
+- **The line:** the six machines in flow order, coloured by state (green
+  running, grey idle, amber starved or blocked, red fault, blue setup,
+  cleaning or maintenance, magenta unknown), how long, the fault code.
+- **Efficiency:** OEE with availability, performance and quality for this
+  hour, today and the running order, from `…/kpi/…` (section 13,
+  *Efficiency*); *not accounted for* = scheduled time nobody has explained.
+- **Work order:** *Start an order…*: a planned order (planned in Mathesar,
+  table *work_order*) or a new one (product and quantity); this completes
+  the running one. Not signed in? The screen asks for your sign-in first
+  and then carries on with the action (*Cancel* drops it). The dialog shows
+  *Working…* until OFM answers, then closes with a green message at the top,
+  or stays open and shows in red why it was refused. *Changeover done* while the changeover is open (OFM also
+  closes it at the first good carton). *Complete* asks first. The simulator
+  follows, as with the panel's buttons.
+- **Stops waiting for a reason:** stops of the filler longer than 5 minutes
+  in the last 24 hours that nobody has coded, or, when the filler was
+  starved or blocked, the stop of the machine that caused it. *Code…*, pick
+  the reason (that machine's own first, then general ones), optionally a
+  comment, *Save*. The stop leaves the list and its time moves from *not
+  accounted for* to the reason's loss. Try it: *Stop line* in the panel,
+  wait 6 minutes, *Run line*: the filler's idle stop appears within 30 s (a
+  stop with a PLC fault code already has its reason and does not).
+
+Who did what is recorded by ID and name: `entered_by` and `person_id` in
+`hist.work_order_event`, `assigned_by` and `person_id` in
+`hist.state_reason`; every sign-in attempt in `hist.person_sign_in`.
 
 ### What restarts do
 

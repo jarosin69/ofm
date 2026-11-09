@@ -43,3 +43,9 @@ https://:1881 {
 	import ofm_tls
 	reverse_proxy linesim:1880
 }
+
+# Operator screens (ADR-0027): line view at /dashboard, editor at /.
+https://:1882 {
+	import ofm_tls
+	reverse_proxy screens:1880
+}

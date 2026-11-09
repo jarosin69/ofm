@@ -16,7 +16,9 @@
 -- and state rules (ADR-0006, ADR-0025); reasons for its fault codes and for
 -- operators (ADR-0009); and the simulator's database role
 -- ofm_demo with the functions it may call (schema demo: start and complete
--- work orders, step 3a.5). Rename anything in Mathesar afterwards:
+-- work orders, step 3a.5); three demo people for the line view, employee
+-- numbers 1001-1003, each choosing a PIN at their first sign-in (step 3a.8).
+-- Rename anything in Mathesar afterwards:
 -- history is kept by ID (ADR-0004).
 -- Running it again changes nothing that is already there.
 
@@ -235,6 +237,13 @@ JOIN config.machine m ON m.name = f.machine AND m.retired_at IS NULL
 JOIN demo_line ON demo_line.id = m.line_id
 JOIN config.reason r ON r.code = f.reason AND r.retired_at IS NULL
 ON CONFLICT (machine_id, fault_code) DO NOTHING;
+
+-- Demo people for the line view (ADR-0028): they choose their PIN at their
+-- first sign-in.
+INSERT INTO config.person (employee_no, display_name, note)
+SELECT v.no, v.name, 'demo (db/examples/demo-packline.sql)'
+FROM (VALUES ('1001', 'Alex Demo'), ('1002', 'Billie Demo'), ('1003', 'Chris Demo')) AS v (no, name)
+WHERE NOT EXISTS (SELECT 1 FROM config.person p WHERE p.employee_no = v.no AND p.retired_at IS NULL);
 
 -- The simulator's own door into OFM (ADR-0023): the role ofm_demo may call
 -- the functions of schema demo and nothing else. They run with fixed rights

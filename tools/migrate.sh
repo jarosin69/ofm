@@ -17,7 +17,7 @@
 #
 # The stack also runs "up" automatically on every "docker compose up".
 # After applying migrations, "up" sets the passwords of the platform roles
-# (ofm_runtime, ofm_config, ofm_reader, ofm_mathesar) to the values in
+# (ofm_runtime, ofm_config, ofm_reader, ofm_mathesar, ofm_demo, ofm_screens) to the values in
 # deploy/.env, so .env stays the single source of every password, and sets
 # the historian retention from .env (OFM_RAW_RETENTION_DAYS,
 # OFM_AGG_RETENTION_YEARS).
@@ -149,7 +149,7 @@ sync_role_passwords() {
   synced=""
   for pair in ofm_runtime:OFM_RUNTIME_DB_PASSWORD ofm_config:OFM_CONFIG_DB_PASSWORD \
               ofm_reader:OFM_READER_DB_PASSWORD ofm_mathesar:OFM_MATHESAR_DB_PASSWORD \
-              ofm_demo:OFM_DEMO_DB_PASSWORD; do
+              ofm_demo:OFM_DEMO_DB_PASSWORD ofm_screens:OFM_SCREENS_DB_PASSWORD; do
     role=${pair%%:*}
     var=${pair#*:}
     eval "pw=\${$var:-}"

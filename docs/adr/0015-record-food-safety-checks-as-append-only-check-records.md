@@ -79,3 +79,9 @@ second-person verification.
 
 - Related: ADR-0006 (append-only), ADR-0011 (SPC machinery), ADR-0014
   (lots), ADR-0010 (work orders).
+
+## Amendments
+
+- 2026-11-09: **Per-person sign-in built (decision 7)** for the line view in
+  step 3a.8 (ADR-0028: employee number and PIN, records keyed by
+  `person_id`). Check records will use the same sign-in.

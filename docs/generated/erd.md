@@ -166,6 +166,25 @@ erDiagram
     int2 quality
     int2 ts_source
   }
+  person {
+    int4 id PK
+    text employee_no
+    text display_name
+    text note
+    timestamptz retired_at
+  }
+  person_pin {
+    int4 person_id PK,FK
+    text pin_hash
+    timestamptz set_at
+  }
+  person_sign_in {
+    timestamptz ts
+    text employee_no
+    int4 person_id FK
+    text result
+    text screen
+  }
   plc_mapping {
     int4 id PK
     int4 property_id FK
@@ -225,6 +244,7 @@ erDiagram
     text assigned_by
     timestamptz assigned_at PK
     text comment
+    int4 person_id FK
   }
   sub_asset {
     int4 id PK
@@ -249,6 +269,7 @@ erDiagram
     text event_type PK
     timestamptz ts
     text entered_by
+    int4 person_id FK
   }
   area ||--o{ line : "area_id"
   engineering_unit |o--o{ machine_property : "engineering_unit_id"
@@ -279,6 +300,10 @@ erDiagram
   machine ||--o{ sub_asset : "machine_id"
   material ||--o{ material_line_rate : "material_id"
   material ||--o{ work_order : "material_id"
+  person ||--o{ person_pin : "person_id"
+  person |o--o{ person_sign_in : "person_id"
+  person |o--o{ state_reason : "person_id"
+  person |o--o{ work_order_event : "person_id"
   reason ||--o{ fault_code_reason : "reason_id"
   reason ||--o{ state_reason : "reason_id"
   site ||--o{ area : "site_id"

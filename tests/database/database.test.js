@@ -134,7 +134,33 @@ async function testPlant(db) {
   return ids;
 }
 
-// The cases. Each step runs as a role ("as") and expects success ("ok", or a
+// People and screens (migration 018): two people on the test plant; the
+// screens' role signs them in and acts as them.
+const ADD_PEOPLE = "INSERT INTO config.person (employee_no, display_name) VALUES ('zz901', 'Pat Tester'), ('zz902', 'Sam Tester')";
+const PERSON = n => "(SELECT id FROM config.person WHERE employee_no = '" + n + "')";
+const SIGN_IN = (n, pin) => "SELECT result, display_name, retry_at FROM config.fn_person_sign_in('" + n + "', " + (pin === null ? "NULL" : "'" + pin + "'") + ", 'test')";
+const SET_PIN = (n, pin) => "SELECT result, display_name FROM config.fn_person_set_pin('" + n + "', '" + pin + "', 'test')";
+const result = x => r => r[0].result === x;
+// The screens' role reads no table, so IDs it needs are looked up first as
+// administrator and kept in transaction settings: REMEMBER("pat", PERSON("zz901")), then ID("pat").
+const REMEMBER = (key, sub) => ({ as: "admin", sql: "SELECT set_config('zz." + key + "', " + sub + "::text, true)" });
+const ID = key => "current_setting('zz." + key + "')::int";
+// A stop of the constraint (mach1) 40 minutes ago, not coded, longer than
+// the 5-minute threshold, while the line was scheduled all day; before it,
+// mach1 starved 20 minutes by mach0's fault (not coded), then running.
+const AGO = min => "now() - interval '" + min + " minutes'";
+const EVN = (name, min, state) => "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) VALUES (" + MACH(name) + ", " + AGO(min) + ", " + state + ", 'rule')";
+const SCREEN_SETUP = [
+  ...LINE_SETUP,
+  { as: "ofm_config", sql: RULE_AT("mach1", false) },
+  { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, mon, tue, wed, thu, fri, sat, sun, start_time, end_time, valid_from) VALUES ($line, 'production', true, true, true, true, true, true, true, '00:00', '23:59:59', '2026-01-01')" },
+  ...[["mach0", 90, 1], ["mach1", 90, 1], ["mach2", 90, 1], ["mach3", 90, 1],
+      ["mach0", 60, 5], ["mach1", 59, 4], ["mach0", 52, 1], ["mach1", 51, 1],
+      ["mach1", 40, 2], ["mach1", 30, 1]].map(([m, min, st]) => ({ as: "ofm_runtime", sql: EVN(m, min, st) }))];
+const TO_CODE = "SELECT machine_name, state, round(uncoded_s / 60) AS min, round(stop_s / 60) AS stop_min FROM hist.fn_screen_stops_to_code($line, 24) " +
+  "ORDER BY uncoded_from";
+
+// The cases. Each step runs as a role ("as"; "admin" = the administrator) and expects success ("ok", or a
 // function that checks the rows) or a refusal with a PostgreSQL error code.
 const CASES = [
   // --- the model refuses bad data -------------------------------------------------
@@ -636,7 +662,89 @@ const CASES = [
     { as: "ofm_reader", sql: "SELECT updated_by FROM config.machine_property WHERE id = $temp", expect: r => r[0].updated_by === "ofm_config" }] },
   { name: "audit columns: created_by cannot be altered", steps: [
     { as: "ofm_config", sql: "UPDATE config.machine_property SET created_by = 'someone_else' WHERE id = $temp" },
-    { as: "ofm_reader", sql: "SELECT created_by FROM config.machine_property WHERE id = $temp", expect: r => r[0].created_by !== "someone_else" }] }
+    { as: "ofm_reader", sql: "SELECT created_by FROM config.machine_property WHERE id = $temp", expect: r => r[0].created_by !== "someone_else" }] },
+
+  // --- people, sign-in and the screens (migration 018, step 3a.8) ------------------------------
+  { name: "people: the first sign-in asks for a PIN; it is chosen, stored only as a hash, and signs the person in", steps: [
+    { as: "ofm_config", sql: ADD_PEOPLE },
+    { as: "ofm_screens", sql: SIGN_IN("zz901", "1234"), expect: result("no_pin") },
+    { as: "ofm_screens", sql: SET_PIN("zz901", "12a"), expect: result("bad_pin") },
+    { as: "ofm_screens", sql: SET_PIN("zz901", "4711"), expect: r => r[0].result === "pin_set" && r[0].display_name === "Pat Tester" },
+    { as: "ofm_screens", sql: SET_PIN("zz901", "9999"), expect: result("pin_exists") },
+    { as: "ofm_config", sql: "SELECT pin_hash FROM config.person_pin WHERE person_id = " + PERSON("zz901"),
+      expect: r => r.length === 1 && r[0].pin_hash.startsWith("$2a$08$") && !r[0].pin_hash.includes("4711") },
+    { as: "ofm_screens", sql: SIGN_IN("zz901", "4711"), expect: r => r[0].result === "ok" && r[0].display_name === "Pat Tester" },
+    { as: "ofm_screens", sql: SIGN_IN("zz901", "4712"), expect: r => r[0].result === "wrong_pin" && r[0].display_name === null },
+    { as: "ofm_screens", sql: SIGN_IN("nobody", "4711"), expect: result("unknown_person") },
+    { as: "ofm_reader", sql: "SELECT string_agg(result, ',' ORDER BY ts) AS r FROM hist.person_sign_in WHERE screen = 'test'",
+      expect: r => r[0].r === "no_pin,bad_pin,pin_set,pin_exists,ok,wrong_pin,unknown_person" }] },
+  { name: "people: five wrong PINs lock the person for 10 minutes, even with the right PIN; others are not affected", steps: [
+    { as: "ofm_config", sql: ADD_PEOPLE },
+    { as: "ofm_screens", sql: SET_PIN("zz901", "4711") },
+    { as: "ofm_screens", sql: SET_PIN("zz902", "1357") },
+    ...[1, 2, 3, 4, 5].map(() => ({ as: "ofm_screens", sql: SIGN_IN("zz901", "0000"), expect: result("wrong_pin") })),
+    { as: "ofm_screens", sql: SIGN_IN("zz901", "4711"),
+      expect: r => r[0].result === "locked" && new Date(r[0].retry_at) - Date.now() > 9 * 60000 && new Date(r[0].retry_at) - Date.now() <= 10 * 60000 },
+    { as: "ofm_screens", sql: SIGN_IN("zz902", "1357"), expect: result("ok") },
+    { as: "admin", sql: "UPDATE hist.person_sign_in SET ts = ts - interval '11 minutes' WHERE person_id = " + PERSON("zz901") + " AND result = 'wrong_pin'" },   // 11 minutes later
+    { as: "ofm_screens", sql: SIGN_IN("zz901", "4711"), expect: result("ok") }] },
+  { name: "people: a PIN reset (row deleted in Mathesar) asks for a new PIN; a retired person cannot sign in", steps: [
+    { as: "ofm_config", sql: ADD_PEOPLE },
+    { as: "ofm_screens", sql: SET_PIN("zz901", "4711") },
+    { as: "ofm_config", sql: "DELETE FROM config.person_pin WHERE person_id = " + PERSON("zz901") },
+    { as: "ofm_screens", sql: SIGN_IN("zz901", "4711"), expect: result("no_pin") },
+    { as: "ofm_config", sql: "UPDATE config.person SET retired_at = now() WHERE employee_no = 'zz902'" },
+    { as: "ofm_screens", sql: SIGN_IN("zz902", "1357"), expect: result("unknown_person") }] },
+  { name: "people: PIN hashes hidden from the runtime and Grafana; ofm_config cannot write a hash; the screens read no table", steps: [
+    { as: "ofm_config", sql: ADD_PEOPLE },
+    { as: "ofm_runtime", sql: "SELECT * FROM config.person_pin", expect: NO_PERMISSION },
+    { as: "ofm_reader", sql: "SELECT * FROM config.person_pin", expect: NO_PERMISSION },
+    { as: "ofm_config", sql: "INSERT INTO config.person_pin (person_id, pin_hash) SELECT id, chr(36) || '2a' || chr(36) || '08' || chr(36) || 'x' FROM config.person WHERE employee_no = 'zz901'", expect: NO_PERMISSION },
+    { as: "ofm_screens", sql: "SELECT * FROM config.person", expect: NO_PERMISSION },
+    { as: "ofm_screens", sql: "SELECT * FROM hist.machine_state_event LIMIT 1", expect: NO_PERMISSION },
+    { as: "ofm_screens", sql: "SELECT config.fn_work_order_start(1, 'me')", expect: NO_PERMISSION },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.person_sign_in (employee_no, result) VALUES ('zz901', 'ok')", expect: NO_PERMISSION },
+    { as: "ofm_runtime", sql: SIGN_IN("zz901", "1234"), expect: NO_PERMISSION }] },
+  { name: "acting as a person: refused without a sign-in; then orders and reasons carry the person's ID and name", steps: [
+    ...LINE_SETUP, ...ORDER_SETUP,
+    { as: "ofm_config", sql: ADD_PEOPLE },
+    { as: "ofm_config", sql: ADD_REASON("zz_motor", 9, null) },
+    { as: "ofm_runtime", sql: EV("mach1", "01:00", 5) },
+    REMEMBER("pat", PERSON("zz901")), REMEMBER("wo1", WO("wo1")), REMEMBER("mach1", MACH("mach1")),
+    { as: "ofm_screens", sql: "SELECT config.fn_person_work_order_start(" + ID("pat") + ", " + ID("wo1") + ")", expect: NO_PERMISSION },
+    { as: "ofm_screens", sql: SET_PIN("zz901", "4711") },
+    { as: "ofm_screens", sql: "SELECT config.fn_person_work_order_start(" + ID("pat") + ", " + ID("wo1") + ")" },
+    { as: "ofm_runtime", sql: "SELECT config.fn_work_order_changeover_end(" + WO("wo1") + ", 'ofm')" },
+    { as: "ofm_screens", sql: "SELECT config.fn_person_work_order_start_new(" + ID("pat") + ", $line, 'zz_mix', 500) AS id" },
+    { as: "ofm_reader", sql: "SELECT w.wo_number, e.event_type, e.entered_by, e.person_id = " + PERSON("zz901") + " AS pat FROM hist.work_order_event e " +
+        "JOIN config.work_order w ON w.id = e.work_order_id WHERE w.line_id = $line ORDER BY e.ts, w.id, e.event_type",
+      expect: r => r.map(x => [x.wo_number.startsWith("adhoc-") ? "adhoc" : x.wo_number, x.event_type, x.entered_by, x.pat].join(":")).sort().join(" ") ===
+        "adhoc:start:Pat Tester:true wo1:changeover_end:ofm: wo1:complete:Pat Tester:true wo1:start:Pat Tester:true" },   // one transaction: all at the same time
+    { as: "ofm_screens", sql: "SELECT config.fn_person_assign_reason(" + ID("pat") + ", " + ID("mach1") + ", '2026-11-01T01:00:00Z', 'zz_motor', 'bearing') AS at" },
+    { as: "ofm_runtime", sql: ASSIGN("mach1", "01:00", "zz_motor") },
+    { as: "ofm_reader", sql: "SELECT assigned_by, person_id IS NOT NULL AS has_person, comment FROM hist.state_reason WHERE machine_id = " + MACH("mach1") + " ORDER BY assigned_at",
+      expect: r => r.map(x => x.assigned_by + ":" + x.has_person + ":" + x.comment).join(" ") === "Pat Tester:true:bearing tester:false:test" }] },
+  { name: "line view model: the test line, its machines in flow order, reasons, products and planned orders", steps: [
+    ...LINE_SETUP, ...ORDER_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", true) },
+    { as: "ofm_config", sql: "INSERT INTO config.machine_property (machine_id, name, display_name, datatype, engineering_unit_id, role) SELECT id, 'state_code', 'State code', 'int', " + CODE + ", 'state_code' FROM config.machine WHERE line_id = $line" },
+    { as: "ofm_config", sql: "INSERT INTO config.machine_state_rule (machine_id, priority, property_id, operator, value, state_id) SELECT m.id, 1, p.id, '=', '1', 1 FROM config.machine m JOIN config.machine_property p ON p.machine_id = m.id AND p.name = 'state_code' WHERE m.line_id = $line" },
+    { as: "ofm_config", sql: ADD_REASON("zz_motor", 9, "mach2") },
+    { as: "ofm_screens", sql: "SELECT l AS line FROM jsonb_array_elements(config.fn_screen_model()) l WHERE l->>'name' = 'line1'",
+      expect: r => {
+        const l = r.length === 1 && r[0].line;
+        return l && l.topic === "zz_test/site1/area1/line1" && l.machines.map(m => m.name).join() === "mach0,mach1,mach2,mach3" &&
+          l.machines[1].isConstraint === true && l.machines[1].topic === "zz_test/site1/area1/line1/mach1" && l.orderRequired === true &&
+          l.reasons.some(x => x.code === "zz_motor" && x.lossCategoryId === 9) && !l.reasons.some(x => x.code === "waiting_for_order") &&
+          l.products.map(p => p.sku).join() === "zz_mix" && l.plannedOrders.map(o => o.woNumber).join() === "wo1,wo2";
+      } }] },
+  { name: "stops to code: the constraint's long uncoded stop, and the machine that starved it; gone once coded", steps: [
+    ...SCREEN_SETUP,
+    { as: "ofm_screens", sql: TO_CODE, expect: r => r.map(x => x.machine_name + " " + x.state + " " + x.min + " " + x.stop_min).join(" | ") ===
+        "mach0 fault 7 8 | mach1 idle 10 10" },
+    { as: "ofm_config", sql: ADD_REASON("zz_motor", 9, null) },
+    { as: "ofm_runtime", sql: "SELECT config.fn_assign_reason(" + MACH("mach0") + ", (SELECT max(ts) FROM hist.machine_state_event WHERE machine_id = " + MACH("mach0") + " AND state_id = 5), 'zz_motor', 'tester') AS at" },
+    { as: "ofm_screens", sql: TO_CODE, expect: r => r.map(x => x.machine_name).join() === "mach1" }] },
 ];
 
 // Replace $name placeholders with the test plant's IDs.
@@ -658,7 +766,7 @@ async function runCase(db, c) {
       const label = "step " + (i + 1) + " as " + s.as;
       const { text, params } = bind(s.sql, ids);
       await db.query("SAVEPOINT step");
-      await db.query("SET LOCAL ROLE " + s.as);
+      if (s.as !== "admin") await db.query("SET LOCAL ROLE " + s.as);   // "admin": the administrator, e.g. to move time on
       let rows = null, code = null;
       try {
         rows = (await db.query(text, params)).rows;
@@ -740,7 +848,7 @@ module.exports.run = async function (t) {
       "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
       "WHERE n.nspname = 'config' AND c.relkind IN ('r', 'p') AND NOT EXISTS (" +
       "SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'trg_notify_model_changed') ORDER BY 1")).rows
-      .filter(r => r.relname !== "work_order");   // not part of the runtime model; its events notify on their own channel (migration 015)
+      .filter(r => !["work_order", "person", "person_pin"].includes(r.relname));   // not part of the runtime model (migrations 015, 018)
     t.check("every configuration table notifies the runtime of changes (step 2.1; work orders by their events)", silent.length === 0,
       "no trigger on: " + silent.map(r => r.relname).join(", "));
 

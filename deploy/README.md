@@ -126,6 +126,8 @@ docker compose run --rm migrate example
 9. **Logins** (users and passwords were printed by step 7; they are also in
    `.env`):
    - **Node-RED** — https://localhost:1880 must ask for a login.
+   - **Line view** — https://localhost:1882/dashboard shows the lines; people
+     sign in on it with employee number and PIN (ADR-0028).
    - **Grafana** — https://localhost:3000. Then Connections → Data sources →
      **OFM historian** → **Test** must report success.
    - **Mathesar** — https://localhost:8080; the first visit is described in steps 16–17.
@@ -717,9 +719,19 @@ docker cp ofm-timescaledb:/tmp/config-backup.sql "C:\ofm-backups\config-$(Get-Da
 ```
 Restoring is rehearsed as part of Phase 3b (Architecture Overview §16).
 
+**People on the line view** (ADR-0028). Add each person in Mathesar, table
+*person*: employee number (what they type) and name. They choose their own
+PIN (4 to 8 digits) at their first sign-in on
+`https://<server>:1882/dashboard`. Forgotten PIN: delete the person's row
+in table *person_pin*; they choose a new one at their next sign-in. Someone
+who leaves: set *retired_at*, do not delete (history refers to them).
+Five wrong PINs within 10 minutes lock that person for 10 minutes. A
+signed-in person is signed out after 5 minutes untouched
+(`OFM_SCREEN_IDLE_MINUTES` in `.env`).
+
 **Changing a password** after the first start:
 - *MQTT, Node-RED and the database roles* (`ofm_runtime`, `ofm_config`,
-  `ofm_reader`, `ofm_mathesar`): edit `.env`, then `docker compose up -d`.
+  `ofm_reader`, `ofm_mathesar`, `ofm_screens`, `ofm_demo`): edit `.env`, then `docker compose up -d`.
   Each start rebuilds the broker's password file and sets the role
   passwords from `.env`. After changing `OFM_MATHESAR_DB_PASSWORD`, update
   the stored password in Mathesar's database settings too.
@@ -752,7 +764,7 @@ database (5432) stays reachable from this computer only.
 3. Allow the ports in the Windows firewall (PowerShell as administrator,
    once):
    ```powershell
-   New-NetFirewallRule -DisplayName "OFM" -Direction Inbound -Protocol TCP -LocalPort 3000,8080,1880,8883 -Action Allow
+   New-NetFirewallRule -DisplayName "OFM" -Direction Inbound -Protocol TCP -LocalPort 3000,8080,1880,1882,8883 -Action Allow
    ```
 4. On each client computer install `ofm-ca.crt` as in step 8a, then open
    `https://ofm-server:3000` (with your server's name). A browser warning
@@ -841,7 +853,7 @@ plant network ── [card 1]  OFM server  [card 2] ── PLC network
 
 | Direction | Card | Port | For |
 |---|---|---|---|
-| in | plant network | TCP 3000, 8080, 1880 | Grafana, Mathesar, Node-RED editor (HTTPS) |
+| in | plant network | TCP 3000, 8080, 1880, 1882 | Grafana, Mathesar, Node-RED editor, operator screens (HTTPS) |
 | in | plant network | TCP 8883 | MQTT over TLS |
 | in | plant network | TCP 22 | SSH, from the administrators' PCs only |
 | out | PLC network | TCP 102 | Siemens S7 |
@@ -922,7 +934,7 @@ not at `localhost`.
 | C2 | `sudo reboot`, then wait without logging in; from a plant PC open Grafana | everything back by itself; `ofm/_system/runtime/ofm_runtime_01` online; historian `writing` |
 | C3 | Power cut (pull the cable or switch off the VM hard), power back | as C2; at most about one second of values lost (drill X3) |
 | C4 | No routing: on the server `sudo iptables -S FORWARD \| head -1`; from a plant PC `Test-NetConnection <PLC IP> -Port 102` | `-P FORWARD DROP`; the PLC is **not** reachable |
-| C5 | From a plant PC: `Test-NetConnection <server> -Port 8883` (and 3000, 8080, 1880); then `-Port 5432` and `-Port 1883` | the first four succeed; 5432 and 1883 fail |
+| C5 | From a plant PC: `Test-NetConnection <server> -Port 8883` (and 3000, 8080, 1880, 1882); then `-Port 5432` and `-Port 1883` | the first five succeed; 5432 and 1883 fail |
 | C6 | `chronyc tracking` | "System time" within a few milliseconds; "Leap status: Normal" |
 | C7 | `docker inspect -f '{{.HostConfig.LogConfig.Type}}' ofm-nodered` | `local` |
 | C8 | Drills X1–X4 (`tests/README.md`, step 2.9) | as in the Phase 2 exit check |

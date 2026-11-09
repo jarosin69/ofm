@@ -146,3 +146,7 @@ existing decisions:
   through `config.fn_assign_reason`, which refuses running events and
   reasons of other machines. There is no "un-code": a wrong reason is
   corrected by assigning the right one.
+- 2026-11-09: **Who coded a stop, by ID (step 3a.8, migration 018).**
+  `hist.state_reason` gains `person_id` for reasons coded on the line view
+  (ADR-0027, ADR-0028); `assigned_by` keeps the name as it was; PLC reasons
+  have none.
