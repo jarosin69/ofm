@@ -28,9 +28,11 @@ is keyed by ID (ADR-0004), so a name in a text column is not enough.
    sign-in) lock that person for 10 minutes. The screen shows the same
    message for an unknown number and a wrong PIN. Every attempt is kept in
    `hist.person_sign_in` (append-only).
-4. **Session.** A sign-in holds on that browser only, until *Sign out*, 5
-   minutes untouched (`OFM_SCREEN_IDLE_MINUTES`), a reload, or the same
-   person signing in on another screen. Viewing needs no sign-in; every
+4. **Session.** A sign-in holds on that browser page only, until *Sign
+   out*, 5 minutes untouched (`OFM_SCREEN_IDLE_MINUTES`), a reload, or the
+   same person signing in on another screen. It survives the page's
+   connection being re-established (Wi-Fi, a tab in the background): the
+   page names itself with a random ID on every message. Viewing needs no sign-in; every
    action does. The database also refuses an action for a person without a
    good sign-in in the last 12 hours.
 5. **Recorded by ID and name.** Work order events and reasons get a

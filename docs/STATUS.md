@@ -647,6 +647,19 @@ Numbers are stable; answered questions are removed rather than renumbered.
   although the order had started. Now the dialog shows *Working…*, closes
   on success or shows the refusal in red, *Cancel* drops a waiting action,
   and the screen takes every message from the hub one by one.
+- Line view fix 2 (2026-11-09, found on the laptop: after one order, the
+  next could not be started): a sign-in was tied to the browser's
+  connection, so when the connection was re-established (a tab in the
+  background, a short network drop) OFM forgot it while the screen still
+  showed the person signed in, and the action was refused. Sign-ins now
+  belong to the page (a random page ID on every message); after a dropped
+  connection the screen catches up by itself. Refusals are logged
+  (`docker compose logs screens`). *This order* shows – as soon as no
+  order runs. Tested on the replica with the network cut for 70 s.
+- Simulator (2026-11-09): *Changeover done* on the line view now ends the
+  simulator's setup at once. Before, a started order kept the line in
+  *SETUP* for its whole changeover time (16–24 minutes for mix500), which
+  looked as if the order had not started.
 - The sign-in log's *screen* column holds the browser's address as the
   screens see it; behind the proxy that is the proxy's address, so it does
   not tell screens apart yet.

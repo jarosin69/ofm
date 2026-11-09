@@ -691,7 +691,11 @@ name instead of localhost). Anyone can look; to change something, sign in.
   *Efficiency*); *not accounted for* = scheduled time nobody has explained.
 - **Work order:** *Start an order…*: a planned order (planned in Mathesar,
   table *work_order*) or a new one (product and quantity); this completes
-  the running one. Not signed in? The screen asks for your sign-in first
+  the running one. A new product means a changeover: the machines show
+  *SETUP* and nothing is made for the product's changeover time from
+  `line.json` (mix150 10, mix250 15, mix500 20 minutes, give or take 20 %;
+  the same product: none). *Changeover done* tells the simulator the crew
+  has finished: the line starts at once. Not signed in? The screen asks for your sign-in first
   and then carries on with the action (*Cancel* drops it). The dialog shows
   *Working…* until OFM answers, then closes with a green message at the top,
   or stays open and shows in red why it was refused. *Changeover done* while the changeover is open (OFM also

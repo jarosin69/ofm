@@ -102,6 +102,16 @@ module.exports.run = async function (t) {
     t.check("the result goes to that browser only, naming the action it answers (the dialog waits for it)",
       notices(out).join() === "Stop coded." && out[0].every(m => m._client.socketId === "browser-a") && toA(out)[0].payload.cmd === "code");
 
+    // the page's connection is re-established (Wi-Fi, a background tab): same page, new socket
+    out = await hub.run({ topic: "result", req: { socketId: "page-p-1", screenId: "page-p", cmd: "signin", employeeNo: "1003" },
+                          payload: { result: "ok", person_id: 23, display_name: "Chris Demo" } });
+    out = await hub.run({ _client: { socketId: "page-p-2" }, payload: { cmd: "changeoverdone", lineId: 7, workOrderId: 40, screenId: "page-p" } });
+    t.check("a page whose connection was re-established keeps its sign-in (sessions belong to the page, not the socket)",
+      out[1] && out[1][0].req.personId === 23 && out[1][0].req.socketId === "page-p-2" && out[1][0].req.screenId === "page-p");
+    out = await hub.run({ _client: { socketId: "page-q-1" }, payload: { cmd: "changeoverdone", lineId: 7, workOrderId: 40, screenId: "page-q" } });
+    t.check("another page cannot use that sign-in", out[1] === null);
+    await hub.run({ _client: { socketId: "page-p-2" }, payload: { cmd: "signout", screenId: "page-p" } });
+
     out = await hub.run({ _client: B, payload: { cmd: "complete", lineId: 7, workOrderId: 40 } });
     t.check("another browser is not signed in by someone else's sign-in", out[1] === null);
 

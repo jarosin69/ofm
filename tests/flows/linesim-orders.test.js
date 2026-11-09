@@ -82,8 +82,12 @@ module.exports.run = async function (t) {
   await sim.order(order(6, "mix500", 3000));
   s = await sim.run(10);
   t.check("a new order for another product: changeover (setup) to it", s.mode === "setup" && s.sku === "mix500" && sim.panel.order.made === 0, s.mode + " " + s.sku);
-  s = await sim.run(25 * 60);
-  t.check("after the changeover, the new product runs", s.mode === "run" && by(s, "filler").speed_setpoint === 80, s.mode + " " + by(s, "filler").speed_setpoint);
+  s = await sim.run(60);
+  t.check("one minute into the 16-24 minute changeover: still setup", s.mode === "setup", s.mode);
+  await sim.order(order(6, "mix500", 3000, { changeover: false, ts: 4 }));
+  s = await sim.run(5);
+  t.check("the operator presses Changeover done on OFM's line view: the setup ends, the new product runs at once",
+          s.mode === "run" && by(s, "filler").speed_setpoint === 80, s.mode + " " + by(s, "filler").speed_setpoint);
   await sim.order({ active: false, ts: 3 });
   s = await sim.run(5);
   t.check("no active order (completed in OFM): the line waits", s.mode === "waiting");
