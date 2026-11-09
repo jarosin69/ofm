@@ -1,0 +1,1509 @@
+{
+ "uid": "ofm-line-oee",
+ "title": "OFM · Line OEE",
+ "tags": [
+  "ofm",
+  "oee"
+ ],
+ "description": "OEE of a line with availability, performance and quality, where the time went, per shift, machines, stops and orders (step 3a.8b, ADR-0008).",
+ "timezone": "Australia/Melbourne",
+ "editable": true,
+ "graphTooltip": 1,
+ "refresh": "1m",
+ "schemaVersion": 39,
+ "version": 1,
+ "time": {
+  "from": "now/d",
+  "to": "now"
+ },
+ "timepicker": {
+  "refresh_intervals": [
+   "1m",
+   "5m",
+   "15m",
+   "1h"
+  ]
+ },
+ "templating": {
+  "list": [
+   {
+    "name": "line",
+    "label": "Line",
+    "type": "query",
+    "datasource": {
+     "type": "grafana-postgresql-datasource",
+     "uid": "ofm-historian"
+    },
+    "query": "-- Lines with a KPI rule (config.line_kpi_rule)\nSELECT coalesce(l.display_name, l.name) AS __text, l.id AS __value\nFROM config.line l\nWHERE l.retired_at IS NULL AND EXISTS (SELECT 1 FROM config.line_kpi_rule r WHERE r.line_id = l.id)\nORDER BY l.name",
+    "definition": "-- Lines with a KPI rule (config.line_kpi_rule)\nSELECT coalesce(l.display_name, l.name) AS __text, l.id AS __value\nFROM config.line l\nWHERE l.retired_at IS NULL AND EXISTS (SELECT 1 FROM config.line_kpi_rule r WHERE r.line_id = l.id)\nORDER BY l.name",
+    "refresh": 1,
+    "multi": false,
+    "includeAll": false,
+    "current": {},
+    "options": [],
+    "sort": 0,
+    "hide": 0
+   },
+   {
+    "name": "shift",
+    "label": "Shift",
+    "type": "query",
+    "datasource": {
+     "type": "grafana-postgresql-datasource",
+     "uid": "ofm-historian"
+    },
+    "query": "-- All: the time picker decides. Or one shift of the last 14 days (config.line_shift),\n-- newest first; its value is '<start ms>-<end ms>' (hist.fn_dashboard_period).\nSELECT 'All - use the time picker' AS __text, 'all' AS __value\nUNION ALL\n(SELECT s.name || ' · ' || to_char(s.shift_day, 'Dy DD Mon') ||\n        CASE WHEN s.ends_at > now() THEN ' (now)' ELSE '' END,\n        (extract(epoch FROM s.starts_at) * 1000)::bigint || '-' || (extract(epoch FROM s.ends_at) * 1000)::bigint\n FROM config.fn_line_shifts(${line}, now() - interval '14 days', now() + interval '1 day') s\n WHERE s.starts_at <= now()\n ORDER BY s.starts_at DESC)",
+    "definition": "-- All: the time picker decides. Or one shift of the last 14 days (config.line_shift),\n-- newest first; its value is '<start ms>-<end ms>' (hist.fn_dashboard_period).\nSELECT 'All - use the time picker' AS __text, 'all' AS __value\nUNION ALL\n(SELECT s.name || ' · ' || to_char(s.shift_day, 'Dy DD Mon') ||\n        CASE WHEN s.ends_at > now() THEN ' (now)' ELSE '' END,\n        (extract(epoch FROM s.starts_at) * 1000)::bigint || '-' || (extract(epoch FROM s.ends_at) * 1000)::bigint\n FROM config.fn_line_shifts(${line}, now() - interval '14 days', now() + interval '1 day') s\n WHERE s.starts_at <= now()\n ORDER BY s.starts_at DESC)",
+    "description": "All: the time picker decides the period. A shift: that shift, whatever the time picker says.",
+    "refresh": 2,
+    "multi": false,
+    "includeAll": false,
+    "current": {
+     "text": "All - use the time picker",
+     "value": "all"
+    },
+    "options": [],
+    "sort": 0,
+    "hide": 0
+   }
+  ]
+ },
+ "annotations": {
+  "list": []
+ },
+ "links": [
+  {
+   "title": "OFM · Live data",
+   "type": "link",
+   "url": "/d/ofm-live-data",
+   "icon": "dashboard",
+   "targetBlank": false
+  }
+ ],
+ "panels": [
+  {
+   "id": 1,
+   "type": "gauge",
+   "title": "OEE",
+   "description": "Fully productive time / planned production time = availability × performance × quality (ADR-0008). Red below 60 %, green from 85 %. Empty: cannot be calculated (no scheduled time, no units, or no order yet).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 4,
+    "h": 7
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT k.oee AS \"OEE\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi(${line}, p.t0, p.t1) k"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1,
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#d44a3a",
+        "value": null
+       },
+       {
+        "color": "#e5a823",
+        "value": 0.6
+       },
+       {
+        "color": "#299c46",
+        "value": 0.85
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showThresholdMarkers": true,
+    "showThresholdLabels": false,
+    "orientation": "auto",
+    "minVizHeight": 75,
+    "minVizWidth": 75,
+    "sizing": "auto"
+   }
+  },
+  {
+   "id": 2,
+   "type": "gauge",
+   "title": "Availability",
+   "description": "Running time / planned production time: the share of the time meant for production the line actually ran. Red below 80 %, green from 90 %. Empty: cannot be calculated (no scheduled time, no units, or no order yet).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 0,
+    "w": 4,
+    "h": 7
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT k.availability AS \"Availability\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi(${line}, p.t0, p.t1) k"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1,
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#d44a3a",
+        "value": null
+       },
+       {
+        "color": "#e5a823",
+        "value": 0.8
+       },
+       {
+        "color": "#299c46",
+        "value": 0.9
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showThresholdMarkers": true,
+    "showThresholdLabels": false,
+    "orientation": "auto",
+    "minVizHeight": 75,
+    "minVizWidth": 75,
+    "sizing": "auto"
+   }
+  },
+  {
+   "id": 3,
+   "type": "gauge",
+   "title": "Performance",
+   "description": "Units made × ideal cycle time / running time: speed against the rated speed of the product. Above 100 % means the rated speed is set too low. Red below 80 %, green from 95 %. Empty: cannot be calculated (no scheduled time, no units, or no order yet).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 0,
+    "w": 4,
+    "h": 7
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT k.performance AS \"Performance\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi(${line}, p.t0, p.t1) k"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1,
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#d44a3a",
+        "value": null
+       },
+       {
+        "color": "#e5a823",
+        "value": 0.8
+       },
+       {
+        "color": "#299c46",
+        "value": 0.95
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showThresholdMarkers": true,
+    "showThresholdLabels": false,
+    "orientation": "auto",
+    "minVizHeight": 75,
+    "minVizWidth": 75,
+    "sizing": "auto"
+   }
+  },
+  {
+   "id": 4,
+   "type": "gauge",
+   "title": "Quality",
+   "description": "Good units / all units counted (good + reject). Red below 95 %, green from 99 %. Empty: cannot be calculated (no scheduled time, no units, or no order yet).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 4,
+    "h": 7
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT k.quality AS \"Quality\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi(${line}, p.t0, p.t1) k"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1,
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#d44a3a",
+        "value": null
+       },
+       {
+        "color": "#e5a823",
+        "value": 0.95
+       },
+       {
+        "color": "#299c46",
+        "value": 0.99
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showThresholdMarkers": true,
+    "showThresholdLabels": false,
+    "orientation": "auto",
+    "minVizHeight": 75,
+    "minVizWidth": 75,
+    "sizing": "auto"
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "Good units",
+   "description": "Good units at the line's output machine in scheduled time.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 0,
+    "w": 4,
+    "h": 3
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT k.good AS \"Good units\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi(${line}, p.t0, p.t1) k"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "#299c46"
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 6,
+   "type": "stat",
+   "title": "Rejects",
+   "description": "Rejected units in scheduled time.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 0,
+    "w": 4,
+    "h": 3
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT k.reject AS \"Rejects\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi(${line}, p.t0, p.t1) k"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "#ff9830"
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 7,
+   "type": "stat",
+   "title": "Downtime",
+   "description": "Planned production time the line did not run (breakdowns, other unplanned, not accounted for).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 4,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT k.downtime_h AS \"Downtime\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi(${line}, p.t0, p.t1) k"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "h",
+     "decimals": 1,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "#c4162a"
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 8,
+   "type": "stat",
+   "title": "Not accounted for",
+   "description": "Scheduled minutes nobody has explained yet (no reason, or no data). Code stops on the line view.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 4,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT k.unaccounted_s / 60 AS \"Not accounted for\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi(${line}, p.t0, p.t1) k"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "m",
+     "decimals": 0,
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "#8e8e8e"
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "orientation": "auto"
+   }
+  },
+  {
+   "id": 9,
+   "type": "barchart",
+   "title": "Downtime by reason (minutes)",
+   "description": "Where the planned production time went, longest first, coloured by loss type. Changeover (order) = the changeover window of a work order; Minor stops = stops shorter than the line's threshold; Not accounted for = stops nobody has coded yet.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 7,
+    "w": 12,
+    "h": 10
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT l.reason AS \"Reason\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 9) / 60)::numeric, 1) AS \"Breakdowns\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 12) / 60)::numeric, 1) AS \"Other unplanned\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 90) / 60)::numeric, 1) AS \"Not accounted for\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 6) / 60)::numeric, 1) AS \"Changeover\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 5) / 60)::numeric, 1) AS \"Cleaning\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 4) / 60)::numeric, 1) AS \"Maintenance\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 7) / 60)::numeric, 1) AS \"Other planned\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_losses(${line}, p.t0, p.t1) l\nWHERE l.loss_category_id <> 2\nGROUP BY 1\nORDER BY sum(l.seconds) DESC\nLIMIT 15"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "m",
+     "decimals": 0,
+     "custom": {
+      "fillOpacity": 85,
+      "lineWidth": 0
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Breakdowns"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#c4162a"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Other unplanned"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#ff9830"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Not accounted for"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#8e8e8e"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Changeover"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#3274d9"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Cleaning"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#8ab8ff"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Maintenance"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#a352cc"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Other planned"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#ca95e5"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "orientation": "horizontal",
+    "stacking": "normal",
+    "showValue": "never",
+    "groupWidth": 0.7,
+    "barWidth": 0.9,
+    "xTickLabelRotation": 0,
+    "xTickLabelSpacing": 0,
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    },
+    "fullHighlight": false,
+    "xField": "Reason"
+   }
+  },
+  {
+   "id": 10,
+   "type": "barchart",
+   "title": "Downtime by machine (minutes)",
+   "description": "The stop time each machine cost the line: the constraint's own stops, and the time it was starved or blocked by a stopped machine, charged to that machine (ADR-0024).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 7,
+    "w": 12,
+    "h": 10
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT coalesce(l.machine, '(no data)') AS \"Machine\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 9) / 60)::numeric, 1) AS \"Breakdowns\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 12) / 60)::numeric, 1) AS \"Other unplanned\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 90) / 60)::numeric, 1) AS \"Not accounted for\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 6) / 60)::numeric, 1) AS \"Changeover\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 5) / 60)::numeric, 1) AS \"Cleaning\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 4) / 60)::numeric, 1) AS \"Maintenance\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 7) / 60)::numeric, 1) AS \"Other planned\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_losses(${line}, p.t0, p.t1) l\nWHERE l.loss_category_id <> 2\nGROUP BY 1\nORDER BY sum(l.seconds) DESC\nLIMIT 15"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "m",
+     "decimals": 0,
+     "custom": {
+      "fillOpacity": 85,
+      "lineWidth": 0
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Breakdowns"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#c4162a"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Other unplanned"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#ff9830"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Not accounted for"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#8e8e8e"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Changeover"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#3274d9"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Cleaning"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#8ab8ff"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Maintenance"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#a352cc"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Other planned"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#ca95e5"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "orientation": "horizontal",
+    "stacking": "normal",
+    "showValue": "never",
+    "groupWidth": 0.7,
+    "barWidth": 0.9,
+    "xTickLabelRotation": 0,
+    "xTickLabelSpacing": 0,
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    },
+    "fullHighlight": false,
+    "xField": "Machine"
+   }
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "OEE trend (per hour; per day over more than 2 days)",
+   "description": "OEE with availability, performance and quality per hour (per day for longer periods), in Melbourne time. Gaps: hours without planned production.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 17,
+    "w": 16,
+    "h": 9
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "time_series",
+     "rawSql": "SELECT s.period_start AS time, s.oee AS \"OEE\", s.availability AS \"Availability\",\n       s.performance AS \"Performance\", s.quality AS \"Quality\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p,\n     hist.fn_line_kpi_series(${line}, p.t0, p.t1, CASE WHEN p.t1 - p.t0 <= interval '2 days' THEN 'hour' ELSE 'day' END) s\nORDER BY 1"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "decimals": 1,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "pointSize": 5,
+      "showPoints": "always",
+      "spanNulls": false
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "OEE"
+      },
+      "properties": [
+       {
+        "id": "custom.lineWidth",
+        "value": 3
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#3274d9"
+        }
+       },
+       {
+        "id": "custom.fillOpacity",
+        "value": 10
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Availability"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#299c46"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Performance"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#e5a823"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Quality"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#a352cc"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   }
+  },
+  {
+   "id": 12,
+   "type": "barchart",
+   "title": "OEE by shift",
+   "description": "OEE of each shift with planned production in the period (shifts: Mathesar, table line_shift). Same colours as the OEE gauge.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 17,
+    "w": 8,
+    "h": 9
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT s.shift_name || ' ' || to_char(s.shift_day, 'Dy DD/MM') AS \"Shift\", s.oee AS \"OEE\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi_by_shift(${line}, p.t0, p.t1) s\nWHERE s.pos8_s > 0\nORDER BY s.starts_at"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1,
+     "decimals": 1,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#d44a3a",
+        "value": null
+       },
+       {
+        "color": "#e5a823",
+        "value": 0.6
+       },
+       {
+        "color": "#299c46",
+        "value": 0.85
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "custom": {
+      "fillOpacity": 85,
+      "lineWidth": 0
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "vertical",
+    "stacking": "none",
+    "showValue": "always",
+    "groupWidth": 0.7,
+    "barWidth": 0.9,
+    "xField": "Shift",
+    "xTickLabelRotation": -45,
+    "legend": {
+     "showLegend": false,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "single",
+     "sort": "none"
+    }
+   }
+  },
+  {
+   "id": 13,
+   "type": "barchart",
+   "title": "Loss waterfall (hours)",
+   "description": "From calendar time down to fully productive time (ADR-0008): each red bar is a loss, each blue bar what is left. Speed, quality and fully productive time need an ideal cycle time (a work order).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 26,
+    "w": 12,
+    "h": 11
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "WITH k AS (SELECT k.* FROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_kpi(${line}, p.t0, p.t1) k)\nSELECT v.step AS \"Step\", round((v.base / 3600)::numeric, 2) AS \"base\",\n       round((v.total / 3600)::numeric, 2) AS \"Time\", round((v.loss / 3600)::numeric, 2) AS \"Loss\"\nFROM k, LATERAL (VALUES\n  (1,  '1 Calendar time',           0::float8,                                  k.pos1_s,   NULL::float8),\n  (2,  '2 Not scheduled',           k.pos3_s,                                   NULL,       k.pos2_s),\n  (3,  '3 Scheduled time',          0,                                          k.pos3_s,   NULL),\n  (4,  '4 Maintenance',             k.pos3_s - k.pos4_s,                        NULL,       k.pos4_s),\n  (5,  '5 Cleaning',                k.pos3_s - k.pos4_s - k.pos5_s,             NULL,       k.pos5_s),\n  (6,  '6 Changeover',              k.pos8_s + k.pos7_s,                        NULL,       k.pos6_s),\n  (7,  '7 Other planned',           k.pos8_s,                                   NULL,       k.pos7_s),\n  (8,  '8 Planned production',      0,                                          k.pos8_s,   NULL),\n  (9,  '9 Breakdowns',              k.pos8_s - k.pos9_s,                        NULL,       k.pos9_s),\n  (10, '12 Other unplanned',        k.running_s + k.unaccounted_s,              NULL,       k.pos12_s),\n  (11, 'Not accounted for',         k.running_s,                                NULL,       k.unaccounted_s),\n  (12, 'Running time',              0,                                          k.running_s, NULL),\n  (13, '10 Speed loss',             k.pos13_s + k.pos11_s,                      NULL,       greatest(k.pos10_s, 0)),\n  (14, '11 Quality loss',           k.pos13_s,                                  NULL,       k.pos11_s),\n  (15, '13 Fully productive time',  0,                                          k.pos13_s,  NULL)\n) AS v (n, step, base, total, loss)\nORDER BY v.n"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "h",
+     "decimals": 1,
+     "custom": {
+      "fillOpacity": 85,
+      "lineWidth": 0
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "base"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "transparent"
+        }
+       },
+       {
+        "id": "custom.hideFrom",
+        "value": {
+         "legend": true,
+         "tooltip": true,
+         "viz": false
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Time"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#3274d9"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Loss"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#d44a3a"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "orientation": "horizontal",
+    "stacking": "normal",
+    "showValue": "never",
+    "groupWidth": 0.75,
+    "barWidth": 0.9,
+    "xField": "Step",
+    "legend": {
+     "showLegend": false,
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   }
+  },
+  {
+   "id": 14,
+   "type": "table",
+   "title": "Machines",
+   "description": "Per machine: the line stop time charged to it, its own breakdowns (stops with a breakdown reason), MTBF = running time between breakdowns, MTTR = average breakdown length.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 26,
+    "w": 12,
+    "h": 11
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT coalesce(m.display_name, r.machine_name) AS \"Machine\",\n       round((d.s / 60)::numeric) AS \"Line stop charged (min)\",\n       r.breakdowns AS \"Breakdowns\",\n       round((r.breakdown_s / 60)::numeric) AS \"Breakdown (min)\",\n       round(r.mtbf_h::numeric, 1) AS \"MTBF (h)\",\n       round(r.mttr_min::numeric, 1) AS \"MTTR (min)\",\n       round((r.running_s / 3600)::numeric, 1) AS \"Running (h)\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p\nCROSS JOIN LATERAL hist.fn_machine_reliability(${line}, p.t0, p.t1) r\nLEFT JOIN config.machine m ON m.line_id = ${line} AND m.name = r.machine_name AND m.retired_at IS NULL\nLEFT JOIN LATERAL (SELECT sum(l.seconds) AS s FROM hist.fn_line_losses(${line}, p.t0, p.t1) l\n                   WHERE l.loss_category_id <> 2 AND l.machine = coalesce(m.display_name, r.machine_name)) d ON true\nORDER BY d.s DESC NULLS LAST"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "cellOptions": {
+       "type": "auto"
+      }
+     },
+     "noValue": "–"
+    },
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   }
+  },
+  {
+   "id": 15,
+   "type": "table",
+   "title": "Stops",
+   "description": "Every piece of the period the line did not run, newest first: its loss, the reason (coded by the PLC, a person on the line view, or ofm), and the machine charged. Code the ones Not accounted for on the line view.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 37,
+    "w": 14,
+    "h": 12
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT s.started AS \"Start\", round((s.seconds / 60)::numeric, 1) AS \"Minutes\", s.state AS \"State\",\n       s.loss_category AS \"Loss\", s.reason AS \"Reason\", s.machine AS \"Machine\", s.assigned_by AS \"Coded by\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_stop_list(${line}, p.t0, p.t1) s\nLIMIT 200"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "cellOptions": {
+       "type": "auto"
+      }
+     },
+     "noValue": "–"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Start"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "dateTimeAsLocal"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Loss"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "Breakdowns": {
+            "color": "#c4162a"
+           },
+           "Unaccounted": {
+            "color": "#8e8e8e"
+           },
+           "Other unplanned downtime": {
+            "color": "#ff9830"
+           },
+           "Changeover": {
+            "color": "#3274d9"
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   }
+  },
+  {
+   "id": 16,
+   "type": "table",
+   "title": "Work orders",
+   "description": "Orders that ran in the period, newest first; good, reject and OEE inside the period.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 14,
+    "y": 37,
+    "w": 10,
+    "h": 12
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT o.wo_number AS \"Order\", o.sku AS \"Product\", o.planned_qty AS \"Planned\", o.good AS \"Good\", o.reject AS \"Reject\",\n       o.oee AS \"OEE\", o.started_at AS \"Started\", o.completed_at AS \"Completed\", o.started_by AS \"Started by\"\nFROM hist.fn_dashboard_period('${shift}', $__timeFrom(), $__timeTo()) p, hist.fn_line_orders(${line}, p.t0, p.t1) o"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "cellOptions": {
+       "type": "auto"
+      }
+     },
+     "noValue": "–"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "OEE"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "#d44a3a",
+           "value": null
+          },
+          {
+           "color": "#e5a823",
+           "value": 0.6
+          },
+          {
+           "color": "#299c46",
+           "value": 0.85
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Started"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "dateTimeAsLocal"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Completed"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "dateTimeAsLocal"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   }
+  }
+ ]
+}

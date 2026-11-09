@@ -270,7 +270,7 @@ auto-operator still work.
 |---|---|---|
 | Simulator control panel | linesim, `https://<server>:1881/dashboard` | the line with conveyor levels; per machine: speed %, MTBF, MTTR, jams/h, rejects; buttons *Break*, *Break and hold*, *Jam*, *Repair*; run/stop the line, stop the simulator, shift pattern on/off, product changeover, presets; this hour's output against rated *(built, step 3a.1)*; work orders: follow on/off, auto-operator, start and complete an order *(built, step 3a.5)*. Later: backend per machine (3a.9), the simulator's own OEE (3a.10) |
 | Line view | OFM (container `ofm-screens`, ADR-0027), `https://<server>:1882/dashboard` | the line from the UNS: machines in flow order, coloured by state, time in state, fault code; KPIs of this hour, today and the order; the active order with *Start*, *Changeover done*, *Complete*; stops waiting for a reason, coded by a signed-in person (ADR-0028) *(built, step 3a.8)* |
-| Line OEE | Grafana | OEE with availability, performance and quality per shift and hour; loss waterfall; downtime Pareto by reason and by machine; MTBF and MTTR per machine |
+| Line OEE | Grafana, *OFM · Line OEE*, `https://<server>:3000` | OEE, availability, performance and quality as gauges; downtime by reason and by machine; OEE trend per hour or day and per shift; loss waterfall; MTBF and MTTR per machine; stops and orders *(built, step 3a.8b)* |
 
 ## 9. Tests
 
@@ -713,6 +713,36 @@ name instead of localhost). Anyone can look; to change something, sign in.
 Who did what is recorded by ID and name: `entered_by` and `person_id` in
 `hist.work_order_event`, `assigned_by` and `person_id` in
 `hist.state_reason`; every sign-in attempt in `hist.person_sign_in`.
+
+### Line OEE in Grafana (step 3a.8b)
+
+Open Grafana (`https://localhost:3000`), *Dashboards* → folder *OFM* →
+**OFM · Line OEE**. At the top: **Line**, **Shift** and the time picker
+(top right; *Today so far* by default).
+
+- **Shift:** *All* lets the time picker decide; or pick one shift of the
+  last two weeks (e.g. *B · Mon 09 Nov (now)*), whatever the time picker
+  says. The demo's shifts are A 06:00–14:00, B 14:00–22:00 and C
+  22:00–06:00, Monday to Friday; C has no scheduled time in the demo.
+  Change them in Mathesar, table **line_shift**: e.g. for two 12-hour
+  shifts set A's end to 18:00, B to 18:00–06:00 and delete C. Overlapping
+  shifts are listed in view *vw_line_shift_problem*.
+- **Gauges:** OEE, availability, performance, quality for the period; red
+  below, green from: OEE 60/85 %, A 80/90 %, P 80/95 %, Q 95/99 % (amber
+  between). Next to them good units, rejects, downtime and the time nobody
+  has explained (*Not accounted for*).
+- **Downtime by reason / by machine:** where the planned production time
+  went, longest first, coloured by loss type. *By machine* charges the
+  filler's starved and blocked time to the machine that caused it. There is
+  no OEE per machine: OEE is the line's, measured at the filler.
+- **OEE trend** per hour (per day for longer periods) and **OEE by shift**.
+- **Loss waterfall:** calendar time down to fully productive time; red bars
+  are losses.
+- **Machines** (time charged, breakdowns, MTBF, MTTR), **Stops** (with who
+  coded them) and **Work orders** (good, reject, OEE).
+
+Hover over a panel's title (ⓘ) for what it shows. The dashboard reloads
+every minute.
 
 ### What restarts do
 

@@ -168,3 +168,21 @@ reduced by speed and quality losses even though neither is a failure.
     week 0.7 s on a simulated busy week. No materialised views needed yet.
   The waterfall closes (positions add up to Pos 1) in the database tests,
   including both daylight-saving days.
+- 2026-11-09: **Shifts and the Line OEE dashboard (step 3a.8b, migration
+  019).** Decision 6's shift periods: each line's shifts are rows of
+  `config.line_shift` (name, start, end, the days a shift starts on, valid
+  from/to), edited in Mathesar, in the site's local time; a shift ending at
+  or before its start ends the next day. Shifts only cut time, like hours
+  and days: scheduled time stays `config.line_schedule`. Overlapping shifts
+  are listed in `config.vw_line_shift_problem`. The Grafana dashboard
+  *OFM · Line OEE* shows, for the time picker's period or one chosen shift:
+  OEE, availability, performance and quality as gauges, coloured red below
+  and green from OEE 60/85 %, availability 80/90 %, performance 80/95 %,
+  quality 95/99 % (assumed common targets; amber between); downtime by
+  reason and by machine charged; OEE trend per hour or day; OEE per shift;
+  the loss waterfall; machines (MTBF, MTTR); stops and orders. The line
+  view's KPI tiles use the same colours. There is deliberately **no OEE per
+  machine**: OEE belongs to the line at its constraint, and a machine next
+  to the constraint would look poor whenever the constraint starves or
+  blocks it; *downtime by machine* (time charged per ADR-0024) answers
+  which machine costs the line most.

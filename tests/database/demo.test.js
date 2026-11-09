@@ -39,6 +39,7 @@ const COUNTS = `
          (SELECT count(*) FROM pg_namespace WHERE nspname = 'demo')::int AS demo_schema,
          (SELECT count(*) FROM pg_roles WHERE rolname = 'ofm_demo')::int AS demo_role,
          (SELECT count(*) FROM config.person WHERE note = 'demo (db/examples/demo-packline.sql)' AND retired_at IS NULL)::int AS people,
+         (SELECT count(*) FROM config.line_shift WHERE line_id IN (SELECT id FROM line))::int AS shifts,
          (SELECT name FROM config.machine WHERE id = (SELECT constraint_machine_id FROM config.line_kpi_rule
            WHERE line_id IN (SELECT id FROM line) LIMIT 1)) AS constraint_machine`;
 
@@ -76,6 +77,8 @@ module.exports.run = async function (t) {
     t.check("demo line: 18 fault codes mapped to their machines' reasons, general reasons, orders required (step 3a.6)",
             once.fault_codes === 18 && once.machine_reasons === 18 && once.general_reasons === 2 && once.order_required === true,
             JSON.stringify(once) + (once.order_required === false ? " - the demo was loaded before step 3a.6: run migrate demo-remove, then migrate demo" : ""));
+    t.check("demo line: shifts A, B and C (step 3a.8b)", once.shifts === 3,
+            JSON.stringify(once) + (once.shifts === 0 ? " - the demo was loaded before step 3a.8b: run migrate demo" : ""));
     t.check("demo line: three demo people for the line view, 1001-1003 (step 3a.8)", once.people === 3,
             JSON.stringify(once) + (once.people === 0 ? " - the demo was loaded before step 3a.8: run migrate demo" : ""));
     t.check("demo line: 6 roles per machine, a 5 s heartbeat, 8 state rules per machine (step 3a.3)",
@@ -143,7 +146,7 @@ module.exports.run = async function (t) {
     t.check("demo-remove takes away its reasons and fault codes",
             gone.fault_codes === 0 && gone.machine_reasons === 0 && gone.general_reasons === 0, JSON.stringify(gone));
     t.check("demo-remove takes away its work orders, schema demo, role ofm_demo and the demo people",
-            gone.orders === 0 && gone.demo_schema === 0 && gone.demo_role === 0 && gone.people === 0, JSON.stringify(gone));
+            gone.orders === 0 && gone.demo_schema === 0 && gone.demo_role === 0 && gone.people === 0 && gone.shifts === 0, JSON.stringify(gone));
     t.check("demo-remove leaves the rest of the model alone (eggline01, if loaded, is still there)",
             eggline === (await (async () => { await db.query("ROLLBACK TO SAVEPOINT before_remove");
               return (await db.query("SELECT count(*)::int AS n FROM config.line WHERE name = 'eggline01'")).rows[0].n; })()), eggline);

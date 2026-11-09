@@ -11,7 +11,8 @@
 -- mix150, mix250, mix500 with their rated speeds; the line's KPI rules
 -- (constraint: filler, minor stops under 5 minutes, output counted at the
 -- closer); its shift pattern
--- (Mon-Fri 06:00-22:00, cleaning 21:30-22:00, Melbourne time); and the flow
+-- (Mon-Fri 06:00-22:00, cleaning 21:30-22:00, Melbourne time); shifts A, B
+-- and C of 8 hours from 06:00; and the flow
 -- order of the machines (ADR-0024); each machine's property roles, heartbeat
 -- and state rules (ADR-0006, ADR-0025); reasons for its fault codes and for
 -- operators (ADR-0009); and the simulator's database role
@@ -188,6 +189,15 @@ FROM demo_line,
 WHERE NOT EXISTS (SELECT 1 FROM config.line_schedule w
                   WHERE w.line_id = demo_line.id AND w.kind = v.kind
                     AND w.start_time = v.start_time AND w.end_time = v.end_time);
+
+-- Shifts (step 3a.8b): three of 8 hours, Monday to Friday; C has no
+-- scheduled time in the demo (the line runs 06:00-22:00). Edit them in
+-- Mathesar, table line_shift (e.g. two shifts A 06:00-18:00, B 18:00-06:00).
+INSERT INTO config.line_shift (line_id, name, start_time, end_time, valid_from, note)
+SELECT demo_line.id, v.name, v.start_time, v.end_time, '2026-01-01', 'demo'
+FROM demo_line,
+     (VALUES ('A', time '06:00', time '14:00'), ('B', time '14:00', time '22:00'), ('C', time '22:00', time '06:00')) AS v (name, start_time, end_time)
+WHERE NOT EXISTS (SELECT 1 FROM config.line_shift w WHERE w.line_id = demo_line.id);
 
 -- Reasons (step 3a.6, ADR-0009): the machines' fault codes (demo README
 -- section 4), each a reason of its machine, and six reasons for operators,

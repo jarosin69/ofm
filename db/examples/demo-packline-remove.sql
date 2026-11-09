@@ -1,7 +1,7 @@
 -- Removes the simulated packing line (db/examples/demo-packline.sql)
 -- completely: its history (values, state events and their reasons, counts,
 -- work orders and their events), the demo people, state rules, reasons, fault codes, mappings,
--- properties, KPI rules, rates, schedule,
+-- properties, KPI rules, rates, schedule, shifts,
 -- flow order, machines, line, its sources linesim_m1 ... linesim_m6, the
 -- area "packing" if nothing else is in it, and the demo products if no other
 -- line uses them. Run with
@@ -63,6 +63,7 @@ DELETE FROM config.asset_relationship WHERE from_machine_id IN (SELECT id FROM r
 DELETE FROM config.line_kpi_rule WHERE line_id IN (SELECT id FROM rm_line);
 DELETE FROM config.material_line_rate WHERE line_id IN (SELECT id FROM rm_line);
 DELETE FROM config.line_schedule WHERE line_id IN (SELECT id FROM rm_line);
+DELETE FROM config.line_shift WHERE line_id IN (SELECT id FROM rm_line);
 DELETE FROM config.machine WHERE id IN (SELECT id FROM rm_machines);
 DELETE FROM config.line WHERE id IN (SELECT id FROM rm_line);
 DELETE FROM config.area a USING config.site s, config.enterprise e

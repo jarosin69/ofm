@@ -160,6 +160,13 @@ const SCREEN_SETUP = [
 const TO_CODE = "SELECT machine_name, state, round(uncoded_s / 60) AS min, round(stop_s / 60) AS stop_min FROM hist.fn_screen_stops_to_code($line, 24) " +
   "ORDER BY uncoded_from";
 
+// Shifts and the Line OEE dashboard (migration 019): on the worked example's
+// Monday, shift A 06:00-09:30 and B 09:30-14:00, Melbourne time.
+const ADD_SHIFT = (name, from, to, extra) => "INSERT INTO config.line_shift (line_id, name, start_time, end_time, valid_from" + (extra ? ", " + extra[0] : "") +
+  ") VALUES ($line, '" + name + "', '" + from + "', '" + to + "', '2026-01-01'" + (extra ? ", " + extra[1] : "") + ")";
+const SHIFTS_OF = (from, to) => "SELECT name, to_char(starts_at AT TIME ZONE 'Australia/Melbourne', 'Dy HH24:MI') || '-' || " +
+  "to_char(ends_at AT TIME ZONE 'Australia/Melbourne', 'Dy HH24:MI') AS t FROM config.fn_line_shifts($line, " + from + ", " + to + ")";
+
 // The cases. Each step runs as a role ("as"; "admin" = the administrator) and expects success ("ok", or a
 // function that checks the rows) or a refusal with a PostgreSQL error code.
 const CASES = [
@@ -745,6 +752,50 @@ const CASES = [
     { as: "ofm_config", sql: ADD_REASON("zz_motor", 9, null) },
     { as: "ofm_runtime", sql: "SELECT config.fn_assign_reason(" + MACH("mach0") + ", (SELECT max(ts) FROM hist.machine_state_event WHERE machine_id = " + MACH("mach0") + " AND state_id = 5), 'zz_motor', 'tester') AS at" },
     { as: "ofm_screens", sql: TO_CODE, expect: r => r.map(x => x.machine_name).join() === "mach1" }] },
+
+  // --- shifts and the Line OEE dashboard (migration 019, step 3a.8b) ------------------------------
+  { name: "shifts: edited as ofm_config; a night shift ends the next day; only on the days it starts", steps: [
+    { as: "ofm_config", sql: ADD_SHIFT("A", "06:00", "14:00") },
+    { as: "ofm_config", sql: ADD_SHIFT("C", "22:00", "06:00") },
+    { as: "ofm_config", sql: ADD_SHIFT("A!", "06:00", "14:00"), expect: REFUSED_BY_RULE },
+    { as: "ofm_reader", sql: SHIFTS_OF("'2026-11-06 12:00+11'", "'2026-11-09 08:00+11'"),
+      expect: r => r.map(x => x.name + " " + x.t).join(" | ") === "A Fri 12:00-Fri 14:00 | C Fri 22:00-Sat 06:00 | A Mon 06:00-Mon 08:00" }] },   // no C started on Sunday
+  { name: "shifts: overlapping shifts are listed as a problem", steps: [
+    { as: "ofm_config", sql: ADD_SHIFT("A", "06:00", "14:00", ["mon, tue, wed, thu, fri, sat, sun", "true, true, true, true, true, true, true"]) },
+    { as: "ofm_config", sql: ADD_SHIFT("B", "13:00", "22:00", ["mon, tue, wed, thu, fri, sat, sun", "true, true, true, true, true, true, true"]) },
+    { as: "ofm_reader", sql: "SELECT DISTINCT shift, overlaps_shift FROM config.vw_line_shift_problem WHERE line_id = $line",
+      expect: r => r.length === 1 && r[0].shift === "A" && r[0].overlaps_shift === "B" }] },
+  { name: "shifts: on the daylight-saving day a 06:00-14:00 shift is still 8 hours; the night shift around the change 7", steps: [
+    { as: "ofm_config", sql: ADD_SHIFT("A", "06:00", "14:00", ["sun", "true"]) },
+    { as: "ofm_config", sql: ADD_SHIFT("C", "22:00", "06:00", ["sat", "true"]) },
+    { as: "ofm_reader", sql: "SELECT name, extract(epoch FROM ends_at - starts_at) / 3600 AS h FROM config.fn_line_shifts($line, '2026-10-03 12:00+10', '2026-10-04 23:00+11')",
+      expect: r => r.map(x => x.name + Number(x.h)).join() === "C7,A8" }] },
+  { name: "KPIs per shift: the worked example split at 09:30 adds up to the whole", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_config", sql: ADD_SHIFT("A", "06:00", "09:30") },
+    { as: "ofm_config", sql: ADD_SHIFT("B", "09:30", "14:00") },
+    { as: "ofm_reader", sql: "SELECT *, shift_day::text AS day FROM hist.fn_line_kpi_by_shift($line, " + L("08:30") + ", " + L("10:30") + ")",
+      expect: r => r.length === 2 && r[0].shift_name === "A" && r[1].shift_name === "B" && r[0].day === "2026-11-02" &&
+        Math.round(r[0].pos8_s + r[1].pos8_s) === 2700 && r[0].good + r[1].good === 2000 &&
+        Math.round(r[0].running_s + r[1].running_s) === 1860 && near(r[0].oee, 1200 / Math.round(r[0].pos8_s)) }] },
+  { name: "losses: the worked example per position, reason and machine charged; adds up to the waterfall", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_reader", sql: "SELECT loss_category_id AS pos, reason, machine, round(seconds) AS s FROM hist.fn_line_losses($line, " + L("08:30") + ", " + L("10:30") + ") ORDER BY pos, reason",
+      expect: r => r.map(x => x.pos + ":" + x.reason + ":" + (x.machine || "") + ":" + x.s).join(" | ") ===
+        "2:Not scheduled::3600 | 5:Planned window (cleaning):Machine:600 | 6:Changeover (order):Machine:300 | 9:zz_motor:Machine:300 | " +
+        "12:Minor stops:Machine:120 | 90:Not accounted for:Machine:420" }] },
+  { name: "stop list and orders: the worked example's stops newest first, who coded them; the order with its KPIs", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_reader", sql: "SELECT to_char(started AT TIME ZONE 'Australia/Melbourne', 'HH24:MI') || ' ' || round(seconds) || ' ' || reason || coalesce(' by ' || assigned_by, '') AS s " +
+        "FROM hist.fn_line_stop_list($line, " + L("08:30") + ", " + L("10:30") + ")",
+      expect: r => r.map(x => x.s).join(" | ") ===
+        "09:50 600 Planned window | 09:40 420 Not accounted for | 09:30 120 Minor stop | 09:15 300 zz_motor by tester | 09:00 300 Changeover (order)" },
+    { as: "ofm_reader", sql: "SELECT wo_number, started_by, good, reject, round(oee::numeric, 5) AS oee FROM hist.fn_line_orders($line, " + L("08:30") + ", " + L("10:30") + ")",
+      expect: r => r.length === 1 && r[0].wo_number === "wo1" && r[0].good === 2000 && r[0].reject === 50 && r[0].started_by === "tester" && Number(r[0].oee) > 0 }] },
+  { name: "dashboard period: the time picker, or the chosen shift", steps: [
+    { as: "ofm_reader", sql: "SELECT (SELECT t0 = '2026-11-02 06:00+11' AND t1 = '2026-11-02 14:00+11' FROM hist.fn_dashboard_period('1793559600000-1793588400000', now(), now())) AS shift, " +
+        "(SELECT t0 = '2026-11-01' FROM hist.fn_dashboard_period('all', '2026-11-01', '2026-11-02')) AS picker",
+      expect: r => r[0].shift === true && r[0].picker === true }] }
 ];
 
 // Replace $name placeholders with the test plant's IDs.

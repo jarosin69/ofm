@@ -2,7 +2,7 @@
 
 *Updated: 2026-11-07. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 3a, step 3a.8a built (checks on the laptop to do).** Decided
+**▶ We are here: Phase 3a, step 3a.8 built (checks LV and LO on the laptop to do).** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -40,8 +40,13 @@ per machine, live KPIs), node *line KPIs* in the runtime
 sign-in log with lockout, `person_id` on order events and reasons, the
 screens' functions and role `ofm_screens`), container `ofm-screens` with
 the line view at `https://<server>:1882/dashboard` (ADR-0027, ADR-0028);
-tested on the replica; next: checks LV1–LV8 on the laptop, then step
-3a.8b, Grafana *Line OEE* (with open question 35, shifts). Stage C
+line view fixed three times after laptop use (2026-11-09). **Step 3a.8b
+built:** migration 019 (shifts per line, edited in Mathesar; KPIs per
+shift; the dashboard's functions), Grafana dashboard *OFM · Line OEE*
+(gauges, downtime by reason and machine, trend, shifts, waterfall,
+machines, stops, orders), gauges on the line view; tested on the replica
+(Grafana itself could not be run there); next: checks LV1–LV8 and LO1–LO8
+on the laptop, then step 3a.9. Stage C
 decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
 
 ## The plan in one view
@@ -210,7 +215,7 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ✅ 2026-11-07 (migration 015; WO1–WO9 on the laptop) |
 | 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ✅ 2026-11-07 (migration 016; RS1–RS8 on the laptop) |
 | 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ✅ 2026-11-09 (migration 017; also GE, LU, TEEP; KP1–KP8 on the laptop) |
-| 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ▶ 3a.8a line view and sign-in built 2026-11-09 (migration 018, ADR-0027, ADR-0028), tested on the replica; LV1–LV8 on the laptop to do. 3a.8b *Line OEE* ⬜ |
+| 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ▶ built 2026-11-09: 3a.8a line view and sign-in (migration 018, ADR-0027, ADR-0028), 3a.8b shifts and *Line OEE* (migration 019); LV1–LV8 and LO1–LO8 on the laptop to do |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
 | 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |
 
@@ -282,9 +287,8 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 3a.8a on the laptop: checks LV1–LV8 (tests/README, Phase 3a);
-   then step 3a.8b, Grafana *Line OEE*, starting with open question 35
-   (shifts). Drill F2 (bench S7-1200 in STOP) when the
+1. Step 3a.8 on the laptop: checks LV1–LV8 and LO1–LO8 (tests/README,
+   Phase 3a); then step 3a.9 (simulator part 2: PLC backends). Drill F2 (bench S7-1200 in STOP) when the
    bench is next set up.
 2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
    the management decision at C0).
@@ -319,7 +323,6 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 30 | Plant server: VM on plant IT's servers or an industrial PC near the line; who administers and patches it; Docker from IT's package mirror or as packages with the offline bundle | C1.4 |
 | 31 | Pilot line: which line, which controllers (S7-1200/1500, S7-300, Logix, OPC UA) and roughly how many properties | C1.3 |
 | 32 | Pilot: duration and success criteria (for example: values agree with the HMI/SCADA, no unexplained gaps, no effect on PLC scan or communication load, operators' and engineers' feedback) | C1.3 |
-| 35 | Shift periods for KPIs (ADR-0008 decision 6): the shift model — shift names and times per line, or derived from the production windows of `line_schedule`? Until then KPIs are per hour, day, week, month and order | Step 3a.8b (*Line OEE*) |
 | 34 | Schedule exceptions: public holidays, overtime, shutdowns — the weekly `line_schedule` has none yet; a table of one-off windows (added or removed time) when the first real line needs it | Plant pilot |
 
 ## Known gaps and notes
@@ -660,6 +663,14 @@ Numbers are stable; answered questions are removed rather than renumbered.
   simulator's setup at once. Before, a started order kept the line in
   *SETUP* for its whole changeover time (16–24 minutes for mix500), which
   looked as if the order had not started.
+- Step 3a.8b was tested on the local replica: `database` 129 checks,
+  `flows` 363, every dashboard query run in psql as `ofm_reader` (all 16
+  panels for today together 0.8 s) and by the new live check. Grafana
+  itself could not be run on the replica (no access to its download), so
+  the dashboard's look is first seen on the laptop (LO3). Open question 35
+  answered: shifts per line in `config.line_shift` (ADR-0008 amendment);
+  the demo has A, B and C of 8 hours from 06:00. Assumed: gauge colour
+  bands (OEE 60/85 %, A 80/90 %, P 80/95 %, Q 95/99 %).
 - The sign-in log's *screen* column holds the browser's address as the
   screens see it; behind the proxy that is the proxy's address, so it does
   not tell screens apart yet.

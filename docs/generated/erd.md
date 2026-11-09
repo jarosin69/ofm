@@ -75,6 +75,23 @@ erDiagram
     date valid_to
     text note
   }
+  line_shift {
+    int4 id PK
+    int4 line_id FK
+    text name
+    bool mon
+    bool tue
+    bool wed
+    bool thu
+    bool fri
+    bool sat
+    bool sun
+    time start_time
+    time end_time
+    date valid_from
+    date valid_to
+    text note
+  }
   loss_category {
     int4 id PK
     text name
@@ -277,6 +294,7 @@ erDiagram
   enterprise ||--o{ site : "enterprise_id"
   line ||--o{ line_kpi_rule : "line_id"
   line ||--o{ line_schedule : "line_id"
+  line ||--o{ line_shift : "line_id"
   line ||--o{ machine : "line_id"
   line ||--o{ material_line_rate : "line_id"
   line ||--o{ work_order : "line_id"
