@@ -460,8 +460,8 @@ section 13, *Efficiency*):
 | LO1 | `docker compose up -d`, `docker compose logs migrate`; then `docker compose run --rm migrate demo` (adds the shifts) and `docker compose restart grafana screens` | `Applying 019-shifts-and-oee-dashboard.sql` |
 | LO2 | `docker compose run --rm test database`, then `docker compose run --rm test live` | all checks pass, including *Line OEE: …* |
 | LO3 | Grafana → *Dashboards* → *OFM* → **OFM · Line OEE** | four gauges (OEE, Availability, Performance, Quality) coloured red, amber or green, with good units, rejects, downtime, not accounted for; no red triangles on any panel |
-| LO4 | *Shift*: the current shift (*… (now)*); then *All* and the time picker *Last 7 days* | the figures change to that shift; then the trend switches to one point per day and *OEE by shift* shows a bar per shift |
-| LO5 | Compare *Today so far* with the line view's *Today* tile | the same OEE, A, P, Q (give or take the last minute) and the same colours |
+| LO4 | *Order*: *Running order* (default): compare with the line view's *This order*; then *Order* → *None*, *Shift* → the current shift (*… (now)*); then *Shift* → *All*, time picker *Last 7 days* | *Period shown* names the order, the same figures as *This order*; then the shift; then the trend has one point per day and *OEE by shift* a bar per shift |
+| LO5 | *Order* → *None*, *Shift* → *All*, time picker *Today so far*; compare with the line view's *Today* tile | the same OEE, A, P, Q (give or take the last minute) and the same colours |
 | LO6 | In Mathesar, table *line_shift*: change A to 06:00–18:00, B to 18:00–06:00, delete C; reload the dashboard | the *Shift* list shows A and B with the new times; *OEE by shift* follows |
 | LO7 | Panel *Stops*: find a stop you coded on the line view | its reason and your name under *Coded by*; PLC reasons say `plc` |
 | LO8 | *Downtime by machine* after a *Break and hold* of the erector of several minutes | the erector has a red (breakdown) bar: the filler's starved time charged to it |

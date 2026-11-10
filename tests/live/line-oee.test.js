@@ -1,6 +1,7 @@
 // Live stack: the Grafana dashboard "OFM · Line OEE" (step 3a.8b). Every
 // panel query and both variables run as ofm_reader, with Grafana's macros
-// filled in the way Grafana fills them, for today and for one shift, so a
+// filled in the way Grafana fills them, for the last 24 hours, a shift, the
+// running order and an earlier order, so a
 // query error shows here and not only as a red triangle in Grafana; and
 // Grafana serves the dashboard from the repository.
 "use strict";
@@ -30,19 +31,24 @@ module.exports.run = async function (t) {
     const q = d => "'" + d.toISOString() + "'";
     const now = new Date(), midnight = new Date(now.getTime() - 86400000);
     const failed = [];
-    const choices = ["all"].concat(shifts.length > 1 ? [shifts[1].__value] : []);
+    const orders = (await db.query(v("order").query.replace(/\$\{line\}/g, line))).rows;
+    t.check("Line OEE: the Order list starts with Running order and None, then the line's recent orders",
+            orders[0].__value === "current" && orders[1].__value === "none", orders.length - 2 + " recent order(s)");
+    // the time picker, one shift, the running order, one earlier order
+    const choices = [["all", "none"]].concat(shifts.length > 1 ? [[shifts[1].__value, "none"]] : [])
+      .concat([["all", "current"]]).concat(orders.length > 2 ? [["all", orders[orders.length - 1].__value]] : []);
     let started = Date.now();
-    for (const shift of choices) {
+    for (const [shift, order] of choices) {
       for (const panel of dash.panels) {
-        const sql = panel.targets[0].rawSql.replace(/\$\{line\}/g, line).replace(/\$\{shift\}/g, shift)
+        const sql = panel.targets[0].rawSql.replace(/\$\{line\}/g, line).replace(/\$\{shift\}/g, shift).replace(/\$\{order\}/g, order)
           .replace(/\$__timeFrom\(\)/g, q(midnight)).replace(/\$__timeTo\(\)/g, q(now));
-        try { await db.query(sql); } catch (e) { failed.push(panel.title + " (" + shift + "): " + e.message); }
+        try { await db.query(sql); } catch (e) { failed.push(panel.title + " (" + shift + ", " + order + "): " + e.message); }
       }
     }
     const seconds = (Date.now() - started) / 1000;
-    t.check("Line OEE: every panel query runs as ofm_reader (last 24 hours, and one shift)", failed.length === 0,
+    t.check("Line OEE: every panel query runs as ofm_reader (last 24 hours, a shift, the running order, an earlier order)", failed.length === 0,
             failed.slice(0, 3).join("\n             ") || dash.panels.length + " panels, " + seconds.toFixed(1) + " s");
-    t.check("Line OEE: all panels of the last 24 hours together in under 10 s", seconds / choices.length < 10, seconds.toFixed(1) + " s");
+    t.check("Line OEE: all panels of one period together in under 10 s on average", seconds / choices.length < 10, seconds.toFixed(1) + " s for " + choices.length);
   } finally {
     await db.end().catch(() => {});
   }

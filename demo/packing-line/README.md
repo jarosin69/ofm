@@ -721,11 +721,17 @@ Who did what is recorded by ID and name: `entered_by` and `person_id` in
 ### Line OEE in Grafana (step 3a.8b)
 
 Open Grafana (`https://localhost:3000`), *Dashboards* → folder *OFM* →
-**OFM · Line OEE**. At the top: **Line**, **Shift** and the time picker
-(top right; *Today so far* by default).
+**OFM · Line OEE**. At the top: **Line**, **Shift**, **Order** and the time
+picker (top right). The **Period shown** bar under them says which period
+every panel shows.
 
-- **Shift:** *All* lets the time picker decide; or pick one shift of the
-  last two weeks (e.g. *B · Mon 09 Nov (now)*), whatever the time picker
+- **Order** (first choice wins): *Running order* (the default) shows the
+  order running now and moves on to the next order by itself; or pick an
+  order of the last two weeks; *None* lets the shift or the time picker
+  decide.
+
+- **Shift** (when *Order* is *None*): *All* lets the time picker decide; or
+  pick one shift of the last two weeks (e.g. *B · Mon 09 Nov (now)*), whatever the time picker
   says. The demo's shifts are A 06:00–14:00, B 14:00–22:00 and C
   22:00–06:00, Monday to Friday; C has no scheduled time in the demo.
   Change them in Mathesar, table **line_shift**: e.g. for two 12-hour

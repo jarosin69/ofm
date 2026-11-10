@@ -684,6 +684,11 @@ Numbers are stable; answered questions are removed rather than renumbered.
   021: live KPIs and the dashboard end at the last written minute
   (`hist.fn_counted_until`); on the replica a new order now shows 95–97 %
   from its second minute (24–88 % before). ADR-0026 amendment.
+- Line OEE (2026-11-10, asked on the laptop): an *Order* selector, by
+  default the running order; migration 022
+  (`hist.fn_dashboard_period(line, shift, order, from, to)` with a label for
+  the new *Period shown* bar). LO3 (dashboard drawn, gauges) passed on the
+  laptop; LV6b passed.
 - The sign-in log's *screen* column holds the browser's address as the
   screens see it; behind the proxy that is the proxy's address, so it does
   not tell screens apart yet.

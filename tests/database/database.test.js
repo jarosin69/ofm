@@ -828,7 +828,20 @@ const CASES = [
         "FROM hist.fn_live_line_kpi() WHERE line_id = $line", expect: r => r[0].ok === true && r[0].n === 2 },
     { as: "ofm_reader", sql: "SELECT t1 = hist.fn_counted_until() AS now_cut, " +
         "(SELECT t1 = '2026-11-02' FROM hist.fn_dashboard_period('all', '2026-11-01', '2026-11-02')) AS past_kept " +
-        "FROM hist.fn_dashboard_period('all', now() - interval '1 hour', now())", expect: r => r[0].now_cut === true && r[0].past_kept === true }] }
+        "FROM hist.fn_dashboard_period('all', now() - interval '1 hour', now())", expect: r => r[0].now_cut === true && r[0].past_kept === true }] },
+
+  // --- the dashboard's period by work order (migration 022) ---------------------------------
+  { name: "dashboard period: an order wins over a shift, a shift over the time picker; the label says which", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_config", sql: ADD_SHIFT("A", "06:00", "09:30") },
+    { as: "ofm_reader", sql: "SELECT label, t0 = " + L("08:55") + " AS from_start, t1 FROM hist.fn_dashboard_period($line, '1793559600000-1793588400000', 'current', '2026-11-01', '2026-11-02')",
+      expect: r => r[0].label === "Order wo1 (zz_mix), running · Mon 02/11 08:55 – now" && r[0].from_start === true },
+    { as: "ofm_reader", sql: "SELECT label FROM hist.fn_dashboard_period($line, '1793559600000-1793588400000', 'none', '2026-11-01', '2026-11-02')",
+      expect: r => r[0].label === "Shift A · Mon 02/11 06:00 – 14:00" },
+    { as: "ofm_reader", sql: "SELECT label FROM hist.fn_dashboard_period($line, 'all', 'none', '2026-11-01 13:00Z', '2026-11-01 15:30Z')",
+      expect: r => r[0].label === "Time picker · Mon 02/11 00:00 – 02:30" },
+    { as: "ofm_reader", sql: "SELECT label FROM hist.fn_dashboard_period($line, 'all', " + WO("wo2") + "::text, '2026-11-01', '2026-11-02')",
+      expect: r => r[0].label.startsWith("Time picker") } ] }
 ];
 
 // Replace $name placeholders with the test plant's IDs.

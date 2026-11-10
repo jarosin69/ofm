@@ -186,3 +186,8 @@ reduced by speed and quality losses even though neither is a failure.
   to the constraint would look poor whenever the constraint starves or
   blocks it; *downtime by machine* (time charged per ADR-0024) answers
   which machine costs the line most.
+- 2026-11-10: **A work order as the dashboard's period (migration 022).**
+  *OFM · Line OEE* can show a work order: the running one (the default,
+  moving on to the next order by itself) or one of the last two weeks. An
+  order wins over a shift, a shift over the time picker; a *Period shown*
+  bar names the period.
