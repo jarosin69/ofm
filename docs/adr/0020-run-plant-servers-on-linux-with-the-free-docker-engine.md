@@ -1,6 +1,6 @@
 # ADR-0020: Run plant servers on Linux with the free Docker Engine
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-11-10)
 - **Date:** 2026-11-02
 - **Deciders:** Jarek (OFM project, with Claude)
 - **Tags:** ops

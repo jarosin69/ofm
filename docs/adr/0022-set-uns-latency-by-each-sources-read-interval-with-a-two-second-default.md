@@ -1,6 +1,6 @@
 # ADR-0022: Set UNS latency by each source's read interval, with a two-second default
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-11-10)
 - **Date:** 2026-11-02
 - **Deciders:** Jarek (OFM project, with Claude)
 - **Tags:** runtime, uns

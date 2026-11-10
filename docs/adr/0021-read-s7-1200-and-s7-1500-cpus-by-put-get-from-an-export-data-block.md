@@ -1,6 +1,6 @@
 # ADR-0021: Read S7-1200 and S7-1500 CPUs by PUT/GET from an export data block
 
-- **Status:** Proposed — to be accepted after the PLC owners' answer (STATUS open question 24)
+- **Status:** Accepted (2026-11-10); which of its cases applies at the plant still needs the PLC owners' answer (STATUS open question 24)
 - **Date:** 2026-11-02
 - **Deciders:** Jarek (OFM project, with Claude); the plant's PLC owners
 - **Tags:** security, runtime

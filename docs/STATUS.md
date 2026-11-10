@@ -1,8 +1,8 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-07. Update this file at the end of every working session.*
+*Updated: 2026-11-10. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 3a, step 3a.8 built (checks LV and LO on the laptop to do).** Decided
+**▶ We are here: Phase 3a, step 3a.8 done; next: the OFM presentation (for C0), then step 3a.9.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -45,9 +45,13 @@ built:** migration 019 (shifts per line, edited in Mathesar; KPIs per
 shift; the dashboard's functions), Grafana dashboard *OFM · Line OEE*
 (gauges, downtime by reason and machine, trend, shifts, waterfall,
 machines, stops, orders), gauges on the line view; tested on the replica
-(Grafana itself could not be run there); next: checks LV1–LV8 and LO1–LO8
-on the laptop, then step 3a.9. Stage C
-decisions prepared and still to accept: ADR-0020, ADR-0021, ADR-0022.
+(Grafana itself could not be run there); LV1–LV8 and LO1–LO8 passed on
+the laptop 2026-11-10 (after fixes 1–6, migrations 020–022). Stage C
+decisions ADR-0020, ADR-0021, ADR-0022 accepted 2026-11-10. Next: a
+PowerPoint presentation of OFM (`docs/presentation/`, kept up to date as
+OFM grows; for C0), then step 3a.9 with the bench PLCs: S7-300
+192.168.1.120 (to be confirmed: given as 192.168.120), S7-1200
+192.168.1.221, CompactLogix 192.168.1.180.
 
 ## The plan in one view
 
@@ -184,8 +188,8 @@ networks, preparation, checks and pilot backups: deploy README section 7.
 | Step | What | Status |
 |---|---|---|
 | C0 | Management demo on the simulated line, after `v0.3`: presentation, live demo (line calibrated to the real packing line's figures), recorded backup; the decision to go ahead with C1–C4 | ⬜ |
-| C1.1 | Docker and operating system: plant servers on Ubuntu Server 26.04 LTS with Docker Engine (ADR-0020); the laptop keeps Docker Desktop for development | ▶ ADR proposed 2026-11-02 |
-| C1.2 | Latency target: 2 s for 95 % at default read settings, OFM's own share < 250 ms (ADR-0022); load-test threshold 2.0 s | ▶ ADR proposed 2026-11-02 |
+| C1.1 | Docker and operating system: plant servers on Ubuntu Server 26.04 LTS with Docker Engine (ADR-0020); the laptop keeps Docker Desktop for development | ✅ ADR-0020 accepted 2026-11-10 |
+| C1.2 | Latency target: 2 s for 95 % at default read settings, OFM's own share < 250 ms (ADR-0022); load-test threshold 2.0 s | ✅ ADR-0022 accepted 2026-11-10 |
 | C1.3 | Pilot line and its controllers chosen (question 31); S7 access agreed with the PLC owners (ADR-0021, question 24); pilot duration and success criteria agreed (question 32) | ⬜ |
 | C1.4 | Server: VM or industrial PC to deploy README 7.1; networks and firewall rules (7.2) approved by plant IT and OT; how Docker is installed (question 30) | ⬜ |
 | C1.5 | *Only if the PLC owners require OPC UA:* OPC UA security in the acquisition client — signed and encrypted sessions, user name and password from `.env`, a fixed client certificate kept in a volume, server certificates trusted explicitly (ADR-0017 follow-up) | ⬜ |
@@ -215,7 +219,7 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ✅ 2026-11-07 (migration 015; WO1–WO9 on the laptop) |
 | 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ✅ 2026-11-07 (migration 016; RS1–RS8 on the laptop) |
 | 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ✅ 2026-11-09 (migration 017; also GE, LU, TEEP; KP1–KP8 on the laptop) |
-| 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ▶ built 2026-11-09: 3a.8a line view and sign-in (migration 018, ADR-0027, ADR-0028), 3a.8b shifts and *Line OEE* (migration 019); LV1–LV8 and LO1–LO8 on the laptop to do |
+| 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ✅ 2026-11-10: 3a.8a line view and sign-in (migration 018, ADR-0027, ADR-0028), 3a.8b shifts and *Line OEE* (migration 019), fixes (migrations 020–022); LV1–LV8, LO1–LO8 passed on the laptop |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
 | 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |
 
@@ -287,14 +291,14 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step 3a.8 on the laptop: checks LV1–LV8 and LO1–LO8 (tests/README,
-   Phase 3a); then step 3a.9 (simulator part 2: PLC backends). Drill F2 (bench S7-1200 in STOP) when the
-   bench is next set up.
-2. Accept or change ADR-0020, ADR-0021 and ADR-0022 (Stage C; may wait for
-   the management decision at C0).
-3. Update the Claude Project instructions: model editor is Mathesar (not
-   NocoDB, ADR-0013); secrets live in deploy/.env, the Mosquitto password
-   file (generated) and the Docker volume `certs`.
+1. The OFM presentation (`docs/presentation/ofm-overview.pptx`, about 15
+   slides, for C0): review it; update it at the end of each phase.
+2. Step 3a.9 (simulator part 2: PLC backends) with the bench PLCs on the
+   network: S7-300 192.168.1.120 (to be confirmed), S7-1200 192.168.1.221,
+   CompactLogix 192.168.1.180. Drill F2 (bench S7-1200 in STOP) then too.
+3. Jarek: update the Claude Project instructions: model editor is Mathesar
+   (not NocoDB, ADR-0013); secrets live in deploy/.env, the Mosquitto
+   password file (generated) and the Docker volume `certs`.
 
 ## Open questions
 
@@ -302,7 +306,6 @@ Numbers are stable; answered questions are removed rather than renumbered.
 
 | # | Question | Needed by |
 |---|---|---|
-| 2 | Docker Desktop licence vs. Docker Engine directly in WSL2 or on a Linux server — **ADR-0020 proposed:** plant servers on Linux with Docker Engine; laptops any Docker with Engine and Compose; Jarek's laptop keeps Docker Desktop for development. Removed when accepted | Plant pilot |
 | 3 | Employer policy on open-sourcing work developed for or at the site | Going public |
 | 6 | Default `max_publish_interval_ms`: 60 000 assumed (ADR-0007) | Phase 2 |
 | 7 | Minor-stop threshold per line: 5 min assumed (ADR-0009); now a setting of each line's KPI rule (`config.line_kpi_rule`, default 300 s) — confirm 5 min for the real lines | Plant pilot |
@@ -315,9 +318,8 @@ Numbers are stable; answered questions are removed rather than renumbered.
 | 21 | Food safety: which checks first; who verifies; electronic records replacing or accompanying paper under the site's certification scheme | Phase 3d |
 | 22 | Traceability: lot identification on the floor, tipping points, mass-balance tolerance, mixing-attribution rules (own ADR) | Phase 3e |
 | 23 | Modbus driver: every current `node-red-contrib-modbus` release downloads part of its code from a third-party package server; choose a driver when the first Modbus device needs it | First Modbus device |
-| 24 | S7 at the plant: is PUT/GET access acceptable to the PLC owners, or must S7-1200/1500 CPUs be read through their OPC UA server (S7-1200 from firmware 4.4, with runtime licence)? **ADR-0021 proposed:** use PUT/GET if already on; otherwise only with read-only OFM, a port-102 firewall rule, an export data block and a change record; OPC UA if required, after step C1.5. Needs the PLC owners' answer | Plant pilot (C1.3) |
+| 24 | S7 at the plant: is PUT/GET access acceptable to the PLC owners, or must S7-1200/1500 CPUs be read through their OPC UA server (S7-1200 from firmware 4.4, with runtime licence)? **ADR-0021 accepted 2026-11-10:** use PUT/GET if already on; otherwise only with read-only OFM, a port-102 firewall rule, an export data block and a change record; OPC UA if required, after step C1.5. Needs the PLC owners' answer | Plant pilot (C1.3) |
 | 25 | Remote database access (Power BI, DBeaver or Python on another computer): when needed, PostgreSQL over TLS with the same certificates, read-only role `ofm_reader` (ADR-0019 follow-up) | First remote database client |
-| 26 | UNS latency target (Overview §3.2: < 250 ms typical) vs. how often sources are read: with the example OPC UA settings (sampling 0.5 s, publishing 1 s) values reach the UNS about 1.3 s after their device time; with 0.1 s about 0.3 s, at more load on the PLC. Keep 1 s as the default and relax the target to about 1–2 s for monitoring, or set faster intervals per source where needed? **ADR-0022 proposed:** defaults stay; target 2 s for 95 % at default settings, OFM's own share < 250 ms; faster per source only for a named need. Removed when accepted | Plant pilot |
 | 28 | Historian backup during the pilot: VM backup (if a VM), or accept no historian backup until Phase 3b (the pilot runs alongside existing tools; the model is backed up nightly) | C2.2 |
 | 29 | Disk: the 1-minute averages are stored uncompressed and would take about three-quarters of the disk at plant scale (estimate, deploy README 7.1). Compress them (TimescaleDB columnstore on continuous aggregates, a new migration) or keep them shorter than 5 years? Decide with the measured growth from C3.3 | Before plant-wide use |
 | 30 | Plant server: VM on plant IT's servers or an industrial PC near the line; who administers and patches it; Docker from IT's package mirror or as packages with the offline bundle | C1.4 |
@@ -669,8 +671,8 @@ Numbers are stable; answered questions are removed rather than renumbered.
   itself could not be run on the replica (no access to its download), so
   the dashboard's look is first seen on the laptop (LO3). Open question 35
   answered: shifts per line in `config.line_shift` (ADR-0008 amendment);
-  the demo has A, B and C of 8 hours from 06:00. Assumed: gauge colour
-  bands (OEE 60/85 %, A 80/90 %, P 80/95 %, Q 95/99 %).
+  the demo has A, B and C of 8 hours from 06:00. Gauge colour bands (OEE
+  60/85 %, A 80/90 %, P 80/95 %, Q 95/99 %) confirmed by Jarek 2026-11-10.
 - Line view fix 4 (2026-11-09, LV6 on the laptop after 22:00): outside the
   line's schedule nothing counts towards the KPIs (ADR-0008), so an order
   started at 22:08 showed "0 of 180 good" while the simulator made
