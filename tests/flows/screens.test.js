@@ -48,6 +48,10 @@ module.exports.run = async function (t) {
     t.check("every second, every screen gets the picture: states, fault codes, work order, KPIs, stops to code",
       line && line.machines[0].state.v === "fault" && line.kpi.day.oee === 0.61 && line.workorder.woNumber === "WO-40" &&
       line.stops.length === 1 && line.machines[1].fault === null);
+    await hub.run({ topic: "status", payload: { 7: { scheduled: false, nextScheduledMs: clock + 3600000, order: { workOrderId: 40, good: 26 } } } });
+    out = await hub.run({ topic: "tick" });
+    t.check("the line's status (outside its schedule, the order's good units since its start) reaches every screen",
+      out[0][0].payload.lines[0].status.scheduled === false && out[0][0].payload.lines[0].status.order.good === 26);
     await hub.run({ topic: L + "/kpi/day", payload: "" });
     out = await hub.run({ topic: "tick" });
     t.check("a cleared topic (empty retained message) disappears from the picture", out[0][0].payload.lines[0].kpi.day === null);
@@ -158,6 +162,9 @@ module.exports.run = async function (t) {
     t.check("database: model and stops to code read as ofm_screens, through the screen functions only",
       out[0][0].topic === "model" && out[0][1].payload[7][0].eventTs === STOP.eventTs && out[0][1].payload[7][0].uncodedS === 420 &&
       asked.every(a => a.user === "ofm_screens" && /config\.fn_screen_model|hist\.fn_screen_stops_to_code/.test(a.text)));
+    out = await db.run({ topic: "status" });
+    t.check("database: the line status through hist.fn_screen_line_status only",
+      out[0].topic === "status" && /hist\.fn_screen_line_status\(\)/.test(asked[asked.length - 1].text));
     out = await db.run({ topic: "signin", req: { socketId: "s", cmd: "signin", employeeNo: "1001", pin: "2468", screen: "x" } });
     t.check("database: sign-in through config.fn_person_sign_in", out[0].payload.result === "ok" && /fn_person_sign_in/.test(asked[asked.length - 1].text));
     asked.length = 0;

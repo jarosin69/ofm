@@ -40,7 +40,7 @@ per machine, live KPIs), node *line KPIs* in the runtime
 sign-in log with lockout, `person_id` on order events and reasons, the
 screens' functions and role `ofm_screens`), container `ofm-screens` with
 the line view at `https://<server>:1882/dashboard` (ADR-0027, ADR-0028);
-line view fixed three times after laptop use (2026-11-09). **Step 3a.8b
+line view fixed after laptop use (2026-11-09/10; migrations 020, 021). **Step 3a.8b
 built:** migration 019 (shifts per line, edited in Mathesar; KPIs per
 shift; the dashboard's functions), Grafana dashboard *OFM · Line OEE*
 (gauges, downtime by reason and machine, trend, shifts, waterfall,
@@ -671,6 +671,19 @@ Numbers are stable; answered questions are removed rather than renumbered.
   answered: shifts per line in `config.line_shift` (ADR-0008 amendment);
   the demo has A, B and C of 8 hours from 06:00. Assumed: gauge colour
   bands (OEE 60/85 %, A 80/90 %, P 80/95 %, Q 95/99 %).
+- Line view fix 4 (2026-11-09, LV6 on the laptop after 22:00): outside the
+  line's schedule nothing counts towards the KPIs (ADR-0008), so an order
+  started at 22:08 showed "0 of 180 good" while the simulator made
+  cartons. Migration 020 (`hist.fn_screen_line_status`, every 10 s): the
+  line view now says when the line is outside its schedule (and when it
+  next starts), and the order's progress counts every good unit since it
+  started, scheduled or not; the KPIs stay scheduled time only.
+- Fix 5 (2026-11-10, found on the laptop): a just-started order showed a
+  far too low performance (37.6 % after 3 minutes) because units are
+  written per minute while running time counts to the second. Migration
+  021: live KPIs and the dashboard end at the last written minute
+  (`hist.fn_counted_until`); on the replica a new order now shows 95–97 %
+  from its second minute (24–88 % before). ADR-0026 amendment.
 - The sign-in log's *screen* column holds the browser's address as the
   screens see it; behind the proxy that is the proxy's address, so it does
   not tell screens apart yet.

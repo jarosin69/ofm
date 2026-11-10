@@ -795,7 +795,40 @@ const CASES = [
   { name: "dashboard period: the time picker, or the chosen shift", steps: [
     { as: "ofm_reader", sql: "SELECT (SELECT t0 = '2026-11-02 06:00+11' AND t1 = '2026-11-02 14:00+11' FROM hist.fn_dashboard_period('1793559600000-1793588400000', now(), now())) AS shift, " +
         "(SELECT t0 = '2026-11-01' FROM hist.fn_dashboard_period('all', '2026-11-01', '2026-11-02')) AS picker",
-      expect: r => r[0].shift === true && r[0].picker === true }] }
+      expect: r => r[0].shift === true && r[0].picker === true }] },
+
+  // --- line view status (migration 020) --------------------------------------------------
+  { name: "line view status: inside the schedule now; the running order's good units since its start, as ofm_screens", steps: [
+    ...LINE_SETUP, ...ORDER_SETUP,
+    { as: "ofm_config", sql: "INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, output_machine_id) VALUES ($line, '2026-01-01', " + MACH("mach1") + ", " + MACH("mach1") + ")" },
+    { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, mon, tue, wed, thu, fri, sat, sun, start_time, end_time, valid_from) VALUES ($line, 'production', true, true, true, true, true, true, true, '00:00', '23:59:59', '2026-01-01')" },
+    { as: "ofm_runtime", sql: START("wo1") },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.production_count (ts, property_id, increment, last_value) SELECT t, (SELECT id FROM config.machine_property WHERE machine_id = " + MACH("mach1") + " AND role = 'count_good'), n, 1000 " +
+        "FROM (VALUES (date_trunc('minute', now()), 7), (date_trunc('minute', now()) - interval '1 day', 100)) AS v (t, n)" },
+    REMEMBER("line", "$line"),
+    { as: "ofm_screens", sql: "SELECT hist.fn_screen_line_status() -> " + ID("line") + "::text AS s",
+      expect: r => r[0].s && r[0].s.scheduled === true && r[0].s.order && r[0].s.order.good === 7 } ] },
+  { name: "line view status: outside the schedule, with the next start; no order, no progress", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", false) },
+    { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, mon, tue, wed, thu, fri, sat, sun, start_time, end_time, valid_from) " +
+        "SELECT $line, 'production', true, true, true, true, true, true, true, ((now() AT TIME ZONE 'Australia/Melbourne') + interval '2 hours')::time, " +
+        "((now() AT TIME ZONE 'Australia/Melbourne') + interval '3 hours')::time, '2026-01-01'" },
+    REMEMBER("line", "$line"),
+    { as: "ofm_screens", sql: "SELECT hist.fn_screen_line_status() -> " + ID("line") + "::text AS s",
+      expect: r => r[0].s && r[0].s.scheduled === false && r[0].s.order === null &&
+        Math.abs(Number(r[0].s.nextScheduledMs) - (Date.now() + 2 * 3600000)) < 120000 } ] },
+
+  // --- KPIs up to the last counted minute (migration 021) -----------------------------------
+  { name: "live KPIs and the dashboard end at the last minute whose units are written, not at now", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", false) },
+    { as: "ofm_reader", sql: "SELECT hist.fn_counted_until() = date_trunc('minute', now() - interval '10 seconds') AS ok", expect: r => r[0].ok === true },
+    { as: "ofm_runtime", sql: "SELECT bool_and(period_end = greatest(period_start, hist.fn_counted_until())) AS ok, count(*)::int AS n " +
+        "FROM hist.fn_live_line_kpi() WHERE line_id = $line", expect: r => r[0].ok === true && r[0].n === 2 },
+    { as: "ofm_reader", sql: "SELECT t1 = hist.fn_counted_until() AS now_cut, " +
+        "(SELECT t1 = '2026-11-02' FROM hist.fn_dashboard_period('all', '2026-11-01', '2026-11-02')) AS past_kept " +
+        "FROM hist.fn_dashboard_period('all', now() - interval '1 hour', now())", expect: r => r[0].now_cut === true && r[0].past_kept === true }] }
 ];
 
 // Replace $name placeholders with the test plant's IDs.

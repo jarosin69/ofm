@@ -70,3 +70,14 @@ business records.
 - Follow-up: manual reject entry (open question 8); ramp-up and
   changeover-end detection use the raw `count_good` readings where the
   second matters (step 3a.5).
+
+## Amendments
+
+- 2026-11-10: **KPIs up to the last counted minute (migration 021).** A
+  minute's units are written a few seconds after it ends, while running time
+  is known to the second, so a period ending "now" lacked the current
+  minute's units: a 3-minute-old order showed 24–88 % performance instead of
+  about 96 %. Live KPIs (`…/kpi/…`) and the Grafana dashboard end such a
+  period at `hist.fn_counted_until()`, the end of the last written minute;
+  past periods are unchanged. The line view's order progress lags the
+  panel by up to about a minute for the same reason.

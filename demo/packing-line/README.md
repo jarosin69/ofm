@@ -689,6 +689,10 @@ name instead of localhost). Anyone can look; to change something, sign in.
 - **Efficiency:** OEE with availability, performance and quality for this
   hour, today and the running order, from `…/kpi/…` (section 13,
   *Efficiency*); *not accounted for* = scheduled time nobody has explained.
+  Outside the line's schedule (demo: Monday to Friday 06:00–22:00) a yellow
+  note says so: that time does not count towards OEE, even if the line runs
+  (*Shift pattern: off* in the panel). The order's progress counts every
+  good carton since it started, scheduled or not.
 - **Work order:** *Start an order…*: a planned order (planned in Mathesar,
   table *work_order*) or a new one (product and quantity); this completes
   the running one. A new product means a changeover: the machines show
