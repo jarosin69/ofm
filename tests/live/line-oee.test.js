@@ -45,8 +45,12 @@ module.exports.run = async function (t) {
         try { await db.query(sql); } catch (e) { failed.push(panel.title + " (" + shift + ", " + order + "): " + e.message); }
       }
     }
+    for (const a of (dash.annotations && dash.annotations.list) || []) {          // annotations from the trend page (ADR-0031)
+      const sql = a.target.rawSql.replace(/\$\{line\}/g, line).replace(/\$__timeFrom\(\)/g, q(midnight)).replace(/\$__timeTo\(\)/g, q(now));
+      try { await db.query(sql); } catch (e) { failed.push("annotations '" + a.name + "': " + e.message); }
+    }
     const seconds = (Date.now() - started) / 1000;
-    t.check("Line OEE: every panel query runs as ofm_reader (last 24 hours, a shift, the running order, an earlier order)", failed.length === 0,
+    t.check("Line OEE: every panel query and the annotations run as ofm_reader (last 24 hours, a shift, the running order, an earlier order)", failed.length === 0,
             failed.slice(0, 3).join("\n             ") || dash.panels.length + " panels, " + seconds.toFixed(1) + " s");
     t.check("Line OEE: all panels of one period together in under 10 s on average", seconds / choices.length < 10, seconds.toFixed(1) + " s for " + choices.length);
   } finally {

@@ -35,8 +35,10 @@ key. What the keys gave is kept as follows:
 3. **Only the runtime writes history,** with IDs from its copy of the
    model (ADR-0001).
 
-New history tables follow the same rule. Model tables keep their foreign
-keys among themselves; they are small and Mathesar uses them to show links.
+New history hypertables follow the same rule. Model tables, and ordinary
+history tables that are not split into blocks (e.g. annotations,
+ADR-0031), keep their foreign keys: they stay small, and Mathesar uses the
+keys to show links.
 
 ## Alternatives considered
 

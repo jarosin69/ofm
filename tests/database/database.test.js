@@ -842,6 +842,50 @@ const CASES = [
       expect: r => r[0].label === "Time picker · Mon 02/11 00:00 – 02:30" },
     { as: "ofm_reader", sql: "SELECT label FROM hist.fn_dashboard_period($line, 'all', " + WO("wo2") + "::text, '2026-11-01', '2026-11-02')",
       expect: r => r[0].label.startsWith("Time picker") } ] },
+  // --- annotations (migration 025, ADR-0031) ---------------------------------------------
+  { name: "annotations: kinds edited in Mathesar (colour #rrggbb); only a signed-in person annotates, through the functions", steps: [
+    { as: "ofm_config", sql: "SELECT name, colour FROM config.annotation_category WHERE retired_at IS NULL ORDER BY sort_order",
+      expect: r => r.map(x => x.name).join() === "note,quality_issue,maintenance,process_change,trial" },
+    { as: "ofm_config", sql: "INSERT INTO config.annotation_category (name, display_name, colour) VALUES ('zz_cip', 'CIP', '#00aa88')" },
+    { as: "ofm_config", sql: "INSERT INTO config.annotation_category (name, display_name, colour) VALUES ('zz_bad', 'Bad', 'green')", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: ADD_PEOPLE },
+    REMEMBER("pat", PERSON("zz901")), REMEMBER("cip", "(SELECT id FROM config.annotation_category WHERE name = 'zz_cip')"),
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotate(" + ID("pat") + ", '2026-11-01T01:00:00Z', NULL, 'signal', $temp, " + ID("cip") + ", 'tank cleaned')",
+      expect: NO_PERMISSION },                                                         // not signed in
+    { as: "ofm_screens", sql: SET_PIN("zz901", "4711") },
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotate(" + ID("pat") + ", '2026-11-01T01:00:00Z', '2026-11-01T02:00:00Z', 'signal', $temp, " + ID("cip") + ", ' tank cleaned ') AS id" },
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotate(" + ID("pat") + ", '2026-11-01T01:30:00Z', NULL, 'machine', $machine, " + ID("cip") + ", 'door opened')" },
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotate(" + ID("pat") + ", '2026-11-01T03:00:00Z', NULL, 'line', $line, " + ID("cip") + ", 'later')" },
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotate(" + ID("pat") + ", '2026-11-01T01:00:00Z', NULL, 'site', $line, " + ID("cip") + ", 'x')", expect: REFUSED_BY_RULE },
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotate(" + ID("pat") + ", '2026-11-01T01:00:00Z', '2026-11-01T00:00:00Z', 'signal', $temp, " + ID("cip") + ", 'x')", expect: REFUSED_BY_RULE },
+    { as: "ofm_screens", sql: "SELECT * FROM hist.annotation", expect: NO_PERMISSION },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.annotation (ts, line_id, category_id, text, person_id) VALUES (now(), $line, " + ID("cip") + ", 'x', " + ID("pat") + ")", expect: NO_PERMISSION },
+    // a chart of the signal shows its own, its machine's and its line's annotations in the period
+    { as: "ofm_screens", sql: "SELECT scope, text, person, category, colour, ts_end_ms FROM hist.fn_trend_annotations(ARRAY[$temp]::integer[], '2026-11-01T00:30:00Z', '2026-11-01T02:30:00Z')",
+      expect: r => r.map(x => x.scope + ":" + x.text).join() === "signal:tank cleaned,machine:door opened" && r[0].person === "Pat Tester" &&
+                   r[0].colour === "#00aa88" && Number(r[0].ts_end_ms) === Date.UTC(2026, 10, 1, 2) },
+    { as: "ofm_reader", sql: "SELECT tags, text FROM hist.fn_line_annotations($line, '2026-11-01T00:00:00Z', '2026-11-01T04:00:00Z')",
+      expect: r => r.length === 3 && r[0].tags === "CIP" && /^CIP · .*: tank cleaned \(Pat Tester\)$/.test(r[0].text) }] },
+  { name: "annotations: append-only; a correction replaces, a removal hides; both keep who and when", steps: [
+    { as: "ofm_config", sql: ADD_PEOPLE },
+    { as: "ofm_screens", sql: SET_PIN("zz901", "4711") },
+    REMEMBER("pat", PERSON("zz901")), REMEMBER("note", "(SELECT id FROM config.annotation_category WHERE name = 'note')"),
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotate(" + ID("pat") + ", '2026-11-01T01:00:00Z', NULL, 'signal', $temp, " + ID("note") + ", 'first')" },
+    REMEMBER("a1", "(SELECT max(id) FROM hist.annotation)"),
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotate(" + ID("pat") + ", '2026-11-01T01:00:00Z', NULL, 'signal', $temp, " + ID("note") + ", 'second', " + ID("a1") + ")" },
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotate(" + ID("pat") + ", '2026-11-01T01:00:00Z', NULL, 'signal', $temp, " + ID("note") + ", 'third', " + ID("a1") + ")",
+      expect: REFUSED_BY_RULE },                                                       // corrected already
+    { as: "ofm_screens", sql: "SELECT text, corrected FROM hist.fn_trend_annotations(ARRAY[$temp]::integer[], '2026-11-01T00:00:00Z', '2026-11-01T02:00:00Z')",
+      expect: r => r.length === 1 && r[0].text === "second" && r[0].corrected === true },
+    REMEMBER("a2", "(SELECT max(id) FROM hist.annotation)"),
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotation_remove(" + ID("pat") + ", " + ID("a2") + ", 'wrong signal')" },
+    { as: "ofm_screens", sql: "SELECT config.fn_person_annotation_remove(" + ID("pat") + ", " + ID("a2") + ")", expect: REFUSED_BY_RULE },
+    { as: "ofm_screens", sql: "SELECT count(*) AS n FROM hist.fn_trend_annotations(ARRAY[$temp]::integer[], '2026-11-01T00:00:00Z', '2026-11-01T02:00:00Z')",
+      expect: r => Number(r[0].n) === 0 },
+    { as: "ofm_reader", sql: "SELECT a.text, r.reason, p.display_name FROM hist.annotation a LEFT JOIN hist.annotation_removal r ON r.annotation_id = a.id " +
+        "JOIN config.person p ON p.id = a.person_id WHERE a.property_id = $temp ORDER BY a.id",
+      expect: r => r.map(x => x.text + "/" + (x.reason || "")).join() === "first/,second/wrong signal" && r[0].display_name === "Pat Tester" },
+    { as: "ofm_config", sql: "UPDATE hist.annotation SET text = 'x' WHERE property_id = $temp", expect: NO_PERMISSION }] },
   // --- history without foreign keys (migration 024, ADR-0030) -----------------------------
   { name: "history refers to properties by ID only; a property with history cannot be deleted, one without can", steps: [
     { as: "ofm_reader", sql: "SELECT count(*) AS n FROM pg_constraint c WHERE c.contype = 'f' AND c.conrelid IN " +
@@ -1002,7 +1046,7 @@ module.exports.run = async function (t) {
       "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
       "WHERE n.nspname = 'config' AND c.relkind IN ('r', 'p') AND NOT EXISTS (" +
       "SELECT 1 FROM pg_trigger g WHERE g.tgrelid = c.oid AND g.tgname = 'trg_notify_model_changed') ORDER BY 1")).rows
-      .filter(r => !["work_order", "person", "person_pin"].includes(r.relname));   // not part of the runtime model (migrations 015, 018)
+      .filter(r => !["work_order", "person", "person_pin", "annotation_category"].includes(r.relname));   // not part of the runtime model (migrations 015, 018, 025)
     t.check("every configuration table notifies the runtime of changes (step 2.1; work orders by their events)", silent.length === 0,
       "no trigger on: " + silent.map(r => r.relname).join(", "));
 

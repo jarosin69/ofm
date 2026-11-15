@@ -91,7 +91,29 @@
   ]
  },
  "annotations": {
-  "list": []
+  "list": [
+   {
+    "name": "OFM annotations",
+    "enable": true,
+    "hide": false,
+    "iconColor": "#e8a317",
+    "datasource": {
+     "type": "grafana-postgresql-datasource",
+     "uid": "ofm-historian"
+    },
+    "target": {
+     "refId": "Anno",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT \"time\", timeend, text, tags FROM hist.fn_line_annotations(${line}, $__timeFrom(), $__timeTo())"
+    }
+   }
+  ]
  },
  "links": [
   {

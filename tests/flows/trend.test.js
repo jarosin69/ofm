@@ -88,7 +88,8 @@ module.exports.run = async function (t) {
   const data = asked.filter(a => /fn_trend_data/.test(a.text)), stats = asked.filter(a => /fn_trend_stats/.test(a.text));
   t.check("trend: data and statistics per pen, at most 16 pens and 4000 points, nothing but the trend functions, as ofm_screens",
           m.topic === "data" && m.payload.req === 7 && data.length === 16 && stats.length === 16 && data[0].params[3] === 4000 &&
-          asked.every(a => a.user === "ofm_screens" && /hist\.fn_trend_(data|stats)\(/.test(a.text)));
+          asked.every(a => a.user === "ofm_screens" && /hist\.fn_trend_(data|stats|annotations)\(/.test(a.text)) &&
+          asked.filter(a => /fn_trend_annotations/.test(a.text)).length === 1);
   const s = m.payload.series[9500];
   t.check("trend: points as [t, v, min, max, q], with the source and interval; statistics with numbers",
           s.source === "1m" && s.bucketS === 3600 && s.rows[0].join() === "1794380400000,93.123456789,90,96,0" && s.rows[1][1] === null &&
@@ -139,4 +140,57 @@ module.exports.run = async function (t) {
   m = await none.run({});
   t.check("without the library in the image: an error the browser shows in its console", m.statusCode === 500);
   fs.unlinkSync(file);
+
+  // annotations (step H2a, ADR-0031): sign-in per page, then annotate and remove as that person
+  const said = [], q2 = [];
+  const pg2 = { Pool: class {
+    on() {}
+    async query(text, params) {
+      q2.push({ text, params });
+      if (/fn_annotation_categories/.test(text)) return { rows: [{ c: [{ id: 1, name: "note", displayName: "Note", colour: "#6c7a89" }] }] };
+      if (/fn_person_sign_in/.test(text)) return { rows: [params[0] === "1001" && params[1] === "4711" ? { result: "ok", person_id: 22, display_name: "Alex Demo" }
+                                                         : params[0] === "1003" ? { result: "no_pin", person_id: 24 } : { result: "wrong_pin", person_id: 22 }] };
+      if (/fn_person_set_pin/.test(text)) return { rows: [{ result: "pin_set", person_id: 24, display_name: "Chris Demo" }] };
+      if (/fn_person_annotate/.test(text)) return { rows: [{ id: "77" }] };
+      if (/fn_person_annotation_remove/.test(text)) return { rows: [{}] };
+      return { rows: [] };
+    } } };
+  const an = loadFunction(flow, "ofm_sc_trend", { global: { pg: pg2 }, env: { OFM_SCREENS_DB_PASSWORD: "x" } });
+  const S = "tr-testpage01";
+  const run2 = async payload => { an.sent.length = 0; await an.run({ payload, _client: A }); return an.sent.slice(); };
+  let out = await run2({ cmd: "hello", screenId: S });
+  t.check("annotations: a new page gets the kinds of note and is signed out",
+          out[0].topic === "categories" && out[0].payload[0].name === "note" && out[1].topic === "session" && out[1].payload.signedIn === false);
+  out = await run2({ cmd: "annotate", screenId: S, ts: 1794380400000, scope: "signal", targetId: 9522, categoryId: 1, text: "x" });
+  t.check("annotations: refused before signing in, and nothing reaches the database",
+          out.some(m => m.topic === "session" && m.payload.why === "required") && !q2.some(q => /fn_person_annotate/.test(q.text)));
+  out = await run2({ cmd: "signin", screenId: S, employeeNo: "1001", pin: "0000" });
+  t.check("annotations: a wrong PIN is said, the page stays signed out", out.some(m => m.topic === "notice" && m.payload.kind === "error") && !an.context.sessions[S]);
+  out = await run2({ cmd: "signin", screenId: S, employeeNo: "1003", pin: "" });
+  t.check("annotations: a first sign-in asks to choose a PIN", out.some(m => m.topic === "session" && m.payload.choosePin === true));
+  out = await run2({ cmd: "setpin", screenId: S, employeeNo: "1003", pin: "12" });
+  t.check("annotations: a PIN of 2 digits is refused on the page side", out.some(m => m.topic === "notice" && m.payload.kind === "error") &&
+          !q2.some(q => /fn_person_set_pin/.test(q.text)));
+  out = await run2({ cmd: "signin", screenId: S, employeeNo: "1001", pin: "4711" });
+  const ses = out.find(m => m.topic === "session").payload;
+  t.check("annotations: signed in for 30 minutes (OFM_TREND_IDLE_MINUTES), recorded as screen 'trend'",
+          ses.signedIn && ses.name === "Alex Demo" && Math.abs(ses.expiresAt - Date.now() - 30 * 60000) < 5000 &&
+          q2.some(q => /fn_person_sign_in/.test(q.text) && q.params[2] === "trend"));
+  q2.length = 0;
+  out = await run2({ cmd: "annotate", screenId: S, ts: 1794380400000, tsEnd: 1794384000000, scope: "machine", targetId: 5, categoryId: 1, text: "  door opened  " });
+  const call = q2.find(q => /fn_person_annotate/.test(q.text));
+  t.check("annotations: saved as the signed-in person (ID 22), times as UTC, text trimmed",
+          call && call.params[0] === 22 && call.params[1] === "2026-11-11T07:00:00.000Z" && call.params[2] === "2026-11-11T08:00:00.000Z" &&
+          call.params[3] === "machine" && call.params[4] === 5 && call.params[6] === "door opened" && out.some(m => m.topic === "annotated" && m.payload.id === 77));
+  out = await run2({ cmd: "annotate", screenId: S, ts: 1794380400000, scope: "signal", targetId: 9522, categoryId: 1, text: "x".repeat(501) });
+  t.check("annotations: more than 500 characters is refused", out.some(m => m.topic === "notice" && m.payload.kind === "error"));
+  q2.length = 0;
+  out = await run2({ cmd: "unannotate", screenId: S, id: 77, reason: "wrong machine" });
+  t.check("annotations: removed as the signed-in person, with the reason",
+          q2.some(q => /fn_person_annotation_remove/.test(q.text) && q.params.join() === "22,77,wrong machine") && out.some(m => m.topic === "annotated" && m.payload.removed === 77));
+  an.context.sessions[S].last = Date.now() - 31 * 60000;                          // 31 minutes without a touch
+  out = await run2({ cmd: "annotate", screenId: S, ts: 1794380400000, scope: "signal", targetId: 9522, categoryId: 1, text: "late" });
+  t.check("annotations: after 30 minutes without a touch the page is signed out", out.some(m => m.topic === "session" && m.payload.why === "required"));
+  out = await run2({ cmd: "annotate", screenId: "x", text: "y" });
+  t.check("annotations: a page without a proper screen id cannot act", out.some(m => m.topic === "session" && m.payload.signedIn === false));
 };

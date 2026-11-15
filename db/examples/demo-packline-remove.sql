@@ -1,6 +1,6 @@
 -- Removes the simulated packing line (db/examples/demo-packline.sql)
 -- completely: its history (values, state events and their reasons, counts,
--- work orders and their events), the demo people, state rules, reasons, fault codes, mappings,
+-- work orders and their events, annotations), the demo people, state rules, reasons, fault codes, mappings,
 -- properties, KPI rules, rates, schedule, shifts,
 -- flow order, machines, line, its sources linesim_m1 ... linesim_m6, the
 -- area "packing" if nothing else is in it, and the demo products if no other
@@ -43,6 +43,13 @@ BEGIN
   EXECUTE format('DELETE FROM hist.measurement_text WHERE property_id = ANY (%L::int[])', ids);
   EXECUTE format('DELETE FROM hist.production_count WHERE property_id = ANY (%L::int[])', ids);
 END $$;
+-- annotations of the line, its machines and signals (migration 025), with their removals
+CREATE TEMP TABLE rm_annotations AS
+SELECT id FROM hist.annotation
+WHERE line_id IN (SELECT id FROM rm_line) OR machine_id IN (SELECT id FROM rm_machines) OR property_id IN (SELECT id FROM rm_props);
+DELETE FROM hist.annotation_removal WHERE annotation_id IN (SELECT id FROM rm_annotations);
+DELETE FROM hist.annotation WHERE id IN (SELECT id FROM rm_annotations);
+DROP TABLE rm_annotations;
 DELETE FROM hist.state_reason WHERE machine_id IN (SELECT id FROM rm_machines);
 DELETE FROM hist.machine_state_event WHERE machine_id IN (SELECT id FROM rm_machines);
 DELETE FROM hist.work_order_event WHERE work_order_id IN (SELECT id FROM config.work_order WHERE line_id IN (SELECT id FROM rm_line));
@@ -80,9 +87,13 @@ WHERE m.code IN ('mix150', 'mix250', 'mix500')
 CREATE TEMP TABLE rm_people AS SELECT id FROM config.person WHERE note = 'demo (db/examples/demo-packline.sql)';
 DELETE FROM hist.person_sign_in WHERE person_id IN (SELECT id FROM rm_people)
   AND person_id NOT IN (SELECT person_id FROM hist.work_order_event WHERE person_id IS NOT NULL
-                        UNION SELECT person_id FROM hist.state_reason WHERE person_id IS NOT NULL);
+                        UNION SELECT person_id FROM hist.state_reason WHERE person_id IS NOT NULL
+                        UNION SELECT person_id FROM hist.annotation
+                        UNION SELECT person_id FROM hist.annotation_removal);
 DELETE FROM config.person p WHERE p.id IN (SELECT id FROM rm_people)
-  AND NOT EXISTS (SELECT 1 FROM hist.person_sign_in s WHERE s.person_id = p.id);
+  AND NOT EXISTS (SELECT 1 FROM hist.person_sign_in s WHERE s.person_id = p.id)
+  AND NOT EXISTS (SELECT 1 FROM hist.annotation a WHERE a.person_id = p.id)
+  AND NOT EXISTS (SELECT 1 FROM hist.annotation_removal r WHERE r.person_id = p.id);
 UPDATE config.person SET retired_at = now() WHERE id IN (SELECT id FROM rm_people) AND retired_at IS NULL;
 DROP TABLE rm_people;
 

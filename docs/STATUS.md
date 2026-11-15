@@ -1,8 +1,8 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-15. Update this file at the end of every working session.*
+*Updated: 2026-11-16. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 3a, step 3a.8 done, presentation drafted; now the historian step H1 (OFM Trend) is built and waits for the laptop checks TR1–TR13; next H2, then step 3a.9.** Decided
+**▶ We are here: historian trends: H1 checked (TR12–TR13 open), H2a annotations built and waiting for TR14–TR23; next H2b, then step 3a.9.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -59,7 +59,11 @@ laptop checks TR1–TR13 in progress (2026-11-15). Fixes: 1 (statistics between
 cursors A and B; mouse wheel zooms in and out), 2 (own drag-to-zoom),
 3 (migration 024, ADR-0030: history refers to the model by ID without
 foreign keys; with a year of history Mathesar took minutes to save a
-property). Then H2 (time shift, event bands,
+property). TR1–TR11 passed 2026-11-16. **Step H2a, annotations, built
+2026-11-16** (design accepted the same day): migration 025, ADR-0031,
+sign-in on the trend page, annotate a moment or a period on a signal,
+machine or line, kinds with colours in Mathesar, correct and remove
+append-only, Grafana *Line OEE* shows them; checks TR14–TR23 to do. Then H2 (time shift, event bands,
 annotations by signed-in person, preferences per person, saved charts),
 then step 3a.9 with the bench PLCs: S7-300 192.168.1.120 (to be
 confirmed: given as 192.168.120), S7-1200 192.168.1.221, CompactLogix
@@ -233,7 +237,8 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ✅ 2026-11-09 (migration 017; also GE, LU, TEEP; KP1–KP8 on the laptop) |
 | 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ✅ 2026-11-10: 3a.8a line view and sign-in (migration 018, ADR-0027, ADR-0028), 3a.8b shifts and *Line OEE* (migration 019), fixes (migrations 020–022); LV1–LV8, LO1–LO8 passed on the laptop |
 | H1 | Historian trends, part 1 (ADR-0029): *OFM Trend* page (tag tree, overlay or stacked, zoom and back, live, cursors A/B, statistics, limits LoLo/Lo/Hi/HiHi in amber and red, min–max band, CSV as stored and as shown, PNG/JPG, chart in the address, historian list); made-up year of history for the demo | 🔧 built 2026-11-11 (migration 023), fixes 1–3 (migration 024); TR1–TR13 in progress on the laptop |
-| H2 | Historian trends, part 2: time shift per pen (also to the start of an order or shift), event bands (machine states, orders, shifts), annotations by signed-in person (ADR-0031), preferences per person (theme…), saved charts (personal and shared), Grafana shows the annotations | ⬜ |
+| H2a | Annotations (ADR-0031): sign-in on the trend page, a moment or a period on a signal, machine or line, kinds with colours (Mathesar), correct and remove append-only, shown on every chart of that signal, machine or line and in Grafana *Line OEE* | 🔧 built 2026-11-16 (migration 025); TR14–TR23 to do |
+| H2b | Historian trends, part 2: time shift per pen (also to the start of an order or shift), event bands (machine states, orders, shifts), preferences per person (theme…), saved charts (personal and shared); open: smoothing per pen here or in H3 | ⬜ |
 | H3 | Optional: scheduled trend reports (PNG/PDF to a folder or e-mail), calculated pens | ⬜ later |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
 | 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |
@@ -306,11 +311,10 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step H1 on the laptop: unpack, `docker compose up -d --build` (new image
-   `ofm.4`), `migrate demo`, `migrate test-history`, then TR1–TR13
-   (`tests/README.md`).
-2. Step H2 (design first): time shift, event bands, annotations,
-   preferences, saved charts.
+1. Step H1: finish TR12–TR13. Step H2a on the laptop: unpack, migrate,
+   restart screens, then TR14–TR23 (`tests/README.md`).
+2. Step H2b (design first): time shift, event bands, preferences, saved
+   charts; decide: smoothing per pen in H2b or with calculated pens (H3).
 3. The OFM presentation (`docs/presentation/ofm-overview.pptx`, 21
    slides, for C0): review it; add a trend slide after H1; update it at the
    end of each phase.

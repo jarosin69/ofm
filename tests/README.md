@@ -496,6 +496,29 @@ hand, with the demo running:
 | TR12 | Tab *Historian* | every historised signal with its last value, how long ago, values in the last 24 hours and history since; a stale signal in brown; clicking one adds it to the chart |
 | TR13 | `docker compose run --rm migrate test-history-remove`; reload the trend page at *1 y* (optional: `test-history` again afterwards) | the grey band and the history before it are gone; the real history is unchanged |
 
+**Step H2a, annotations** (migration 025, ADR-0031). Automated: `database`
+(kinds edited in Mathesar with a #rrggbb colour; only a signed-in person
+annotates, through the functions; a chart shows its signals', machines' and
+lines' annotations; Grafana's query; append-only: a correction replaces, a
+removal hides, both keep who and when; the demo removal deletes the demo's
+annotations); `flows` (`trend`: sign-in per page with a first PIN, 30
+minutes, annotate and remove as that person, 500 characters at most,
+signed out after 30 minutes untouched); `live` (`line-oee`: the
+annotations query runs). By hand:
+
+| # | Do | Expect |
+|---|---|---|
+| TR14 | `docker compose up -d`, `docker compose logs migrate`, `docker compose restart screens`, `docker compose run --rm test database flows` | `Applying 025-annotations.sql`; all checks pass |
+| TR15 | Mathesar: table *annotation_category* | five kinds: Note, Quality issue, Maintenance, Process change, Trial, each with a colour; a colour like `green` is refused (it must be `#rrggbb`) |
+| TR16 | Trend page, *Filler → Speed*, *8 h*. Click *✎ Annotate*, then drag across a few minutes of the chart | the sign-in window (you are signed out); after employee number and PIN: *New annotation* with the period; *Belongs to* offers the signal, the filler and Packing line 1; choose *Process change*, type a text, *Save* | 
+| TR17 | After TR16 | *Annotation saved.*; a light band in the colour of *Process change* with the start of the text; the table *Annotations in this period* below with your name; at the top right *● your name · Sign out* |
+| TR18 | *✎ Annotate*, then one click on the chart; *Belongs to*: *Line · Packing line 1*; *Save*; hover over the dashed line | a dashed line at that moment; the hover box shows the note's kind, text and your name below the values |
+| TR19 | Add *Checkweigher → Last carton weight*; then remove *Filler → Speed* from the chart | with both: both annotations; with the checkweigher alone: only the line's annotation (the period note belongs to the filler's speed) |
+| TR20 | In the table: *Correct* the first (change the text), then *Remove* the second with a reason | the first shows the new text and *· corrected*; the second is gone from chart and table |
+| TR21 | Another browser (or a private window), not signed in, the same chart address | the same annotations; *Remove* or *Correct* asks to sign in first |
+| TR22 | Grafana *OFM · Line OEE*, line Packing line 1, *Order: None*, time picker over the annotation times | small markers on the time panels (e.g. *OEE trend*); hovering shows kind, what it belongs to, text and name |
+| TR23 | (optional) Sign in on the trend page and leave it untouched for 30 minutes | *Signed out after 30 minutes without work on this page.*; *Sign in* appears again |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

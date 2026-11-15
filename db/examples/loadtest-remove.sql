@@ -1,5 +1,5 @@
 -- Removes the load-test line (db/examples/loadtest.sql) completely: its
--- history, mappings, properties, machines, line, area, site, enterprise and
+-- history, annotations, mappings, properties, machines, line, area, site, enterprise and
 -- source. Run with
 --   docker compose run --rm migrate loadtest-remove
 -- Only rows of enterprise "ofmload" and source "opcplc_load" are touched.
@@ -28,6 +28,17 @@ BEGIN
   EXECUTE format('DELETE FROM hist.measurement WHERE property_id = ANY (%L::int[])', ids);
   EXECUTE format('DELETE FROM hist.measurement_text WHERE property_id = ANY (%L::int[])', ids);
 END $$;
+-- annotations on the load-test line, its machines or signals (migration 025)
+CREATE TEMP TABLE load_annotations AS
+SELECT a.id FROM hist.annotation a
+LEFT JOIN config.machine m ON m.id = a.machine_id
+LEFT JOIN config.line l ON l.id = coalesce(a.line_id, m.line_id)
+LEFT JOIN config.area ar ON ar.id = l.area_id
+LEFT JOIN config.site s ON s.id = ar.site_id
+LEFT JOIN config.enterprise e ON e.id = s.enterprise_id
+WHERE a.property_id IN (SELECT id FROM load_props) OR e.name = 'ofmload';
+DELETE FROM hist.annotation_removal WHERE annotation_id IN (SELECT id FROM load_annotations);
+DELETE FROM hist.annotation WHERE id IN (SELECT id FROM load_annotations);
 DELETE FROM config.plc_mapping WHERE property_id IN (SELECT id FROM load_props)
    OR source_id IN (SELECT id FROM config.source WHERE name = 'opcplc_load');
 DELETE FROM config.machine_property WHERE id IN (SELECT id FROM load_props);

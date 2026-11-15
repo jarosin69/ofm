@@ -4,6 +4,33 @@ Generated from the live database by `docker compose run --rm migrate erd`. Do no
 
 ```mermaid
 erDiagram
+  annotation {
+    int8 id PK
+    timestamptz ts
+    timestamptz ts_end
+    int4 property_id FK
+    int4 machine_id FK
+    int4 line_id FK
+    int4 category_id FK
+    text text
+    int4 person_id FK
+    int8 replaces_id FK
+  }
+  annotation_category {
+    int4 id PK
+    text name
+    text display_name
+    text colour
+    int4 sort_order
+    text description
+    timestamptz retired_at
+  }
+  annotation_removal {
+    int8 annotation_id PK,FK
+    int4 person_id FK
+    text reason
+    timestamptz removed_at
+  }
   area {
     int4 id PK
     int4 site_id FK
@@ -296,10 +323,14 @@ erDiagram
     text entered_by
     int4 person_id FK
   }
+  annotation_category ||--o{ annotation : "category_id"
+  annotation ||--o{ annotation_removal : "annotation_id"
+  annotation |o--o{ annotation : "replaces_id"
   area ||--o{ line : "area_id"
   engineering_unit |o--o{ machine_property : "engineering_unit_id"
   engineering_unit ||--o{ material : "base_unit_id"
   enterprise ||--o{ site : "enterprise_id"
+  line |o--o{ annotation : "line_id"
   line ||--o{ line_kpi_rule : "line_id"
   line ||--o{ line_schedule : "line_id"
   line ||--o{ line_shift : "line_id"
@@ -307,12 +338,14 @@ erDiagram
   line ||--o{ material_line_rate : "line_id"
   line ||--o{ work_order : "line_id"
   loss_category ||--o{ reason : "loss_category_id"
+  machine_property |o--o{ annotation : "property_id"
   machine_property ||--o{ machine_state_rule : "machine_id, property_id"
   machine_property ||--o{ plc_mapping : "property_id"
   machine_property ||--o{ test_data_range : "property_id"
   machine_state_event ||--o{ state_reason : "machine_id, event_ts"
   machine_state ||--o{ machine_state_event : "state_id"
   machine_state ||--o{ machine_state_rule : "state_id"
+  machine |o--o{ annotation : "machine_id"
   machine ||--o{ asset_relationship : "from_machine_id"
   machine ||--o{ asset_relationship : "to_machine_id"
   machine ||--o{ fault_code_reason : "machine_id"
@@ -324,6 +357,8 @@ erDiagram
   machine ||--o{ sub_asset : "machine_id"
   material ||--o{ material_line_rate : "material_id"
   material ||--o{ work_order : "material_id"
+  person ||--o{ annotation_removal : "person_id"
+  person ||--o{ annotation : "person_id"
   person ||--o{ person_pin : "person_id"
   person |o--o{ person_sign_in : "person_id"
   person |o--o{ state_reason : "person_id"
