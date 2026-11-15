@@ -128,6 +128,8 @@ erDiagram
     timestamptz retired_at
     text role
     int4 heartbeat_timeout_ms
+    float8 alarm_low_low
+    float8 alarm_high_high
   }
   machine_state {
     int2 id PK
@@ -272,6 +274,12 @@ erDiagram
     text external_ref
     timestamptz retired_at
   }
+  test_data_range {
+    int4 property_id PK,FK
+    timestamptz from_ts PK
+    timestamptz to_ts
+    text note
+  }
   work_order {
     int4 id PK
     text wo_number
@@ -304,6 +312,7 @@ erDiagram
   machine_property ||--o{ measurement : "property_id"
   machine_property ||--o{ plc_mapping : "property_id"
   machine_property ||--o{ production_count : "property_id"
+  machine_property ||--o{ test_data_range : "property_id"
   machine_state_event ||--o{ state_reason : "machine_id, event_ts"
   machine_state ||--o{ machine_state_event : "state_id"
   machine_state ||--o{ machine_state_rule : "state_id"

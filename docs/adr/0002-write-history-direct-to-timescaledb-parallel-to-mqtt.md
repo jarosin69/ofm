@@ -108,3 +108,10 @@ a database transaction is the correct tool for the second.
   with a warning, so they cannot block the queue. On stop or redeploy, rows
   still in memory are saved to the queue; only a crash can lose them (at most
   about one second).
+- 2026-11-11: **Made-up test history (step H1, ADR-0029).**
+  `migrate test-history` writes a year of made-up values for the demo line
+  into `hist.measurement`, always before the line's first real value, and
+  lists each period in `hist.test_data_range`; charts mark it.
+  `test-history-remove` deletes exactly those periods, as the
+  administrator. It is the only deletion of measured-looking values besides
+  removing the demo or the load-test line: these values were never measured.

@@ -14,6 +14,8 @@ FROM nodered/node-red:4.1.16-22
 # matching palette node already uses, so only one copy is installed:
 # node-opcua (OPC UA, ADR-0017), @st-one-io/nodes7 (Siemens S7, ADR-0018).
 # st-ethernet-ip: Rockwell Logix controllers over EtherNet/IP (ADR-0018).
+# echarts: the chart library of the trend page OFM Trend (ADR-0029), served
+# by the screens container itself; the same version the dashboard uses.
 # Every package comes from the public npm registry.
 WORKDIR /usr/src/node-red
 RUN npm install --omit=dev --no-fund --no-audit --no-update-notifier \
@@ -24,6 +26,7 @@ RUN npm install --omit=dev --no-fund --no-audit --no-update-notifier \
       node-red-contrib-postgresql@0.16.2 \
       node-red-contrib-s7@3.1.3 \
       @flowfuse/node-red-dashboard@1.33.0 \
+      echarts@6.1.0 \
  && npm cache clean --force
 
 # Modbus: not included yet. Every current node-red-contrib-modbus release

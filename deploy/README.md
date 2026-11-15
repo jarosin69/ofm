@@ -128,6 +128,8 @@ docker compose run --rm migrate example
    - **Node-RED** — https://localhost:1880 must ask for a login.
    - **Line view** — https://localhost:1882/dashboard shows the lines; people
      sign in on it with employee number and PIN (ADR-0028).
+   - **OFM Trend** — https://localhost:1882/dashboard/trend: the historian's
+     trends (ADR-0029).
    - **Grafana** — https://localhost:3000. Then Connections → Data sources →
      **OFM historian** → **Test** must report success.
    - **Mathesar** — https://localhost:8080; the first visit is described in steps 16–17.

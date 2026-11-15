@@ -841,7 +841,52 @@ const CASES = [
     { as: "ofm_reader", sql: "SELECT label FROM hist.fn_dashboard_period($line, 'all', 'none', '2026-11-01 13:00Z', '2026-11-01 15:30Z')",
       expect: r => r[0].label === "Time picker · Mon 02/11 00:00 – 02:30" },
     { as: "ofm_reader", sql: "SELECT label FROM hist.fn_dashboard_period($line, 'all', " + WO("wo2") + "::text, '2026-11-01', '2026-11-02')",
-      expect: r => r[0].label.startsWith("Time picker") } ] }
+      expect: r => r[0].label.startsWith("Time picker") } ] },
+  // --- trends (migration 023, ADR-0029) ---------------------------------------------------
+  { name: "trend limits: HiHi at or above Hi, LoLo at or below Lo; the runtime model carries all four", steps: [
+    { as: "ofm_config", sql: "UPDATE config.machine_property SET alarm_high_high = 70 WHERE id = $temp", expect: REFUSED_BY_RULE },   // Hi is 80
+    { as: "ofm_config", sql: "UPDATE config.machine_property SET alarm_high_high = 90, alarm_low = 10 WHERE id = $temp" },
+    { as: "ofm_config", sql: "UPDATE config.machine_property SET alarm_low_low = 20 WHERE id = $temp", expect: REFUSED_BY_RULE },
+    { as: "ofm_config", sql: "UPDATE config.machine_property SET alarm_low_low = 5 WHERE id = $temp" },
+    { as: "ofm_runtime", sql: "SELECT alarm_low_low, alarm_low, alarm_high, alarm_high_high FROM config.vw_runtime_model WHERE property_id = $temp",
+      expect: r => [r[0].alarm_low_low, r[0].alarm_low, r[0].alarm_high, r[0].alarm_high_high].join() === "5,10,80,90" }] },
+  { name: "trend data: every stored value plus the one before the period; intervals when there are too many; as ofm_screens", steps: [
+    { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES " +
+        "('2026-11-01T00:59:30Z', $temp, 5, 0, 0), ('2026-11-01T01:00:10Z', $temp, 15, 0, 0), ('2026-11-01T01:00:40Z', $temp, 25, 1, 0)" },
+    { as: "ofm_screens", sql: "SELECT t_ms, v, q, source, bucket_s FROM hist.fn_trend_data($temp, '2026-11-01T01:00:00Z', '2026-11-01T01:05:00Z', 100)",
+      expect: r => r.length === 3 && r.map(x => x.v).join() === "5,15,25" && r[0].source === "raw" && r[0].bucket_s === 0 && r[2].q === 1 &&
+                   Number(r[1].t_ms) === Date.UTC(2026, 10, 1, 1, 0, 10) },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) " +
+        "SELECT '2026-11-01T01:01:00Z'::timestamptz + make_interval(secs => i), $temp, i, 0, 0 FROM generate_series(0, 59) i" },
+    { as: "ofm_screens", sql: "SELECT t_ms, v, v_min, v_max, n, source, bucket_s FROM hist.fn_trend_data($temp, '2026-11-01T01:00:00Z', '2026-11-01T01:05:00Z', 10)",
+      expect: r => r.length === 4 && r.every(x => x.bucket_s === 30 && x.source === "raw") && r[0].v === 15 &&
+                   r[2].v_min === 0 && r[2].v_max === 29 && Number(r[2].n) === 30 && r[3].v === 44.5 },
+    { as: "ofm_screens", sql: "SELECT extract(epoch FROM hist.fn_trend_bucket('2026-01-01', '2027-01-01', 1500)) AS s",
+      expect: r => Number(r[0].s) === 21600 }] },
+  { name: "trend statistics: time-weighted average and time beyond the limits; a silent signal counts no time", steps: [
+    { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES " +
+        "('2026-11-01T01:00:00Z', $temp, 10, 0, 0), ('2026-11-01T01:01:00Z', $temp, 90, 0, 0)" },
+    { as: "ofm_screens", sql: "SELECT * FROM hist.fn_trend_stats($temp, '2026-11-01T01:00:00Z', '2026-11-01T01:02:00Z')",
+      expect: r => r[0].source === "raw" && Number(r[0].n) === 2 && r[0].v_avg === 50 && r[0].s_covered === 120 && r[0].s_above_hi === 60 && r[0].v_max === 90 },
+    // hold at most twice the publish interval (60 s): 01:01 to 01:03, then silent
+    { as: "ofm_screens", sql: "SELECT s_covered, s_above_hi FROM hist.fn_trend_stats($temp, '2026-11-01T01:00:00Z', '2026-11-01T02:00:00Z')",
+      expect: r => r[0].s_covered === 180 && r[0].s_above_hi === 120 }] },
+  { name: "trend export: raw values as CSV lines, signal by signal, in pages", steps: [
+    { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES " +
+        "('2026-11-01T01:00:00Z', $temp, 10, 0, 0), ('2026-11-01T01:01:00Z', $temp, NULL, 2, 1), ('2026-11-01T01:02:00Z', $temp, 12.5, 0, 0)" },
+    { as: "ofm_screens", sql: "SELECT csv FROM hist.fn_trend_export(ARRAY[$temp]::integer[], '2026-11-01T01:00:00Z', '2026-11-01T02:00:00Z', NULL, NULL, 2)",
+      expect: r => r.length === 2 && /^2026-11-01 12:00:00\.000,1793494800000,".*\/temp","Temperature",10,"degC",good$/.test(r[0].csv) &&
+                   /,,"degC",bad$/.test(r[1].csv) },
+    { as: "ofm_screens", sql: "SELECT csv FROM hist.fn_trend_export(ARRAY[$temp]::integer[], '2026-11-01T01:00:00Z', '2026-11-01T02:00:00Z', $temp, '2026-11-01T01:01:00Z', 2)",
+      expect: r => r.length === 1 && /,12\.5,"degC",good$/.test(r[0].csv) }] },
+  { name: "trends: the screens call the trend functions but read no table; made-up periods are readable by ofm_reader only", steps: [
+    { as: "ofm_screens", sql: "SELECT config.fn_trend_tags() AS t",
+      expect: r => r[0].t.some(x => x.id > 0 && x.displayName === "Temperature" && x.unit === "degC" && x.hi === 80) },
+    { as: "ofm_screens", sql: "SELECT count(*) FROM hist.fn_historian_tags()" },
+    { as: "ofm_screens", sql: "SELECT * FROM hist.test_data_range", expect: NO_PERMISSION },
+    { as: "ofm_screens", sql: "SELECT * FROM hist.measurement LIMIT 1", expect: NO_PERMISSION },
+    { as: "ofm_reader", sql: "SELECT * FROM hist.test_data_range LIMIT 1" },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.test_data_range (property_id, from_ts, to_ts) VALUES ($temp, '2026-01-01', '2026-01-02')", expect: NO_PERMISSION }] }
 ];
 
 // Replace $name placeholders with the test plant's IDs.
@@ -934,6 +979,9 @@ module.exports.run = async function (t) {
     t.check("compression after 7 days on both historian tables",
       ["measurement", "measurement_text"].every(x => job("policy_compression", x) && job("policy_compression", x).config.compress_after === "7 days"),
       JSON.stringify(jobs.filter(j => j.proc_name === "policy_compression").map(j => j.hypertable_name)));
+    t.check("1-minute and 1-hour averages compressed after 35 days (migration 023)",
+      ["measurement_1m", "measurement_1h"].every(x => job("policy_compression", x) && job("policy_compression", x).config.compress_after === "35 days"),
+      JSON.stringify(jobs.filter(j => j.proc_name === "policy_compression").map(j => j.hypertable_name + " " + j.config.compress_after)));
     t.check("1-minute and 1-hour averages kept up to date (refresh policies)",
       job("policy_refresh_continuous_aggregate", "measurement_1m") && job("policy_refresh_continuous_aggregate", "measurement_1h"));
     const keep = x => { const j = job("policy_retention", x); return j ? j.config.drop_after : "none"; };

@@ -136,6 +136,15 @@ WHERE p.machine_id = m.id AND m.retired_at IS NULL AND p.retired_at IS NULL AND 
   AND NOT EXISTS (SELECT 1 FROM config.machine_property o
                   WHERE o.machine_id = p.machine_id AND o.role = p.name AND o.retired_at IS NULL);
 
+-- Trend limits (step H1, migration 023): the filler's speed is too high above
+-- 105 cartons/min (Hi, amber) and 110 (HiHi, red). Set once; your own limits
+-- are kept.
+UPDATE config.machine_property p
+SET alarm_high = 105, alarm_high_high = 110
+FROM config.machine m JOIN demo_line ON demo_line.id = m.line_id
+WHERE p.machine_id = m.id AND m.name = 'filler' AND p.name = 'speed' AND p.retired_at IS NULL
+  AND p.alarm_high IS NULL AND p.alarm_high_high IS NULL;
+
 -- State rules: the simulator's state code is the state's id (1 running ...
 -- 8 maintenance, demo README section 4); priority = code.
 INSERT INTO config.machine_state_rule (machine_id, priority, property_id, operator, value, state_id, note)

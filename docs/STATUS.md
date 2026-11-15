@@ -1,8 +1,8 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-10. Update this file at the end of every working session.*
+*Updated: 2026-11-11. Update this file at the end of every working session.*
 
-**▶ We are here: Phase 3a, step 3a.8 done; next: the OFM presentation (for C0), then step 3a.9.** Decided
+**▶ We are here: Phase 3a, step 3a.8 done, presentation drafted; now the historian step H1 (OFM Trend) is built and waits for the laptop checks TR1–TR13; next H2, then step 3a.9.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -47,11 +47,19 @@ shift; the dashboard's functions), Grafana dashboard *OFM · Line OEE*
 machines, stops, orders), gauges on the line view; tested on the replica
 (Grafana itself could not be run there); LV1–LV8 and LO1–LO8 passed on
 the laptop 2026-11-10 (after fixes 1–6, migrations 020–022). Stage C
-decisions ADR-0020, ADR-0021, ADR-0022 accepted 2026-11-10. Next: a
-PowerPoint presentation of OFM (`docs/presentation/`, kept up to date as
-OFM grows; for C0), then step 3a.9 with the bench PLCs: S7-300
-192.168.1.120 (to be confirmed: given as 192.168.120), S7-1200
-192.168.1.221, CompactLogix 192.168.1.180.
+decisions ADR-0020, ADR-0021, ADR-0022 accepted 2026-11-10. Presentation
+`docs/presentation/ofm-overview.pptx` (21 slides) drafted 2026-11-10/11.
+**Historian trends, step H1 built (2026-11-11, design accepted the same
+day):** migration 023 (HiHi and LoLo limits, the trend functions,
+`hist.test_data_range`, compressed 1-minute and 1-hour averages), the page
+*OFM Trend* at `https://<server>:1882/dashboard/trend` (ADR-0029; Apache
+ECharts in OFM's image, tag `ofm.4`), `migrate test-history` /
+`test-history-remove` (a year of made-up history for the demo line);
+laptop checks TR1–TR13 to do. Then H2 (time shift, event bands,
+annotations by signed-in person, preferences per person, saved charts),
+then step 3a.9 with the bench PLCs: S7-300 192.168.1.120 (to be
+confirmed: given as 192.168.120), S7-1200 192.168.1.221, CompactLogix
+192.168.1.180.
 
 ## The plan in one view
 
@@ -220,6 +228,9 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ✅ 2026-11-07 (migration 016; RS1–RS8 on the laptop) |
 | 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ✅ 2026-11-09 (migration 017; also GE, LU, TEEP; KP1–KP8 on the laptop) |
 | 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ✅ 2026-11-10: 3a.8a line view and sign-in (migration 018, ADR-0027, ADR-0028), 3a.8b shifts and *Line OEE* (migration 019), fixes (migrations 020–022); LV1–LV8, LO1–LO8 passed on the laptop |
+| H1 | Historian trends, part 1 (ADR-0029): *OFM Trend* page (tag tree, overlay or stacked, zoom and back, live, cursors A/B, statistics, limits LoLo/Lo/Hi/HiHi in amber and red, min–max band, CSV as stored and as shown, PNG/JPG, chart in the address, historian list); made-up year of history for the demo | 🔧 built 2026-11-11 (migration 023); TR1–TR13 to do on the laptop |
+| H2 | Historian trends, part 2: time shift per pen (also to the start of an order or shift), event bands (machine states, orders, shifts), annotations by signed-in person (ADR-0030), preferences per person (theme…), saved charts (personal and shared), Grafana shows the annotations | ⬜ |
+| H3 | Optional: scheduled trend reports (PNG/PDF to a folder or e-mail), calculated pens | ⬜ later |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
 | 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |
 
@@ -291,12 +302,18 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. The OFM presentation (`docs/presentation/ofm-overview.pptx`, about 15
-   slides, for C0): review it; update it at the end of each phase.
-2. Step 3a.9 (simulator part 2: PLC backends) with the bench PLCs on the
+1. Step H1 on the laptop: unpack, `docker compose up -d --build` (new image
+   `ofm.4`), `migrate demo`, `migrate test-history`, then TR1–TR13
+   (`tests/README.md`).
+2. Step H2 (design first): time shift, event bands, annotations,
+   preferences, saved charts.
+3. The OFM presentation (`docs/presentation/ofm-overview.pptx`, 21
+   slides, for C0): review it; add a trend slide after H1; update it at the
+   end of each phase.
+4. Step 3a.9 (simulator part 2: PLC backends) with the bench PLCs on the
    network: S7-300 192.168.1.120 (to be confirmed), S7-1200 192.168.1.221,
    CompactLogix 192.168.1.180. Drill F2 (bench S7-1200 in STOP) then too.
-3. Jarek: update the Claude Project instructions: model editor is Mathesar
+5. Jarek: update the Claude Project instructions: model editor is Mathesar
    (not NocoDB, ADR-0013); secrets live in deploy/.env, the Mosquitto
    password file (generated) and the Docker volume `certs`.
 
@@ -334,10 +351,20 @@ Numbers are stable; answered questions are removed rather than renumbered.
   0.12.0, OPC PLC simulator 2.15.11, Caddy 2.11.7-alpine (HTTPS front door), Alpine 3.22 (runs
   `make-env.sh`; in the offline bundle),
   Node-RED 4.1.16 (Node 22) built as
-  `ofm/node-red:4.1.16-ofm.3` with node-opcua 2.160.0, @st-one-io/nodes7
+  `ofm/node-red:4.1.16-ofm.4` with node-opcua 2.160.0, @st-one-io/nodes7
   1.1.2, st-ethernet-ip 2.7.5, node-red-contrib-opcua 0.2.355,
   node-red-contrib-postgresql 0.16.2, node-red-contrib-s7 3.1.3,
-  @flowfuse/node-red-dashboard 1.33.0.
+  @flowfuse/node-red-dashboard 1.33.0, echarts 6.1.0 (OFM Trend, from
+  `ofm.4`).
+- Storage found with the made-up year (step H1): before migration 023 the
+  1-minute averages were not compressed and took about 20 times the space
+  of the compressed raw values; now compressed after 35 days. After values
+  are added to or deleted from compressed history, the space comes back
+  only when the block is repacked (`migrate test-history` and
+  `test-history-remove` repack their year themselves).
+- Dashboard 2.0 templates take only `data`, `computed`, `methods`,
+  `watch`, `mounted`, `unmounted` in one `export default` (nothing before
+  it): checked by the `flows` tests since step H1.
 - The OPC UA palette node accepts only `ns=<number>` addresses and is built
   around fixed per-connection configuration; OFM's acquisition therefore uses
   the node-opcua library directly (ADR-0017), translating `nsu=` addresses

@@ -31,6 +31,16 @@ function builtIn(name) {
 }
 
 // Compares two strings in constant time, so response timing reveals nothing.
+// The path of a file inside an installed library (or undefined), e.g. the
+// chart library the trend page loads (ADR-0029).
+function builtInFile(name) {
+    try {
+        return require.resolve(name, { paths: [process.cwd(), "/usr/src/node-red/node_modules"] });
+    } catch (e) {
+        console.warn("[ofm] file not available: " + name);
+        return undefined;
+    }
+}
 function sameText(a, b) {
     const hash = (s) => crypto.createHash("sha256").update(String(s)).digest();
     return crypto.timingSafeEqual(hash(a), hash(b));
@@ -72,7 +82,8 @@ module.exports = {
         mqtt: builtIn("mqtt"),                      // start-up clean-up of stale topics (ADR-0004); comes with Node-RED
         fs: require("fs"),                          // historian disk queue (ADR-0002), model copy (ADR-0001); Node.js itself
         path: require("path"),
-        zlib: require("zlib")
+        zlib: require("zlib"),
+        echartsFile: builtInFile("echarts/dist/echarts.min.js")   // trend page chart library (ADR-0029)
     },
 
     editorTheme: {

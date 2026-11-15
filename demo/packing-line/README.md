@@ -269,7 +269,8 @@ auto-operator still work.
 | Screen | Where | Shows |
 |---|---|---|
 | Simulator control panel | linesim, `https://<server>:1881/dashboard` | the line with conveyor levels; per machine: speed %, MTBF, MTTR, jams/h, rejects; buttons *Break*, *Break and hold*, *Jam*, *Repair*; run/stop the line, stop the simulator, shift pattern on/off, product changeover, presets; this hour's output against rated *(built, step 3a.1)*; work orders: follow on/off, auto-operator, start and complete an order *(built, step 3a.5)*. Later: backend per machine (3a.9), the simulator's own OEE (3a.10) |
-| Line view | OFM (container `ofm-screens`, ADR-0027), `https://<server>:1882/dashboard` | the line from the UNS: machines in flow order, coloured by state, time in state, fault code; KPIs of this hour, today and the order; the active order with *Start*, *Changeover done*, *Complete*; stops waiting for a reason, coded by a signed-in person (ADR-0028) *(built, step 3a.8)* |
+| Line view | OFM (container `ofm-screens`, ADR-0027), `https://<server>:1882/dashboard/line` | the line from the UNS: machines in flow order, coloured by state, time in state, fault code; KPIs of this hour, today and the order; the active order with *Start*, *Changeover done*, *Complete*; stops waiting for a reason, coded by a signed-in person (ADR-0028) *(built, step 3a.8)* |
+| OFM Trend | OFM (container `ofm-screens`, ADR-0029), `https://<server>:1882/dashboard/trend` | any historised signal of the line over any period: overlaid or stacked, zoom, cursors, limits in amber and red, statistics, CSV and picture export. `migrate test-history` adds a year of made-up history to try long periods *(built, step H1)* |
 | Line OEE | Grafana, *OFM · Line OEE*, `https://<server>:3000` | OEE, availability, performance and quality as gauges; downtime by reason and by machine; OEE trend per hour or day and per shift; loss waterfall; MTBF and MTTR per machine; stops and orders *(built, step 3a.8b)* |
 
 ## 9. Tests

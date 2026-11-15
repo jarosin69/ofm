@@ -85,7 +85,7 @@ services:
   # Other commands: docker compose run --rm certs [show|import]
   # Uses OFM's Node-RED image, which contains openssl: nothing to download.
   certs:
-    image: ofm/node-red:4.1.16-ofm.3
+    image: ofm/node-red:4.1.16-ofm.4
     pull_policy: never
     restart: "no"
     user: "0:0"
@@ -144,7 +144,7 @@ services:
     # OFM's own image: official Node-RED plus pinned protocol and database
     # nodes (nodered/Dockerfile). Built locally on first start; never pulled.
     build: ./nodered
-    image: ofm/node-red:4.1.16-ofm.3
+    image: ofm/node-red:4.1.16-ofm.4
     pull_policy: never
     container_name: ofm-nodered
     restart: unless-stopped
@@ -323,7 +323,7 @@ services:
   # in the database goes through the functions granted to ofm_screens
   # (migration 018). People sign in with employee number and PIN (ADR-0028).
   screens:
-    image: ofm/node-red:4.1.16-ofm.3
+    image: ofm/node-red:4.1.16-ofm.4
     pull_policy: never
     container_name: ofm-screens
     restart: unless-stopped
@@ -354,7 +354,7 @@ services:
   # https://<server>:1881 through the proxy; the OPC UA ports are open to this
   # computer only, for a desktop OPC UA client.
   linesim:
-    image: ofm/node-red:4.1.16-ofm.3
+    image: ofm/node-red:4.1.16-ofm.4
     pull_policy: never
     container_name: ofm-linesim
     hostname: linesim
@@ -385,7 +385,7 @@ services:
   # Uses OFM's own Node-RED image and the libraries in it, so it needs no
   # internet. The repository is mounted read-only: tests change nothing.
   test:
-    image: ofm/node-red:4.1.16-ofm.3
+    image: ofm/node-red:4.1.16-ofm.4
     pull_policy: never
     profiles: ["test"]
     restart: "no"

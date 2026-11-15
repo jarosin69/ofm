@@ -14,6 +14,8 @@
 #   docker compose run --rm migrate loadtest-remove   remove it and all its history
 #   docker compose run --rm migrate demo         add or refresh the simulated packing line (ADR-0023)
 #   docker compose run --rm migrate demo-remove  remove it and all its history
+#   docker compose run --rm migrate test-history         add a year of made-up history to the demo line (step H1)
+#   docker compose run --rm migrate test-history-remove  remove all made-up history
 #
 # The stack also runs "up" automatically on every "docker compose up".
 # After applying migrations, "up" sets the passwords of the platform roles
@@ -226,13 +228,69 @@ cmd_demo() {
 cmd_demo_remove() {
   # As for the load-test line: stop acquisition and state tracking first (the
   # state rules go now) and let the historian writer flush, then delete; then
-  # recompute the averages of the removed period.
+  # recompute the averages of the removed period (back to the start of any
+  # made-up history, which goes with the demo).
+  since=$(sql -At -c "SELECT least(now() - interval '30 days', (SELECT min(from_ts) FROM hist.test_data_range))" 2>/dev/null || true)
+  [ -n "$since" ] || since=$(sql -At -c "SELECT now() - interval '30 days'")
   sql -c "BEGIN; DELETE FROM config.machine_state_rule WHERE property_id IN (SELECT pm.property_id FROM config.plc_mapping pm JOIN config.source s ON s.id = pm.source_id WHERE s.name ~ '^linesim_m[0-9]+\$'); UPDATE config.plc_mapping SET retired_at = now() WHERE retired_at IS NULL AND source_id IN (SELECT id FROM config.source WHERE name ~ '^linesim_m[0-9]+\$'); COMMIT;"
   sleep 3
   { echo "BEGIN;"; cat "$REPO/db/examples/demo-packline-remove.sql"; echo; echo "COMMIT;"; } | sql
-  sql -c "CALL refresh_continuous_aggregate('hist.measurement_1m', now() - interval '30 days', now())"
-  sql -c "CALL refresh_continuous_aggregate('hist.measurement_1h', now() - interval '30 days', now())"
+  refresh_averages "$since" "$(sql -At -c 'SELECT now()')"
   echo "Demo line removed, with its history. The simulator keeps running until COMPOSE_PROFILES no longer contains demo."
+}
+
+# Recalculates the 1-minute and 1-hour averages for [$1, $2), retrying while
+# the refresh policy happens to be running at the same moment.
+refresh_averages() {
+  for view in measurement_1m measurement_1h; do
+    n=0
+    until sql -c "CALL refresh_continuous_aggregate('hist.$view', '$1', '$2')" 2>/tmp/ofm-refresh.err; do
+      n=$((n + 1))
+      if [ "$n" -ge 20 ] || ! grep -q "concurrent refresh" /tmp/ofm-refresh.err; then cat /tmp/ofm-refresh.err >&2; exit 1; fi
+      sleep 5
+    done
+  done
+}
+
+# Rewrites the compressed blocks (chunks) of [$1, $2) in one piece: after
+# values were added to or deleted from compressed history, TimescaleDB keeps
+# the space they used until the block is rewritten. Unpacking and packing
+# again gives it back (raw values older than 7 days, averages older than 35).
+repack() {
+  sql -At -c "SELECT count(*) || ' block(s) repacked' FROM (
+      SELECT compress_chunk(coalesce(decompress_chunk(c, if_compressed => true), c), if_not_compressed => true) FROM (
+        SELECT show_chunks('hist.measurement', older_than => least(now() - interval '7 days', timestamptz '$2' + interval '1 day'), newer_than => timestamptz '$1' - interval '1 day')
+        UNION ALL SELECT show_chunks('hist.measurement_1m', older_than => least(now() - interval '35 days', timestamptz '$2' + interval '10 days'), newer_than => timestamptz '$1' - interval '10 days')
+        UNION ALL SELECT show_chunks('hist.measurement_1h', older_than => least(now() - interval '35 days', timestamptz '$2' + interval '10 days'), newer_than => timestamptz '$1' - interval '10 days')
+      ) x (c)) y" 2>&1 | grep -v NOTICE
+}
+
+# Made-up history for the demo line (step H1, ADR-0029): a year of values,
+# one a minute, ending where the real history begins. The values go in as one
+# transaction; then the new days are compressed and the 1-minute and 1-hour
+# averages calculated for the year (both outside a transaction). Takes a few
+# minutes and about 2-3 GB of temporary disk space; afterwards it takes about
+# 0.5 GB.
+cmd_test_history() {
+  echo "Making up a year of history for the demo line (a few minutes)..."
+  { echo "BEGIN;"; cat "$REPO/db/examples/demo-test-history.sql"; echo; echo "COMMIT;"; } | sql -At
+  t0=$(sql -At -c "SELECT min(from_ts) FROM hist.test_data_range")
+  t1=$(sql -At -c "SELECT max(to_ts) FROM hist.test_data_range")
+  echo "Calculating the 1-minute and 1-hour averages..."
+  refresh_averages "$t0" "$t1"
+  echo "Compressing..."
+  repack "$t0" "$t1"
+  echo "Done. Try it: https://<server>:1882/dashboard/trend, demo line, span 1 year."
+}
+
+cmd_test_history_remove() {
+  t0=$(sql -At -c "SELECT min(from_ts) FROM hist.test_data_range")
+  t1=$(sql -At -c "SELECT max(to_ts) FROM hist.test_data_range")
+  if [ -z "$t0" ]; then echo "There is no made-up history."; return 0; fi
+  { echo "BEGIN;"; cat "$REPO/db/examples/demo-test-history-remove.sql"; echo; echo "COMMIT;"; } | sql
+  refresh_averages "$t0" "$t1"
+  repack "$t0" "$t1"
+  echo "Made-up history removed, with its averages; measured values are untouched."
 }
 
 # Creates a personal login for editing the model. It has exactly the rights
@@ -271,5 +329,7 @@ case "${1:-up}" in
   loadtest-remove) cmd_loadtest_remove ;;
   demo) cmd_demo ;;
   demo-remove) cmd_demo_remove ;;
-  *) echo "Usage: migrate [up|status|example|erd|adduser NAME|loadtest [N]|loadtest-remove|demo|demo-remove]" >&2; exit 2 ;;
+  test-history) cmd_test_history ;;
+  test-history-remove) cmd_test_history_remove ;;
+  *) echo "Usage: migrate [up|status|example|erd|adduser NAME|loadtest [N]|loadtest-remove|demo|demo-remove|test-history|test-history-remove]" >&2; exit 2 ;;
 esac

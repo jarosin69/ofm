@@ -22,8 +22,10 @@
     "description": { "$ref": "urn:ofm:schema:common:1#/$defs/text" },
     "low": { "description": "Lower limit of the engineering range.", "type": "number" },
     "high": { "description": "Upper limit of the engineering range.", "type": "number" },
-    "alarmLow": { "type": "number" },
-    "alarmHigh": { "type": "number" },
+    "alarmLowLow": { "description": "LoLo limit, at or below alarmLow: below it a trend shows red (migration 023).", "type": "number" },
+    "alarmLow": { "description": "Lo limit: below it a trend shows amber.", "type": "number" },
+    "alarmHigh": { "description": "Hi limit: above it a trend shows amber.", "type": "number" },
+    "alarmHighHigh": { "description": "HiHi limit, at or above alarmHigh: above it a trend shows red (migration 023).", "type": "number" },
     "maxPublishIntervalMs": {
       "description": "Longest time between publications (ADR-0007). A value older than twice this interval is stale.",
       "type": "integer",

@@ -466,6 +466,35 @@ section 13, *Efficiency*):
 | LO7 | Panel *Stops*: find a stop you coded on the line view | its reason and your name under *Coded by*; PLC reasons say `plc` |
 | LO8 | *Downtime by machine* after a *Break and hold* of the erector of several minutes | the erector has a red (breakdown) bar: the filler's starved time charged to it |
 
+**Step H1, OFM Trend** (migration 023, ADR-0029). Automated: `database`
+(HiHi and LoLo outside Hi and Lo; every stored value plus the one before
+the period, or intervals when there are too many; time-weighted average and
+time beyond the limits, a silent signal counting no time; the CSV export in
+pages; the screens call the trend functions but read no table; averages
+compressed after 35 days); `flows` (`trend`: every screen's script can be
+read by the dashboard; the node *trend* answers one browser with at most 16
+pens and 4,000 points through the trend functions only; both CSV exports;
+the chart library); `schemas` (`_meta` with four limits); `live` (`trend`:
+the page and the chart library from the screens container, a year of 8
+signals in under 3 s, the CSV export, the averages of made-up history). By
+hand, with the demo running:
+
+| # | Do | Expect |
+|---|---|---|
+| TR1 | `docker compose up -d --build`, `docker compose logs migrate`; then `docker compose run --rm migrate demo` | the image `ofm/node-red:4.1.16-ofm.4` is built; `Applying 023-trends.sql`; the demo gives the filler's speed Hi 105 and HiHi 110 |
+| TR2 | `docker compose run --rm migrate test-history` (about 10 minutes) | `Made-up history: 38 signals, <date> to <date> (Melbourne)`, then `Done.` |
+| TR3 | `docker compose run --rm test` | all checks pass, including *a chart of 8 signals over a year* and *made-up history … has its 1-hour averages* |
+| TR4 | `https://<server>:1882/dashboard/trend`; open *Packing line 1* → *Filler* → *Speed*, and *Checkweigher* → *Last carton weight* | two lines with their units on two axes, *● Live* green, the newest values arriving every few seconds; the period at the top ends with *now* |
+| TR5 | *1 y* | a grey band *made-up test data* up to where the real history starts; the line with a lighter min–max band behind it; under the chart *… from 1-hour averages*, drawn in about a second |
+| TR6 | Drag across one weekday on the chart; drag again across one hour; then *Back*, *Back*; then *Zoom out*; turn the mouse wheel over the chart away from you, then towards you; hold Shift and turn it | each drag zooms in (*Live* off); after the second drag *Every stored value*; *Back* returns step by step; *Zoom out* doubles the period; the wheel zooms in and out around the pointer (the page does not scroll), Shift + wheel moves earlier and later; one turn of the wheel is one *Back* step |
+| TR7 | Filler speed alone, *1 y*: zoom in on one of the rare spikes to about 110 (one weekday morning 10:00–11:00) | above the dashed *Hi 105* the line is amber, above *HiHi 110* red; *Beyond limits* shows `> HiHi … % · > Hi … %` |
+| TR8 | In Mathesar, *machine_property*: checkweigher *last_weight* `alarm_low` 245, `alarm_low_low` 240; then reload the trend page and look at a day with 250 g cartons; then try `alarm_low_low` 250 | below 245 amber, below 240 red; MQTT Explorer: `…/checkweigher/last_weight/_meta` has `alarmLowLow`; 250 is refused (LoLo must not be above Lo) |
+| TR9 | *Stacked*; click the chart once, then once more further right; then zoom in and out with the wheel; then *clear cursors* | one strip per signal; vertical lines *A* and *B*, the table shows each signal at A, at B and B − A, and Δt under the chart; above the table *between A and B*: Min, Avg, Max and Beyond limits are those of A–B and stay the same while zooming; after clearing, *the whole period shown* (they change with the zoom); a third click starts again |
+| TR10 | *Export ▾* → *CSV as stored* (period 1 hour), *CSV as shown* (period 30 d), *Picture: PNG*, *Picture: JPG* | the CSV files open in Excel: local time, UTC ms, topic, name, value, unit, quality; *as shown* one row per interval with avg, min and max per signal; the pictures show the chart with its legend and period |
+| TR11 | Copy the page address into a new browser window; then the line view's *Trend* button, and *Line view* on the trend page | the same chart; the two pages link to each other |
+| TR12 | Tab *Historian* | every historised signal with its last value, how long ago, values in the last 24 hours and history since; a stale signal in brown; clicking one adds it to the chart |
+| TR13 | `docker compose run --rm migrate test-history-remove`; reload the trend page at *1 y* (optional: `test-history` again afterwards) | the grey band and the history before it are gone; the real history is unchanged |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`
