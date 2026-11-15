@@ -173,14 +173,14 @@ erDiagram
   }
   measurement {
     timestamptz ts PK
-    int4 property_id PK,FK
+    int4 property_id PK
     float8 value
     int2 quality
     int2 ts_source
   }
   measurement_text {
     timestamptz ts PK
-    int4 property_id PK,FK
+    int4 property_id PK
     text value
     int2 quality
     int2 ts_source
@@ -216,7 +216,7 @@ erDiagram
   }
   production_count {
     timestamptz ts PK
-    int4 property_id PK,FK
+    int4 property_id PK
     float8 increment
     float8 last_value
     int2 resets
@@ -308,10 +308,7 @@ erDiagram
   line ||--o{ work_order : "line_id"
   loss_category ||--o{ reason : "loss_category_id"
   machine_property ||--o{ machine_state_rule : "machine_id, property_id"
-  machine_property ||--o{ measurement_text : "property_id"
-  machine_property ||--o{ measurement : "property_id"
   machine_property ||--o{ plc_mapping : "property_id"
-  machine_property ||--o{ production_count : "property_id"
   machine_property ||--o{ test_data_range : "property_id"
   machine_state_event ||--o{ state_reason : "machine_id, event_ts"
   machine_state ||--o{ machine_state_event : "state_id"

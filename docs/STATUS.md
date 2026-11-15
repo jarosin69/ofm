@@ -1,6 +1,6 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-11. Update this file at the end of every working session.*
+*Updated: 2026-11-15. Update this file at the end of every working session.*
 
 **▶ We are here: Phase 3a, step 3a.8 done, presentation drafted; now the historian step H1 (OFM Trend) is built and waits for the laptop checks TR1–TR13; next H2, then step 3a.9.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
@@ -55,7 +55,11 @@ day):** migration 023 (HiHi and LoLo limits, the trend functions,
 *OFM Trend* at `https://<server>:1882/dashboard/trend` (ADR-0029; Apache
 ECharts in OFM's image, tag `ofm.4`), `migrate test-history` /
 `test-history-remove` (a year of made-up history for the demo line);
-laptop checks TR1–TR13 to do. Then H2 (time shift, event bands,
+laptop checks TR1–TR13 in progress (2026-11-15). Fixes: 1 (statistics between
+cursors A and B; mouse wheel zooms in and out), 2 (own drag-to-zoom),
+3 (migration 024, ADR-0030: history refers to the model by ID without
+foreign keys; with a year of history Mathesar took minutes to save a
+property). Then H2 (time shift, event bands,
 annotations by signed-in person, preferences per person, saved charts),
 then step 3a.9 with the bench PLCs: S7-300 192.168.1.120 (to be
 confirmed: given as 192.168.120), S7-1200 192.168.1.221, CompactLogix
@@ -228,8 +232,8 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ✅ 2026-11-07 (migration 016; RS1–RS8 on the laptop) |
 | 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ✅ 2026-11-09 (migration 017; also GE, LU, TEEP; KP1–KP8 on the laptop) |
 | 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ✅ 2026-11-10: 3a.8a line view and sign-in (migration 018, ADR-0027, ADR-0028), 3a.8b shifts and *Line OEE* (migration 019), fixes (migrations 020–022); LV1–LV8, LO1–LO8 passed on the laptop |
-| H1 | Historian trends, part 1 (ADR-0029): *OFM Trend* page (tag tree, overlay or stacked, zoom and back, live, cursors A/B, statistics, limits LoLo/Lo/Hi/HiHi in amber and red, min–max band, CSV as stored and as shown, PNG/JPG, chart in the address, historian list); made-up year of history for the demo | 🔧 built 2026-11-11 (migration 023); TR1–TR13 to do on the laptop |
-| H2 | Historian trends, part 2: time shift per pen (also to the start of an order or shift), event bands (machine states, orders, shifts), annotations by signed-in person (ADR-0030), preferences per person (theme…), saved charts (personal and shared), Grafana shows the annotations | ⬜ |
+| H1 | Historian trends, part 1 (ADR-0029): *OFM Trend* page (tag tree, overlay or stacked, zoom and back, live, cursors A/B, statistics, limits LoLo/Lo/Hi/HiHi in amber and red, min–max band, CSV as stored and as shown, PNG/JPG, chart in the address, historian list); made-up year of history for the demo | 🔧 built 2026-11-11 (migration 023), fixes 1–3 (migration 024); TR1–TR13 in progress on the laptop |
+| H2 | Historian trends, part 2: time shift per pen (also to the start of an order or shift), event bands (machine states, orders, shifts), annotations by signed-in person (ADR-0031), preferences per person (theme…), saved charts (personal and shared), Grafana shows the annotations | ⬜ |
 | H3 | Optional: scheduled trend reports (PNG/PDF to a folder or e-mail), calculated pens | ⬜ later |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
 | 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |

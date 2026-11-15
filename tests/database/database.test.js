@@ -842,6 +842,15 @@ const CASES = [
       expect: r => r[0].label === "Time picker · Mon 02/11 00:00 – 02:30" },
     { as: "ofm_reader", sql: "SELECT label FROM hist.fn_dashboard_period($line, 'all', " + WO("wo2") + "::text, '2026-11-01', '2026-11-02')",
       expect: r => r[0].label.startsWith("Time picker") } ] },
+  // --- history without foreign keys (migration 024, ADR-0030) -----------------------------
+  { name: "history refers to properties by ID only; a property with history cannot be deleted, one without can", steps: [
+    { as: "ofm_reader", sql: "SELECT count(*) AS n FROM pg_constraint c WHERE c.contype = 'f' AND c.conrelid IN " +
+        "('hist.measurement'::regclass, 'hist.measurement_text'::regclass, 'hist.production_count'::regclass)", expect: r => Number(r[0].n) === 0 },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.measurement (ts, property_id, value, quality, ts_source) VALUES ('2026-11-01T01:00:00Z', $temp, 10, 0, 0)" },
+    { as: "ofm_config", sql: "DELETE FROM config.machine_property WHERE id = $temp", expect: NO_SUCH_PARENT },
+    { as: "ofm_config", sql: ADD_FAULT_BIT },
+    { as: "ofm_config", sql: "DELETE FROM config.machine_property WHERE machine_id = $machine AND name = 'fault_bit'" },
+    { as: "ofm_config", sql: "SELECT count(*) AS n FROM config.machine_property WHERE machine_id = $machine AND name = 'fault_bit'", expect: r => Number(r[0].n) === 0 }] },
   // --- trends (migration 023, ADR-0029) ---------------------------------------------------
   { name: "trend limits: HiHi at or above Hi, LoLo at or below Lo; the runtime model carries all four", steps: [
     { as: "ofm_config", sql: "UPDATE config.machine_property SET alarm_high_high = 70 WHERE id = $temp", expect: REFUSED_BY_RULE },   // Hi is 80

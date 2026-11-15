@@ -471,7 +471,8 @@ section 13, *Efficiency*):
 the period, or intervals when there are too many; time-weighted average and
 time beyond the limits, a silent signal counting no time; the CSV export in
 pages; the screens call the trend functions but read no table; averages
-compressed after 35 days); `flows` (`trend`: every screen's script can be
+compressed after 35 days; history refers to properties by ID only, and a
+property with history cannot be deleted, migration 024); `flows` (`trend`: every screen's script can be
 read by the dashboard; the node *trend* answers one browser with at most 16
 pens and 4,000 points through the trend functions only; both CSV exports;
 the chart library); `schemas` (`_meta` with four limits); `live` (`trend`:
@@ -488,7 +489,7 @@ hand, with the demo running:
 | TR5 | *1 y* | a grey band *made-up test data* up to where the real history starts; the line with a lighter min–max band behind it; under the chart *… from 1-hour averages*, drawn in about a second |
 | TR6 | Drag across one weekday on the chart; drag again across one hour; then *Back*, *Back*; then *Zoom out*; turn the mouse wheel over the chart away from you, then towards you; hold Shift and turn it | each drag zooms in (*Live* off); after the second drag *Every stored value*; *Back* returns step by step; *Zoom out* doubles the period; the wheel zooms in and out around the pointer (the page does not scroll), Shift + wheel moves earlier and later; one turn of the wheel is one *Back* step |
 | TR7 | Filler speed alone, *1 y*: zoom in on one of the rare spikes to about 110 (one weekday morning 10:00–11:00) | above the dashed *Hi 105* the line is amber, above *HiHi 110* red; *Beyond limits* shows `> HiHi … % · > Hi … %` |
-| TR8 | In Mathesar, *machine_property*: checkweigher *last_weight* `alarm_low` 245, `alarm_low_low` 240; then reload the trend page and look at a day with 250 g cartons; then try `alarm_low_low` 250 | below 245 amber, below 240 red; MQTT Explorer: `…/checkweigher/last_weight/_meta` has `alarmLowLow`; 250 is refused (LoLo must not be above Lo) |
+| TR8 | (after fix 3) In Mathesar, *machine_property*: checkweigher *last_weight* `alarm_low` 245, `alarm_low_low` 240; then reload the trend page and look at a day with 250 g cartons; then try `alarm_low_low` 250 | below 245 amber, below 240 red; MQTT Explorer: `…/checkweigher/last_weight/_meta` has `alarmLowLow`; each *Save* takes about a second, not minutes; 250 is refused (LoLo must not be above Lo) |
 | TR9 | *Stacked*; click the chart once, then once more further right; then zoom in and out with the wheel; then *clear cursors* | one strip per signal; vertical lines *A* and *B*, the table shows each signal at A, at B and B − A, and Δt under the chart; above the table *between A and B*: Min, Avg, Max and Beyond limits are those of A–B and stay the same while zooming; after clearing, *the whole period shown* (they change with the zoom); a third click starts again |
 | TR10 | *Export ▾* → *CSV as stored* (period 1 hour), *CSV as shown* (period 30 d), *Picture: PNG*, *Picture: JPG* | the CSV files open in Excel: local time, UTC ms, topic, name, value, unit, quality; *as shown* one row per interval with avg, min and max per signal; the pictures show the chart with its legend and period |
 | TR11 | Copy the page address into a new browser window; then the line view's *Trend* button, and *Line view* on the trend page | the same chart; the two pages link to each other |
