@@ -520,11 +520,13 @@ annotations query runs). By hand:
 | TR23 | (optional) Sign in on the trend page and leave it untouched for 30 minutes | *Signed out after 30 minutes without work on this page.*; *Sign in* appears again |
 
 **Planned quantity reached** (migration 027, ADR-0010 amendment), and
-**stops split where an order starts or ends** (migration 028, fix).
+**stops split where an order starts or ends** (migration 028, fix), and
+**live order progress** (migration 029).
 Automated: `database` (the line view's status gives the minute the running
 order reached its planned quantity; the order stays active; a stop is
 waiting for order only after Complete, and the changeover window applies
-after the next start). By hand, demo
+after the next start; the order's good counter for live progress), `flows`
+(the line view subscribes to the running order's good counter). By hand, demo
 line with the auto-operator **off** (simulator panel):
 
 | # | Do | Expect |
@@ -533,6 +535,7 @@ line with the auto-operator **off** (simulator panel):
 | LV10 | Line view: *Start an order…* → new order mix250 × 300; wait until the line stops at 300 good (about 5 minutes, then up to a minute for the count) | an amber note *Planned quantity reached at hh:mm, n min ago (300 of 300 good)…*; *Complete* is dark like *Start an order…*; the order is still running; the filler's stop appears under *Stops waiting for a reason* after 5 minutes |
 | LV11 | *Complete* (sign in when asked) | the note is gone; *No order running – stopped time counts as waiting for order*; from now on the stop is booked as waiting for order and OEE stops falling |
 | LV12 | (migration 028) After LV11, wait 3 minutes; Grafana *Line OEE*, *Order* = the completed order; and *Today* | line view: *not accounted for* (hour, today) no longer grows and OEE holds; *Stops waiting for a reason* shows only the part of the stop before *Complete* (*Uncoded* = up to Complete, *Whole stop* = all of it); Grafana: the order's figures stay the same on each refresh |
+| LV13 | (migration 029) *Start an order…* → mix250 × 300; watch the progress while the line runs | the count rises every second or two (the gauges still move once a minute); when the line stops at 300, the note says *Planned quantity reached at hh:mm:ss* within about 2 seconds |
 
 **Step H2b, period, compare, bands, smoothing** (migration 026, ADR-0029
 amendment). Automated: `database` (state colours `#rrggbb`, changed by the

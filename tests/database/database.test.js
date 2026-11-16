@@ -826,7 +826,7 @@ const CASES = [
     REMEMBER("line", "$line"),
     { as: "ofm_screens", sql: "SELECT hist.fn_screen_line_status() -> " + ID("line") + "::text AS s",
       expect: r => r[0].s && r[0].s.scheduled === true && r[0].s.order && r[0].s.order.good === 7 } ] },
-  { name: "line view status: the minute the running order reached its planned quantity, for the note to complete it (migration 027)", steps: [
+  { name: "line view status: the minute the running order reached its planned quantity (migration 027); its good counter for live progress (migration 029)", steps: [
     ...LINE_SETUP, ...ORDER_SETUP,
     { as: "ofm_config", sql: "INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, output_machine_id) VALUES ($line, '2026-01-01', " + MACH("mach1") + ", " + MACH("mach1") + ")" },
     { as: "ofm_runtime", sql: START("wo1") },                                    // planned 1000
@@ -839,7 +839,10 @@ const CASES = [
         "(SELECT id FROM config.machine_property WHERE machine_id = " + MACH("mach1") + " AND role = 'count_good'), 500, 1500" },
     { as: "ofm_screens", sql: "SELECT hist.fn_screen_line_status() -> " + ID("line") + "::text AS s, " +
         "(extract(epoch FROM date_trunc('minute', now()) + interval '1 minute') * 1000)::bigint AS minute_ms",
-      expect: r => r[0].s.order.good === 1100 && Number(r[0].s.order.reachedMs) === Number(r[0].minute_ms) },
+      expect: r => r[0].s.order.good === 1100 && Number(r[0].s.order.reachedMs) === Number(r[0].minute_ms) &&
+        // live progress (migration 029): the good counter's topic and its newest stored reading
+        r[0].s.order.counterValue === 1500 && Number(r[0].s.order.counterMinuteMs) === Number(r[0].minute_ms) &&
+        typeof r[0].s.order.goodTopic === "string" && r[0].s.order.goodTopic.endsWith("/mach1/count_good") },
     // nothing is completed by itself
     { as: "ofm_reader", sql: "SELECT active FROM hist.vw_line_work_order WHERE line_id = $line", expect: r => r[0].active === true } ] },
   { name: "line view status: outside the schedule, with the next start; no order, no progress", steps: [

@@ -61,3 +61,12 @@ also write history directly, which a screen should never need.
   `make-env.sh`), one more port (1882) to open on the plant network.
 - Follow-up: supervisor screens (recoding, food-safety verification,
   ADR-0015) and SPC entry (Phase 3c) are built in the same container.
+
+## Amendments
+
+- 2026-11-17 (migration 029): the line view shows the running order's
+  progress live. It adds how far the order's good counter has moved on the
+  UNS since its newest stored minute to the stored good units, so the
+  progress and the *planned quantity reached* note (migration 027) follow
+  the counter within about a second, not a minute. The KPIs stay per
+  minute (ADR-0008).

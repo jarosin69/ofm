@@ -52,6 +52,20 @@ module.exports.run = async function (t) {
     out = await hub.run({ topic: "tick" });
     t.check("the line's status (outside its schedule, the order's good units since its start) reaches every screen",
       out[0][0].payload.lines[0].status.scheduled === false && out[0][0].payload.lines[0].status.order.good === 26);
+    // live order progress (migration 029): the running order's good counter is subscribed to and reaches every screen
+    const GOOD = L + "/closer/count_good";
+    out = await hub.run({ topic: "status", payload: { 7: { scheduled: true, order: { workOrderId: 40, good: 26, goodTopic: GOOD, counterValue: 1000, counterMinuteMs: clock - 60000 } } } });
+    t.check("live progress: the running order's good counter is subscribed to, with the model's topics",
+      out[2] && out[2].payload.includes(GOOD) && out[2].payload.includes(L + "/filler/state"));
+    out = await hub.run({ topic: "status", payload: { 7: { scheduled: true, order: { workOrderId: 40, good: 27, goodTopic: GOOD, counterValue: 1001, counterMinuteMs: clock } } } });
+    t.check("live progress: the same counter again is not subscribed to again", !out[2]);
+    await hub.run({ topic: GOOD, payload: '{"v":1012,"ts":' + (clock - 1000) + ',"q":"good","tss":"device"}' });
+    out = await hub.run({ topic: "tick" });
+    t.check("live progress: the counter's live reading and the stored reading reach every screen",
+      out[0][0].payload.lines[0].counter.v === 1012 && out[0][0].payload.lines[0].status.order.counterValue === 1001);
+    out = await hub.run({ topic: "status", payload: { 7: { scheduled: true, order: null } } });
+    out = await hub.run({ topic: "tick" });
+    t.check("live progress: no order running, the counter unsubscribed and forgotten", out[0][0].payload.lines[0].counter === null && !(GOOD in hub.context.st.live));
     await hub.run({ topic: L + "/kpi/day", payload: "" });
     out = await hub.run({ topic: "tick" });
     t.check("a cleared topic (empty retained message) disappears from the picture", out[0][0].payload.lines[0].kpi.day === null);
