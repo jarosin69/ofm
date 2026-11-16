@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.6.16 (2026-11-16) — annotations on trends, ADR-0031 (§8); 0.6.15: history refers to the model by ID without foreign keys, ADR-0030 |
+| **Version** | 0.6.17 (2026-11-16) — trend periods, compare, event bands and display-only smoothing, ADR-0029 amendment (§8); 0.6.16: annotations on trends, ADR-0031 |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -249,7 +249,7 @@ The historian schema is narrow and ID-keyed. `measurement (ts timestamptz, prope
 
 Nothing in the historian references topics or display names. History refers to the model by ID only, without foreign keys: TimescaleDB would copy a key onto every daily block, and the model editor would see hundreds of linking tables (ADR-0030); a property with history cannot be deleted (trigger), only retired. Historical queries join to the model at read time, so equipment renames and topic restructures never corrupt history.
 
-**Trending (ADR-0029).** People read the historian through *OFM Trend*, a page of the screens container (`https://<server>:1882/dashboard/trend`) in the manner of Canary Axiom: signals picked from the model's tree, overlaid or stacked, zoomed, with cursors, statistics, CSV and picture export, and the chart kept in the page address. It reads only through the functions of migration 023, which return at most about one point per pixel: every stored value for short periods, otherwise minimum, average and maximum per interval from raw data, the 1-minute or the 1-hour rollups. Each property has four limits, LoLo, Lo, Hi and HiHi (`alarm_low_low`, `alarm_low`, `alarm_high`, `alarm_high_high`), which colour the trend amber and red. Which properties are historised stays a model setting (`is_historised`). Made-up test history (`migrate test-history`) is listed in `hist.test_data_range` and marked on every chart. Signed-in people annotate a moment or a period on a signal, machine or line (ADR-0031): append-only, with a kind and colour from `config.annotation_category`; every chart of that signal, machine or line shows it, and so does Grafana *Line OEE*.
+**Trending (ADR-0029).** People read the historian through *OFM Trend*, a page of the screens container (`https://<server>:1882/dashboard/trend`) in the manner of Canary Axiom: signals picked from the model's tree, overlaid or stacked, zoomed, with cursors, statistics, CSV and picture export, and the chart kept in the page address. It reads only through the functions of migration 023, which return at most about one point per pixel: every stored value for short periods, otherwise minimum, average and maximum per interval from raw data, the 1-minute or the 1-hour rollups. Each property has four limits, LoLo, Lo, Hi and HiHi (`alarm_low_low`, `alarm_low`, `alarm_high`, `alarm_high_high`), which colour the trend amber and red. Which properties are historised stays a model setting (`is_historised`). Made-up test history (`migrate test-history`) is listed in `hist.test_data_range` and marked on every chart. Signed-in people annotate a moment or a period on a signal, machine or line (ADR-0031): append-only, with a kind and colour from `config.annotation_category`; every chart of that signal, machine or line shows it, and so does Grafana *Line OEE*. A chart can take one work order or shift as its period, compare a signal with itself at another time, show bands of machine states (in each state's colour from `config.machine_state`), orders and shifts under the trends, and smooth a pen for display only; statistics and exports always use the stored values (ADR-0029, amendment of 2026-11-16).
 
 ## 9. Timestamps and data quality
 
@@ -477,4 +477,4 @@ Where the details live, by concern: contested decisions and their alternatives �
 
 ---
 
-*End of Architecture Overview v0.6.16. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.6.17. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

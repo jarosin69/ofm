@@ -2,7 +2,7 @@
 
 *Updated: 2026-11-16. Update this file at the end of every working session.*
 
-**▶ We are here: historian trends: H1 checked (TR12–TR13 open), H2a annotations built and waiting for TR14–TR23; next H2b, then step 3a.9.** Decided
+**▶ We are here: historian trends: H1 and H2a checked; H2b (period, compare, bands, smoothing) built and waiting for TR24–TR33; next H2c, then step 3a.9.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -63,9 +63,18 @@ property). TR1–TR11 passed 2026-11-16. **Step H2a, annotations, built
 2026-11-16** (design accepted the same day): migration 025, ADR-0031,
 sign-in on the trend page, annotate a moment or a period on a signal,
 machine or line, kinds with colours in Mathesar, correct and remove
-append-only, Grafana *Line OEE* shows them; checks TR14–TR23 to do. Then H2 (time shift, event bands,
-annotations by signed-in person, preferences per person, saved charts),
-then step 3a.9 with the bench PLCs: S7-300 192.168.1.120 (to be
+append-only, Grafana *Line OEE* shows them; TR14–TR23 passed 2026-11-16.
+**Step H2b built 2026-11-16** (design agreed the same day): migration 026,
+ADR-0029 amendment: an order or a shift as the period, compare a signal
+with itself at another time (also lined up with the start of an order or
+shift), bands for machine states (state colours in Mathesar), orders and
+shifts, smoothing per pen for display only; checks TR24–TR33 to do. Also 2026-11-16: the line view tells
+the operator when the running order has reached its planned quantity and
+highlights *Complete*; nothing completes by itself and the KPIs are
+unchanged (migration 027, ADR-0010 amendment; LV9–LV11 to do). Then
+H2c (preferences per person with a dark theme, saved charts personal and
+shared: a shared chart is changed only by its author, others *Save as*;
+swap machine), then step 3a.9 with the bench PLCs: S7-300 192.168.1.120 (to be
 confirmed: given as 192.168.120), S7-1200 192.168.1.221, CompactLogix
 192.168.1.180.
 
@@ -235,10 +244,11 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.5 | Work orders (ADR-0010): events, `.../workorder` topic; the simulator follows; auto-operator | ✅ 2026-11-07 (migration 015; WO1–WO9 on the laptop) |
 | 3a.6 | Reasons (ADR-0009, ADR-0024): catalogue, PLC fault code → reason, starved/blocked attribution, automatic *waiting for order* (Pos 7) for scheduled time without an active order | ✅ 2026-11-07 (migration 016; RS1–RS8 on the laptop) |
 | 3a.7 | Time ledger and KPI views: OEE with A·P·Q, Downtime, MTBF, MTTR; live line KPIs on the UNS | ✅ 2026-11-09 (migration 017; also GE, LU, TEEP; KP1–KP8 on the laptop) |
-| 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ✅ 2026-11-10: 3a.8a line view and sign-in (migration 018, ADR-0027, ADR-0028), 3a.8b shifts and *Line OEE* (migration 019), fixes (migrations 020–022); LV1–LV8, LO1–LO8 passed on the laptop |
-| H1 | Historian trends, part 1 (ADR-0029): *OFM Trend* page (tag tree, overlay or stacked, zoom and back, live, cursors A/B, statistics, limits LoLo/Lo/Hi/HiHi in amber and red, min–max band, CSV as stored and as shown, PNG/JPG, chart in the address, historian list); made-up year of history for the demo | 🔧 built 2026-11-11 (migration 023), fixes 1–3 (migration 024); TR1–TR13 in progress on the laptop |
-| H2a | Annotations (ADR-0031): sign-in on the trend page, a moment or a period on a signal, machine or line, kinds with colours (Mathesar), correct and remove append-only, shown on every chart of that signal, machine or line and in Grafana *Line OEE* | 🔧 built 2026-11-16 (migration 025); TR14–TR23 to do |
-| H2b | Historian trends, part 2: time shift per pen (also to the start of an order or shift), event bands (machine states, orders, shifts), preferences per person (theme…), saved charts (personal and shared); open: smoothing per pen here or in H3 | ⬜ |
+| 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ✅ 2026-11-10: 3a.8a line view and sign-in (migration 018, ADR-0027, ADR-0028), 3a.8b shifts and *Line OEE* (migration 019), fixes (migrations 020–022); LV1–LV8, LO1–LO8 passed on the laptop; 2026-11-16: note when the planned quantity is reached (migration 027), LV9–LV11 to do |
+| H1 | Historian trends, part 1 (ADR-0029): *OFM Trend* page (tag tree, overlay or stacked, zoom and back, live, cursors A/B, statistics, limits LoLo/Lo/Hi/HiHi in amber and red, min–max band, CSV as stored and as shown, PNG/JPG, chart in the address, historian list); made-up year of history for the demo | ✅ 2026-11-16 (migration 023, fixes in migration 024; TR1–TR12 passed, TR13 optional) |
+| H2a | Annotations (ADR-0031): sign-in on the trend page, a moment or a period on a signal, machine or line, kinds with colours (Mathesar), correct and remove append-only, shown on every chart of that signal, machine or line and in Grafana *Line OEE* | ✅ 2026-11-16 (migration 025; TR14–TR23 passed) |
+| H2b | Historian trends, analysis: an order or shift as the period, compare a signal with itself at another time (also to the start of an order or shift), bands for machine states (colours in Mathesar), orders and shifts, smoothing per pen for display only (average, median, PT1) | 🔧 built 2026-11-16 (migration 026, ADR-0029 amendment); TR24–TR33 to do |
+| H2c | Historian trends, personal: preferences per person (dark theme…), saved charts (personal and shared; a shared chart is changed only by its author, others *Save as*), swap machine (the same signals on another machine) | ⬜ design agreed 2026-11-16 |
 | H3 | Optional: scheduled trend reports (PNG/PDF to a folder or e-mail), calculated pens | ⬜ later |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
 | 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |
@@ -311,10 +321,10 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Step H1: finish TR12–TR13. Step H2a on the laptop: unpack, migrate,
-   restart screens, then TR14–TR23 (`tests/README.md`).
-2. Step H2b (design first): time shift, event bands, preferences, saved
-   charts; decide: smoothing per pen in H2b or with calculated pens (H3).
+1. On the laptop: unpack the H2b and the planned-quantity zips, migrate,
+   restart screens, then TR24–TR33 and LV9–LV11 (`tests/README.md`).
+2. Step H2c: preferences per person (dark theme), saved charts (personal
+   and shared, author-only changes, *Save as*), swap machine.
 3. The OFM presentation (`docs/presentation/ofm-overview.pptx`, 21
    slides, for C0): review it; add a trend slide after H1; update it at the
    end of each phase.

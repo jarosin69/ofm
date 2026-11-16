@@ -163,6 +163,7 @@ erDiagram
     text name
     text display_name
     text description
+    text colour
   }
   machine_state_event {
     int4 machine_id PK,FK

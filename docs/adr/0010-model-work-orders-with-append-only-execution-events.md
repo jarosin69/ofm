@@ -129,3 +129,11 @@ performance figure.
   `ofm_screens`; these call the functions above, so their checks apply.
   `hist.work_order_event` gains `person_id` (ADR-0028); `entered_by` keeps
   the person's name as it was.
+- 2026-11-16: **Planned quantity reached (migration 027).** When the
+  running order's good units reach its planned quantity, the line view
+  shows a note and highlights *Complete*. Nothing is completed
+  automatically: the operator decides (top-ups, over- and under-runs). Until
+  then the order is active, so a stopped line's time stays a stop that needs
+  a reason and lowers OEE (ADR-0008, ADR-0009). Booking that time as waiting
+  for order (Pos 7) was considered and rejected: a late *Complete* would no
+  longer show in OEE.

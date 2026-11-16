@@ -89,3 +89,27 @@ H3: scheduled reports, calculated pens.
   than the compressed raw values they summarise.
 - The page shows times in the browser's local time; plant PCs are set to
   the plant's time zone. CSV files carry the site's local time and UTC.
+
+## Amendments
+
+- **2026-11-16 (step H2b, migration 026):** the trend page also
+  1. shows one work order or one shift as the period (*Order / Shift*);
+  2. compares a signal with itself at another time (*Compare…*): the same
+     signal again as a dashed pen, moved by a fixed time, or so that the
+     start of a chosen order or shift lines up with the start of the
+     period shown;
+  3. draws bands under the trends: machine states in each state's colour
+     (`config.machine_state.colour`, edited in Mathesar), work orders with
+     their changeover, and shifts. It reads them through
+     `hist.fn_trend_states`, `hist.fn_trend_orders`,
+     `hist.fn_trend_order_list` and `hist.fn_trend_shifts`. Over more than
+     3,000 state changes, a band shows the state that took most of each
+     part of the chart, so a year stays readable and quick;
+  4. smooths a pen **for display only**: moving average, moving median or a
+     first-order low-pass filter (PT1), each with a time in seconds. The
+     stored line stays faintly behind the smoothed one, and the limit
+     colours follow the smoothed line. Statistics, time beyond limits and
+     CSV exports always use the stored values. Filtering that the process
+     depends on belongs in the PLC, where the control loop sees it.
+
+  CSV exports leave compared pens out; export the earlier period itself.

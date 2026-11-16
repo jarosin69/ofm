@@ -32,6 +32,15 @@ function fakePg(asked, pages) {
         if (/fn_trend_stats/.test(text)) return { rows: [{ source: "raw", n: "120", v_min: 90, v_max: 111, v_avg: 99.5, s_covered: 7200, s_above_hi: 600,
                                                            s_above_hihi: 60, s_below_lo: 0, s_below_lolo: 0 }] };
         if (/fn_trend_export/.test(text)) return { rows: pages.shift() || [] };
+        // bands and periods (step H2b)
+        if (/fn_trend_states/.test(text)) return { rows: [{ machine_id: 2, t0_ms: "1794380400000", t1_ms: "1794381000000", state: "fault", state_name: "Fault",
+                                                            colour: "#c62828", reason: "F12 · Jam", dominant: false }] };
+        if (/fn_trend_orders/.test(text)) return { rows: [{ line_id: 7, work_order_id: 31, wo_number: "WO-31", sku: "mix500", t0_ms: "1794380000000",
+                                                            setup_end_ms: "1794380600000", t1_ms: "1794387600000", running: true }] };
+        if (/fn_trend_order_list/.test(text)) return { rows: [{ line_id: 7, work_order_id: 31, wo_number: "WO-31", sku: "mix500", t0_ms: "1794380000000",
+                                                                t1_ms: "1794387600000", running: true }] };
+        if (/fn_trend_shifts/.test(text)) return { rows: [{ line_id: 7, name: "A", day: "2026-11-11", t0_ms: "1794337200000", t1_ms: "1794366000000" },
+                                                           { line_id: 7, name: "B", day: "2026-11-11", t0_ms: "1794366000000", t1_ms: "1794394800000" }] };
         return { rows: [] };
       }
     }
@@ -103,6 +112,31 @@ module.exports.run = async function (t) {
   t.check("trend: statistics alone for the span between cursors A and B (no values read)",
           m.topic === "stats" && m.payload.req === 9 && m.payload.stats[9533].avg === 99.5 && !m.payload.series &&
           asked.length === 2 && asked.every(a => /hist\.fn_trend_stats\(/.test(a.text)) && asked[0].params[1] === "2026-11-11T07:00:00.000Z");
+  // compare (step H2b): the same signal one day earlier is a pen of its own, read a day back and drawn a day later
+  asked.length = 0;
+  const DAY = 86400000;
+  await trend.run({ payload: { cmd: "data", req: 10, from: 1794380400000, to: 1794387600000, machines: [2, "x"], lines: [7],
+                               bands: { states: true, orders: true, shifts: true },
+                               pens: [{ key: "9522", id: 9522, shift: 0 }, { key: "9522:" + DAY, id: 9522, shift: DAY }, { key: "x;drop", id: 9522, shift: 0 }] }, _client: A });
+  m = trend.sent.pop();
+  const back = asked.find(a => /fn_trend_data/.test(a.text) && a.params[1] === new Date(1794380400000 - DAY).toISOString());
+  t.check("compare: a pen shifted by a day reads the day before and is drawn a day later; a bad pen key is refused",
+          m.topic === "data" && back && Object.keys(m.payload.series).sort().join() === "9522,9522:" + DAY &&
+          m.payload.series["9522:" + DAY].rows[0][0] === 1794380400000 + DAY && m.payload.series["9522:" + DAY].shift === DAY &&
+          m.payload.series["9522"].rows[0][0] === 1794380400000);
+  const b = m.payload.bands;
+  t.check("bands: machine states with colour and reason, orders with the end of changeover, shifts; through the trend functions only",
+          b.states[0].join() === "2,1794380400000,1794381000000,fault,Fault,#c62828,F12 · Jam,false" &&
+          b.orders[0].setupEnd === 1794380600000 && b.orders[0].number === "WO-31" && b.shifts[1].name === "B" && b.shifts[1].t0 === 1794366000000 &&
+          asked.every(a => a.user === "ofm_screens" && /hist\.fn_trend_(data|stats|annotations|states|orders|shifts)\(/.test(a.text)) &&
+          asked.find(a => /fn_trend_states/.test(a.text)).params[0].join() === "2");
+  asked.length = 0;
+  await trend.run({ payload: { cmd: "periods", lines: [7, "x"] }, _client: A });
+  m = trend.sent.pop();
+  t.check("periods: a line's recent orders and its shifts of the last 14 days, newest first, to choose one as the period",
+          m.topic === "periods" && m.payload.orders[0].number === "WO-31" && m.payload.shifts.map(x => x.name).join() === "B,A" &&
+          m.payload.shifts[0].day === "2026-11-11" && asked.length === 2 &&
+          asked.every(a => /hist\.fn_trend_(order_list|shifts)\(/.test(a.text) && a.params[0].join() === "7"));
   await trend.run({ payload: { cmd: "data" } });
   t.check("trend: nothing is answered to a message without a browser", trend.sent.length === 0);
 

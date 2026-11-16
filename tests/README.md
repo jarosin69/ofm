@@ -519,6 +519,39 @@ annotations query runs). By hand:
 | TR22 | Grafana *OFM · Line OEE*, line Packing line 1, *Order: None*, time picker over the annotation times | small markers on the time panels (e.g. *OEE trend*); hovering shows kind, what it belongs to, text and name |
 | TR23 | (optional) Sign in on the trend page and leave it untouched for 30 minutes | *Signed out after 30 minutes without work on this page.*; *Sign in* appears again |
 
+**Planned quantity reached** (migration 027, ADR-0010 amendment).
+Automated: `database` (the line view's status gives the minute the running
+order reached its planned quantity; the order stays active). By hand, demo
+line with the auto-operator **off** (simulator panel):
+
+| # | Do | Expect |
+|---|---|---|
+| LV9 | `docker compose up -d`, `docker compose logs migrate`, `docker compose restart screens` | `Applying 027-order-quantity-reached.sql` |
+| LV10 | Line view: *Start an order…* → new order mix250 × 300; wait until the line stops at 300 good (about 5 minutes, then up to a minute for the count) | an amber note *Planned quantity reached at hh:mm, n min ago (300 of 300 good)…*; *Complete* is dark like *Start an order…*; the order is still running; the filler's stop appears under *Stops waiting for a reason* after 5 minutes |
+| LV11 | *Complete* (sign in when asked) | the note is gone; *No order running – stopped time counts as waiting for order*; from now on the stop is booked as waiting for order and OEE stops falling |
+
+**Step H2b, period, compare, bands, smoothing** (migration 026, ADR-0029
+amendment). Automated: `database` (state colours `#rrggbb`, changed by the
+model editor; states with their colour and reason; over 3,000 changes the
+dominant state per part, neighbours joined; orders with the end of
+changeover; a line's recent orders; whole shifts; the screens' role reads
+no table); `flows` (`trend`: a pen moved by a day reads the day before and
+is drawn a day later; bands and periods only through the trend functions).
+By hand:
+
+| # | Do | Expect |
+|---|---|---|
+| TR24 | `docker compose up -d`, `docker compose logs migrate`, `docker compose restart screens`, `docker compose run --rm test database flows` | `Applying 026-trend-bands-and-periods.sql`; all checks pass |
+| TR25 | Mathesar: table *machine_state* | a *colour* column: Running green, Fault red, Starved yellow, Blocked orange, Setup blue…; `green` is refused (it must be `#rrggbb`) |
+| TR26 | Trend page, demo line running, *Filler → Speed*, *8 h*; tick *Bands: States*, *Orders*, *Shifts* | under the chart: one strip per machine of the pens in state colours, *Orders* with the order number and product, *Shifts* A/B/C; hovering shows the state, its duration and the coded reason (if any), the order and the shift |
+| TR27 | Change a machine state colour in Mathesar (e.g. *starved* to `#00bcd4`), then reload the trend page | the starved parts of the state band are in the new colour |
+| TR28 | *Order / Shift ▾* | the line's recent orders (newest first, the running one marked) and the shifts of the last 14 days; choosing one sets the period to exactly that order or shift, named beside the time buttons |
+| TR29 | *1 y* with *States* ticked | the band still draws quickly; where the machine changed state more than 3,000 times in the year, the hover box says *(the main state of this part of the chart)* |
+| TR30 | On *Filler → Speed*: *Compare…* → *Earlier by 1 day* → *Add* | a second, dashed pen *Filler · Speed (−1 day)*; hovering shows its value with the time it was recorded (a day earlier); its own Min, Avg, Max |
+| TR31 | Choose an order as the period; *Compare…* → *Start of work order*, an earlier order of the same product → *Add* | the earlier order's speed starts at the left edge with the current one, named *(order …)* |
+| TR32 | On a pen: *Smoothing* → *low-pass PT1*, 120 s; then *moving average* and *moving median* | a calmer line, the stored line faint behind it; the name says e.g. *PT1 τ 120 s*; Min, Avg, Max do not change (they are from the stored values) |
+| TR33 | Copy the page address into a new browser tab | the same pens, compare pens, smoothing, bands and period |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

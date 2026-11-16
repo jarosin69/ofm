@@ -808,6 +808,22 @@ const CASES = [
     REMEMBER("line", "$line"),
     { as: "ofm_screens", sql: "SELECT hist.fn_screen_line_status() -> " + ID("line") + "::text AS s",
       expect: r => r[0].s && r[0].s.scheduled === true && r[0].s.order && r[0].s.order.good === 7 } ] },
+  { name: "line view status: the minute the running order reached its planned quantity, for the note to complete it (migration 027)", steps: [
+    ...LINE_SETUP, ...ORDER_SETUP,
+    { as: "ofm_config", sql: "INSERT INTO config.line_kpi_rule (line_id, valid_from, constraint_machine_id, output_machine_id) VALUES ($line, '2026-01-01', " + MACH("mach1") + ", " + MACH("mach1") + ")" },
+    { as: "ofm_runtime", sql: START("wo1") },                                    // planned 1000
+    { as: "ofm_runtime", sql: "INSERT INTO hist.production_count (ts, property_id, increment, last_value) SELECT date_trunc('minute', now()), " +
+        "(SELECT id FROM config.machine_property WHERE machine_id = " + MACH("mach1") + " AND role = 'count_good'), 600, 1000" },
+    REMEMBER("line", "$line"),
+    { as: "ofm_screens", sql: "SELECT hist.fn_screen_line_status() -> " + ID("line") + "::text AS s",
+      expect: r => r[0].s.order.good === 600 && r[0].s.order.plannedQty === 1000 && r[0].s.order.reachedMs === null },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.production_count (ts, property_id, increment, last_value) SELECT date_trunc('minute', now()) + interval '1 minute', " +
+        "(SELECT id FROM config.machine_property WHERE machine_id = " + MACH("mach1") + " AND role = 'count_good'), 500, 1500" },
+    { as: "ofm_screens", sql: "SELECT hist.fn_screen_line_status() -> " + ID("line") + "::text AS s, " +
+        "(extract(epoch FROM date_trunc('minute', now()) + interval '1 minute') * 1000)::bigint AS minute_ms",
+      expect: r => r[0].s.order.good === 1100 && Number(r[0].s.order.reachedMs) === Number(r[0].minute_ms) },
+    // nothing is completed by itself
+    { as: "ofm_reader", sql: "SELECT active FROM hist.vw_line_work_order WHERE line_id = $line", expect: r => r[0].active === true } ] },
   { name: "line view status: outside the schedule, with the next start; no order, no progress", steps: [
     ...LINE_SETUP,
     { as: "ofm_config", sql: RULE_AT("mach1", false) },
@@ -886,6 +902,35 @@ const CASES = [
         "JOIN config.person p ON p.id = a.person_id WHERE a.property_id = $temp ORDER BY a.id",
       expect: r => r.map(x => x.text + "/" + (x.reason || "")).join() === "first/,second/wrong signal" && r[0].display_name === "Pat Tester" },
     { as: "ofm_config", sql: "UPDATE hist.annotation SET text = 'x' WHERE property_id = $temp", expect: NO_PERMISSION }] },
+  // --- trend bands and periods (migration 026, step H2b) ------------------------------------
+  { name: "trend bands: states with their colour and reason, orders with changeover, shifts; through functions only", steps: [
+    { as: "ofm_config", sql: "UPDATE config.machine_state SET colour = '#123456' WHERE name = 'running'" },
+    { as: "ofm_config", sql: "UPDATE config.machine_state SET colour = 'green' WHERE name = 'running'", expect: REFUSED_BY_RULE },
+    ...LEDGER_SETUP,
+    { as: "ofm_config", sql: ADD_SHIFT("A", "06:00", "09:30") },
+    { as: "ofm_config", sql: ADD_SHIFT("B", "09:30", "14:00") },
+    // from 08:55: idle (in force since 08:50) to 09:00, then the worked example's states to 10:00
+    { as: "ofm_screens", sql: "SELECT state, colour, reason, dominant, t0_ms, t1_ms FROM hist.fn_trend_states(ARRAY[$machine]::integer[], " + L("08:55") + ", " + L("10:00") + ")",
+      expect: r => r.map(x => x.state).join() === "idle,setup,running,fault,running,idle,running,fault,running,cleaning" &&
+        Number(r[0].t0_ms) === Date.parse("2026-11-02T08:55:00+11:00") && Number(r[9].t1_ms) === Date.parse("2026-11-02T10:00:00+11:00") &&
+        r[2].colour === "#123456" && r[3].reason === "zz_motor · zz_motor" && r[6].reason === null && r.every(x => x.dominant === false) },
+    { as: "ofm_screens", sql: "SELECT wo_number, t0_ms, setup_end_ms, running FROM hist.fn_trend_orders(ARRAY[$line]::integer[], " + L("08:00") + ", " + L("11:00") + ")",
+      expect: r => r.length === 1 && r[0].wo_number === "wo1" && r[0].running === true &&
+        Number(r[0].t0_ms) === Date.parse("2026-11-02T08:55:00+11:00") && Number(r[0].setup_end_ms) === Date.parse("2026-11-02T09:05:00+11:00") },
+    { as: "ofm_screens", sql: "SELECT wo_number FROM hist.fn_trend_order_list(ARRAY[$line]::integer[])", expect: r => r.map(x => x.wo_number).join() === "wo1" },
+    { as: "ofm_screens", sql: "SELECT name, shift_day::text AS day, t0_ms, t1_ms FROM hist.fn_trend_shifts(ARRAY[$line]::integer[], " + L("07:00") + ", " + L("10:00") + ")",
+      expect: r => r.map(x => x.name + " " + x.day).join() === "A 2026-11-02,B 2026-11-02" &&     // whole shifts, not cut at 07:00 and 10:00
+        Number(r[0].t0_ms) === Date.parse("2026-11-02T06:00:00+11:00") && Number(r[1].t0_ms) === Date.parse("2026-11-02T09:30:00+11:00") && Number(r[1].t1_ms) === Date.parse("2026-11-02T14:00:00+11:00") },
+    { as: "ofm_screens", sql: "SELECT * FROM config.line_shift", expect: NO_PERMISSION },
+    { as: "ofm_screens", sql: "SELECT * FROM hist.machine_state_event", expect: NO_PERMISSION },
+    { as: "ofm_runtime", sql: "SELECT * FROM hist.fn_trend_states(ARRAY[$machine]::integer[], now() - interval '1 h', now())", expect: NO_PERMISSION }] },
+  { name: "trend bands: over more than 3,000 state changes, the state that took most of each part, neighbours joined", steps: [
+    // 3,100 changes one second apart from 00:00: first half mostly running (fault every 10 s), then mostly fault
+    { as: "ofm_runtime", sql: "INSERT INTO hist.machine_state_event (machine_id, ts, state_id, cause) SELECT $machine, '2026-11-03 00:00:00+11'::timestamptz + make_interval(secs => g), " +
+        "CASE WHEN (g < 1800) = (g % 10 <> 0) THEN 1 ELSE 5 END, 'rule' FROM generate_series(0, 3099) g" },
+    { as: "ofm_screens", sql: "SELECT state, reason, dominant, t0_ms, t1_ms FROM hist.fn_trend_states(ARRAY[$machine]::integer[], '2026-11-03 00:00:00+11', '2026-11-03 01:00:00+11', 100)",
+      expect: r => r.map(x => x.state + " " + x.dominant).join() === "running true,fault true" && r[0].reason === null &&
+        Number(r[0].t1_ms) === Date.parse("2026-11-03T00:30:00+11:00") && Number(r[1].t1_ms) === Date.parse("2026-11-03T01:00:00+11:00") }] },
   // --- history without foreign keys (migration 024, ADR-0030) -----------------------------
   { name: "history refers to properties by ID only; a property with history cannot be deleted, one without can", steps: [
     { as: "ofm_reader", sql: "SELECT count(*) AS n FROM pg_constraint c WHERE c.contype = 'f' AND c.conrelid IN " +

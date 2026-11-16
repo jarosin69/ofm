@@ -244,7 +244,8 @@ operators who set the line up.
 3. The simulator reads it: changeover (`setup`), then the new product.
 4. The first good carton closes the changeover window (or the operator
    presses *Changeover done*).
-5. At the planned quantity the line stops; the operator completes the order
+5. At the planned quantity the line stops; the line view says so and
+   highlights *Complete* (migration 027); the operator completes the order
    and starts the next one.
 
 Time inside the shift pattern with no active order is booked automatically
