@@ -583,6 +583,24 @@ const CASES = [
     { as: "ofm_runtime", sql: ASSIGN("mach3", "01:00", "zz_servo") },
     { as: "ofm_reader", sql: STOPS,
       expect: r => stops(r) === "00:10-00:20 idle waiting_for_order waiting_for_order pos7 | 00:20-01:02 unknown unknown | 01:02-01:20 blocked attributed zz_servo @mach3 pos9" }] },
+  { name: "line stops: an order completed or started during a stop splits it: waiting for order only while no order is active (migration 028)", steps: [
+    ...LINE_SETUP,
+    { as: "ofm_config", sql: RULE_AT("mach1", true) },
+    ...ORDER_SETUP,
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'start', '2026-11-01T00:05:00Z', 'tester')" },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'changeover_end', '2026-11-01T00:06:00Z', 'ofm')" },
+    { as: "ofm_runtime", sql: EV("mach1", "00:05", 1) },
+    { as: "ofm_runtime", sql: EV("mach1", "00:10", 2) },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'complete', '2026-11-01T00:30:00Z', 'tester')" },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo2") + ", 'start', '2026-11-01T00:50:00Z', 'tester')" },
+    { as: "ofm_runtime", sql: EV("mach1", "01:00", 1) },
+    { as: "ofm_reader", sql: STOPS,
+      expect: r => stops(r) === "00:10-00:30 idle none | 00:30-00:50 idle waiting_for_order waiting_for_order pos7 | 00:50-01:00 idle none" },
+    // the ledger: the completed order's stop stays unaccounted, then waiting for order (Pos 7), then the new order's changeover (Pos 6)
+    { as: "ofm_config", sql: "INSERT INTO config.line_schedule (line_id, kind, sun, start_time, end_time, valid_from) VALUES ($line, 'production', true, '00:00', '23:59:59', '2026-01-01')" },
+    { as: "ofm_reader", sql: "SELECT string_agg(to_char(slice_start AT TIME ZONE 'UTC', 'HH24:MI') || ' ' || rule, ' | ' ORDER BY slice_start) AS s " +
+        "FROM hist.fn_time_ledger($line, '2026-11-01T00:05:00Z', '2026-11-01T01:00:00Z')",
+      expect: r => r[0].s === "00:05 running | 00:10 unaccounted | 00:30 waiting_for_order | 00:50 changeover" }] },
   { name: "line stops: with an active order, an idle stop has no reason yet", steps: [
     ...LINE_SETUP,
     { as: "ofm_config", sql: RULE_AT("mach1", true) },

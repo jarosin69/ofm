@@ -519,9 +519,12 @@ annotations query runs). By hand:
 | TR22 | Grafana *OFM · Line OEE*, line Packing line 1, *Order: None*, time picker over the annotation times | small markers on the time panels (e.g. *OEE trend*); hovering shows kind, what it belongs to, text and name |
 | TR23 | (optional) Sign in on the trend page and leave it untouched for 30 minutes | *Signed out after 30 minutes without work on this page.*; *Sign in* appears again |
 
-**Planned quantity reached** (migration 027, ADR-0010 amendment).
+**Planned quantity reached** (migration 027, ADR-0010 amendment), and
+**stops split where an order starts or ends** (migration 028, fix).
 Automated: `database` (the line view's status gives the minute the running
-order reached its planned quantity; the order stays active). By hand, demo
+order reached its planned quantity; the order stays active; a stop is
+waiting for order only after Complete, and the changeover window applies
+after the next start). By hand, demo
 line with the auto-operator **off** (simulator panel):
 
 | # | Do | Expect |
@@ -529,6 +532,7 @@ line with the auto-operator **off** (simulator panel):
 | LV9 | `docker compose up -d`, `docker compose logs migrate`, `docker compose restart screens` | `Applying 027-order-quantity-reached.sql` |
 | LV10 | Line view: *Start an order…* → new order mix250 × 300; wait until the line stops at 300 good (about 5 minutes, then up to a minute for the count) | an amber note *Planned quantity reached at hh:mm, n min ago (300 of 300 good)…*; *Complete* is dark like *Start an order…*; the order is still running; the filler's stop appears under *Stops waiting for a reason* after 5 minutes |
 | LV11 | *Complete* (sign in when asked) | the note is gone; *No order running – stopped time counts as waiting for order*; from now on the stop is booked as waiting for order and OEE stops falling |
+| LV12 | (migration 028) After LV11, wait 3 minutes; Grafana *Line OEE*, *Order* = the completed order; and *Today* | line view: *not accounted for* (hour, today) no longer grows and OEE holds; *Stops waiting for a reason* shows only the part of the stop before *Complete* (*Uncoded* = up to Complete, *Whole stop* = all of it); Grafana: the order's figures stay the same on each refresh |
 
 **Step H2b, period, compare, bands, smoothing** (migration 026, ADR-0029
 amendment). Automated: `database` (state colours `#rrggbb`, changed by the
