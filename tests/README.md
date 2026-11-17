@@ -366,6 +366,7 @@ README section 13, *Work orders*.
 | WO7 | With a small order (mix500 × 300) let it finish | the line stops at 300 good cartons (badge WAITING FOR ORDER); the line-count query adds up to 300 for the order's minutes; 2 minutes later the auto-operator starts the next order, which completes this one (`completed_by` auto-operator) |
 | WO8 | *Complete* | `…/workorder` becomes `{"active": false, …}`; the line waits; with the auto-operator on, the next order starts 2 minutes later |
 | WO9 | `docker compose run --rm test live` | all checks pass, including *demo work order: retained on …/workorder* |
+| WO10 | (2026-11-17) Let an order finish with a stop downstream on the way (e.g. *Jam* the checkweigher near the end), so cartons are left on the conveyors; then start the next order | the panel shows *cleared for adhoc-… at …: n cartons after Filler, …*; those conveyors are empty; the new order's performance (line view *This order*, Grafana) stays at or below about 100 % from its first minute |
 
 **Step 3a.6, reasons** (migration 016; ADR-0006, ADR-0009, ADR-0024
 amendments). Automated: `flows` (`reasons`: the PLC's reason for the first

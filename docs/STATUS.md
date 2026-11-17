@@ -78,7 +78,9 @@ view's order progress and the note now follow the good counter live
 instead of once a minute (migration 029, ADR-0027 amendment). Fix: an
 order that started part-way through a minute lost that minute's units;
 a minute now counts in the period where it ends (migration 030, ADR-0026
-amendment). LV9–LV14 to do. Then
+amendment). The simulator starts each new order on a line cleared of
+product, so cartons left from the last order no longer push the new
+order's performance above 100 % (WO10). LV9–LV14 and WO10 to do. Then
 H2c (preferences per person with a dark theme, saved charts personal and
 shared: a shared chart is changed only by its author, others *Save as*;
 swap machine), then step 3a.9 with the bench PLCs: S7-300 192.168.1.120 (to be
@@ -329,7 +331,7 @@ Must be complete before the repository is made public:
 ## Next actions
 
 1. On the laptop: unpack the H2b and the planned-quantity zips, migrate,
-   restart screens, then TR24–TR33 and LV9–LV14 (`tests/README.md`).
+   restart screens, then TR24–TR33, LV9–LV14 and WO10 (`tests/README.md`).
 2. Step H2c: preferences per person (dark theme), saved charts (personal
    and shared, author-only changes, *Save as*), swap machine.
 3. The OFM presentation (`docs/presentation/ofm-overview.pptx`, 21

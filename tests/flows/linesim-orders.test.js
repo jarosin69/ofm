@@ -1,6 +1,7 @@
 // Unit tests for the simulator's work orders (step 3a.5, ADR-0023 decision 6):
 // it follows OFM's .../workorder (changeover to the order's product, stop at
-// its planned quantity, wait without an order); the auto-operator starts the
+// its planned quantity, wait without an order; a new order starts on a line
+// cleared of product); the auto-operator starts the
 // plan's next order after its delay, only inside the shift pattern; the
 // panel's Start and Complete; the UNS connection; the database calls.
 // Time is simulated (msg.now).
@@ -79,8 +80,15 @@ module.exports.run = async function (t) {
   s = await sim.run(60);
   t.check("a finished order makes nothing more", by(s, "closer").count_good === madeAt);
 
+  const after = name => by(s, name).buffer;
+  const wip = ["filler", "checkweigher", "closer", "case_packer"].map(after), emptyBefore = after("erector");
   await sim.order(order(6, "mix500", 3000));
   s = await sim.run(10);
+  t.check("a new order starts on a clear line: filled cartons and cases from the filler on are taken off, uncounted; the empty cartons before the filler stay",
+    wip.some(x => x > 0) && ["filler", "checkweigher", "closer", "case_packer", "palletiser"].every(n => after(n) === 0) &&
+    after("erector") === emptyBefore && by(s, "closer").count_good === madeAt &&
+    sim.panel.lastClear.woNumber === "adhoc-6" && /^\d+ cartons after /.test(sim.panel.lastClear.taken),
+    "left over " + wip.join("/") + "; " + JSON.stringify(sim.panel.lastClear));
   t.check("a new order for another product: changeover (setup) to it", s.mode === "setup" && s.sku === "mix500" && sim.panel.order.made === 0, s.mode + " " + s.sku);
   s = await sim.run(60);
   t.check("one minute into the 16-24 minute changeover: still setup", s.mode === "setup", s.mode);

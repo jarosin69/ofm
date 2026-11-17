@@ -532,6 +532,13 @@ product, cartons made of planned) and three controls.
   planned quantity of good cartons at the closer the line stops; with no
   active order it waits (badge WAITING FOR ORDER). *Off*: the line runs
   freely, as before step 3a.5, for testing the simulator alone.
+  A new order starts on a clear line (2026-11-17): the filled cartons and
+  cases left from the filler onwards are taken off, and the panel says what
+  was taken (*cleared for adhoc-… at …*). Those before the closer are not
+  counted anywhere, so the new order's performance stays honest; the
+  finished order's is a little low, by the cartons left over divided by its
+  quantity. (A real line is usually run out at the end of an order instead;
+  the simulator does not do that.)
 - **Auto-operator: on** (the default). When the line has run out of work
   inside the shift pattern, it waits 2 minutes (an operator's reaction) and
   starts the next order of the plan in `line.json` (`orders.autoOperator`:
