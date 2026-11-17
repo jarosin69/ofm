@@ -96,8 +96,10 @@ H3: scheduled reports, calculated pens.
   1. shows one work order or one shift as the period (*Order / Shift*);
   2. compares a signal with itself at another time (*Compare…*): the same
      signal again as a dashed pen, moved by a fixed time, or so that the
-     start of a chosen order or shift lines up with the start of the
-     period shown;
+     start of a chosen order or shift, or a moment typed to the second,
+     lines up with the start of the period shown; all signals of the chart
+     can be compared at once, moved by the same time (e.g. a temperature and
+     its control valve after two setpoint steps; added 2026-11-17);
   3. draws bands under the trends: machine states in each state's colour
      (`config.machine_state.colour`, edited in Mathesar), work orders with
      their changeover, and shifts. It reads them through

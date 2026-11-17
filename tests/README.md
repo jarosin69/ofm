@@ -562,6 +562,7 @@ By hand:
 | TR31 | Choose an order as the period; *Compare…* → *Start of work order*, an earlier order of the same product → *Add* | the earlier order's speed starts at the left edge with the current one, named *(order …)* |
 | TR32 | On a pen: *Smoothing* → *low-pass PT1*, 120 s; then *average* and *median* | a calmer line, the stored line faint behind it; the name says e.g. *PT1 τ 120 s*; Min, Avg, Max do not change (they are from the stored values) |
 | TR33 | Copy the page address into a new browser tab | the same pens, compare pens, smoothing, bands and period |
+| TR34 | (2026-11-17) *From / To…*: a period starting at a moment to the second (e.g. today 10:35:24, 30 min); two signals on the chart; on one: *Compare…* → *Starting at* an earlier moment to the second (e.g. yesterday 07:51:56), tick *All 2 signals of the chart* → *Add* | two dashed pens, each named *(from dd/mm 07:51:56)*; hovering at the left edge shows the compared values recorded at 07:51:56; the address keeps them (TR33) |
 
 ## Adding a test
 
