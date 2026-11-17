@@ -700,7 +700,7 @@
    "id": 10,
    "type": "barchart",
    "title": "Downtime by reason (minutes)",
-   "description": "Where the planned production time went, longest first, coloured by loss type. Changeover (order) = the changeover window of a work order; Minor stops = stops shorter than the line's threshold; Not accounted for = stops nobody has coded yet.",
+   "description": "Unplanned stops only (what the Downtime tile counts), longest first, coloured by loss type: Breakdowns; Other unplanned, e.g. Minor stops = stops shorter than the line's threshold; Not accounted for = stops nobody has coded yet. Planned stops (changeover, cleaning, maintenance) are in the loss waterfall and the Stops table.",
    "datasource": {
     "type": "grafana-postgresql-datasource",
     "uid": "ofm-historian"
@@ -721,7 +721,7 @@
      "editorMode": "code",
      "rawQuery": true,
      "format": "table",
-     "rawSql": "SELECT l.reason AS \"Reason\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 9) / 60)::numeric, 1) AS \"Breakdowns\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 12) / 60)::numeric, 1) AS \"Other unplanned\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 90) / 60)::numeric, 1) AS \"Not accounted for\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 6) / 60)::numeric, 1) AS \"Changeover\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 5) / 60)::numeric, 1) AS \"Cleaning\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 4) / 60)::numeric, 1) AS \"Maintenance\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 7) / 60)::numeric, 1) AS \"Other planned\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p, hist.fn_line_losses(${line}, p.t0, p.t1) l\nWHERE l.loss_category_id <> 2\nGROUP BY 1\nORDER BY sum(l.seconds) DESC\nLIMIT 15"
+     "rawSql": "SELECT l.reason AS \"Reason\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 9) / 60)::numeric, 1) AS \"Breakdowns\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 12) / 60)::numeric, 1) AS \"Other unplanned\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 90) / 60)::numeric, 1) AS \"Not accounted for\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p, hist.fn_line_losses(${line}, p.t0, p.t1) l\nWHERE l.loss_category_id IN (9, 12, 90)\nGROUP BY 1\nORDER BY sum(l.seconds) DESC\nLIMIT 15"
     }
    ],
    "fieldConfig": {
@@ -775,66 +775,6 @@
         "value": {
          "mode": "fixed",
          "fixedColor": "#8e8e8e"
-        }
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Changeover"
-      },
-      "properties": [
-       {
-        "id": "color",
-        "value": {
-         "mode": "fixed",
-         "fixedColor": "#3274d9"
-        }
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Cleaning"
-      },
-      "properties": [
-       {
-        "id": "color",
-        "value": {
-         "mode": "fixed",
-         "fixedColor": "#8ab8ff"
-        }
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Maintenance"
-      },
-      "properties": [
-       {
-        "id": "color",
-        "value": {
-         "mode": "fixed",
-         "fixedColor": "#a352cc"
-        }
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Other planned"
-      },
-      "properties": [
-       {
-        "id": "color",
-        "value": {
-         "mode": "fixed",
-         "fixedColor": "#ca95e5"
         }
        }
       ]
@@ -866,7 +806,7 @@
    "id": 11,
    "type": "barchart",
    "title": "Downtime by machine (minutes)",
-   "description": "The stop time each machine cost the line: the constraint's own stops, and the time it was starved or blocked by a stopped machine, charged to that machine (ADR-0024).",
+   "description": "The unplanned stop time each machine cost the line: the constraint's own stops, and the time it was starved or blocked by a stopped machine, charged to that machine (ADR-0024). Planned stops (changeover, cleaning, maintenance) are not charged to a machine; they are in the loss waterfall and the Stops table.",
    "datasource": {
     "type": "grafana-postgresql-datasource",
     "uid": "ofm-historian"
@@ -887,7 +827,7 @@
      "editorMode": "code",
      "rawQuery": true,
      "format": "table",
-     "rawSql": "SELECT coalesce(l.machine, '(no data)') AS \"Machine\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 9) / 60)::numeric, 1) AS \"Breakdowns\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 12) / 60)::numeric, 1) AS \"Other unplanned\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 90) / 60)::numeric, 1) AS \"Not accounted for\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 6) / 60)::numeric, 1) AS \"Changeover\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 5) / 60)::numeric, 1) AS \"Cleaning\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 4) / 60)::numeric, 1) AS \"Maintenance\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 7) / 60)::numeric, 1) AS \"Other planned\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p, hist.fn_line_losses(${line}, p.t0, p.t1) l\nWHERE l.loss_category_id <> 2\nGROUP BY 1\nORDER BY sum(l.seconds) DESC\nLIMIT 15"
+     "rawSql": "SELECT coalesce(l.machine, '(no data)') AS \"Machine\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 9) / 60)::numeric, 1) AS \"Breakdowns\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 12) / 60)::numeric, 1) AS \"Other unplanned\",\n       round((sum(l.seconds) FILTER (WHERE l.loss_category_id = 90) / 60)::numeric, 1) AS \"Not accounted for\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p, hist.fn_line_losses(${line}, p.t0, p.t1) l\nWHERE l.loss_category_id IN (9, 12, 90)\nGROUP BY 1\nORDER BY sum(l.seconds) DESC\nLIMIT 15"
     }
    ],
    "fieldConfig": {
@@ -941,66 +881,6 @@
         "value": {
          "mode": "fixed",
          "fixedColor": "#8e8e8e"
-        }
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Changeover"
-      },
-      "properties": [
-       {
-        "id": "color",
-        "value": {
-         "mode": "fixed",
-         "fixedColor": "#3274d9"
-        }
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Cleaning"
-      },
-      "properties": [
-       {
-        "id": "color",
-        "value": {
-         "mode": "fixed",
-         "fixedColor": "#8ab8ff"
-        }
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Maintenance"
-      },
-      "properties": [
-       {
-        "id": "color",
-        "value": {
-         "mode": "fixed",
-         "fixedColor": "#a352cc"
-        }
-       }
-      ]
-     },
-     {
-      "matcher": {
-       "id": "byName",
-       "options": "Other planned"
-      },
-      "properties": [
-       {
-        "id": "color",
-        "value": {
-         "mode": "fixed",
-         "fixedColor": "#ca95e5"
         }
        }
       ]
@@ -1348,7 +1228,7 @@
    "id": 15,
    "type": "table",
    "title": "Machines",
-   "description": "Per machine: the line stop time charged to it, its own breakdowns (stops with a breakdown reason), MTBF = running time between breakdowns, MTTR = average breakdown length.",
+   "description": "Per machine: the unplanned line stop time charged to it (planned stops such as changeovers are not), its own breakdowns (stops with a breakdown reason), MTBF = running time between breakdowns, MTTR = average breakdown length.",
    "datasource": {
     "type": "grafana-postgresql-datasource",
     "uid": "ofm-historian"
@@ -1369,7 +1249,7 @@
      "editorMode": "code",
      "rawQuery": true,
      "format": "table",
-     "rawSql": "SELECT coalesce(m.display_name, r.machine_name) AS \"Machine\",\n       round((d.s / 60)::numeric) AS \"Line stop charged (min)\",\n       r.breakdowns AS \"Breakdowns\",\n       round((r.breakdown_s / 60)::numeric) AS \"Breakdown (min)\",\n       round(r.mtbf_h::numeric, 1) AS \"MTBF (h)\",\n       round(r.mttr_min::numeric, 1) AS \"MTTR (min)\",\n       round((r.running_s / 3600)::numeric, 1) AS \"Running (h)\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p\nCROSS JOIN LATERAL hist.fn_machine_reliability(${line}, p.t0, p.t1) r\nLEFT JOIN config.machine m ON m.line_id = ${line} AND m.name = r.machine_name AND m.retired_at IS NULL\nLEFT JOIN LATERAL (SELECT sum(l.seconds) AS s FROM hist.fn_line_losses(${line}, p.t0, p.t1) l\n                   WHERE l.loss_category_id <> 2 AND l.machine = coalesce(m.display_name, r.machine_name)) d ON true\nORDER BY d.s DESC NULLS LAST"
+     "rawSql": "SELECT coalesce(m.display_name, r.machine_name) AS \"Machine\",\n       round((d.s / 60)::numeric) AS \"Line stop charged (min)\",\n       r.breakdowns AS \"Breakdowns\",\n       round((r.breakdown_s / 60)::numeric) AS \"Breakdown (min)\",\n       round(r.mtbf_h::numeric, 1) AS \"MTBF (h)\",\n       round(r.mttr_min::numeric, 1) AS \"MTTR (min)\",\n       round((r.running_s / 3600)::numeric, 1) AS \"Running (h)\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p\nCROSS JOIN LATERAL hist.fn_machine_reliability(${line}, p.t0, p.t1) r\nLEFT JOIN config.machine m ON m.line_id = ${line} AND m.name = r.machine_name AND m.retired_at IS NULL\nLEFT JOIN LATERAL (SELECT sum(l.seconds) AS s FROM hist.fn_line_losses(${line}, p.t0, p.t1) l\n                   WHERE l.loss_category_id IN (9, 12, 90) AND l.machine = coalesce(m.display_name, r.machine_name)) d ON true\nORDER BY d.s DESC NULLS LAST"
     }
    ],
    "fieldConfig": {

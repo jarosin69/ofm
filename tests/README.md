@@ -466,6 +466,7 @@ section 13, *Efficiency*):
 | LO6 | In Mathesar, table *line_shift*: change A to 06:00–18:00, B to 18:00–06:00, delete C; reload the dashboard | the *Shift* list shows A and B with the new times; *OEE by shift* follows |
 | LO7 | Panel *Stops*: find a stop you coded on the line view | its reason and your name under *Coded by*; PLC reasons say `plc` |
 | LO8 | *Downtime by machine* after a *Break and hold* of the erector of several minutes | the erector has a red (breakdown) bar: the filler's starved time charged to it |
+| LO9 | (2026-11-17) Grafana *Line OEE*, *Order* = an order that began with a changeover (e.g. adhoc-633) | *Downtime by reason* and *Downtime by machine* show no *Changeover* (only breakdowns, other unplanned, not accounted for; empty if there were none); *Machines* → *Line stop charged* no longer includes the changeover; the changeover is still in the *Loss waterfall* (6 Changeover) and the *Stops* table |
 
 **Step H1, OFM Trend** (migration 023, ADR-0029). Automated: `database`
 (HiHi and LoLo outside Hi and Lo; every stored value plus the one before
@@ -559,7 +560,7 @@ By hand:
 | TR29 | *1 y* with *States* ticked | the band still draws quickly; where the machine changed state more than 3,000 times in the year, the hover box says *(the main state of this part of the chart)* |
 | TR30 | On *Filler → Speed*: *Compare…* → *Earlier by 1 day* → *Add* | a second, dashed pen *Filler · Speed (−1 day)*; hovering shows its value with the time it was recorded (a day earlier); its own Min, Avg, Max |
 | TR31 | Choose an order as the period; *Compare…* → *Start of work order*, an earlier order of the same product → *Add* | the earlier order's speed starts at the left edge with the current one, named *(order …)* |
-| TR32 | On a pen: *Smoothing* → *low-pass PT1*, 120 s; then *moving average* and *moving median* | a calmer line, the stored line faint behind it; the name says e.g. *PT1 τ 120 s*; Min, Avg, Max do not change (they are from the stored values) |
+| TR32 | On a pen: *Smoothing* → *low-pass PT1*, 120 s; then *average* and *median* | a calmer line, the stored line faint behind it; the name says e.g. *PT1 τ 120 s*; Min, Avg, Max do not change (they are from the stored values) |
 | TR33 | Copy the page address into a new browser tab | the same pens, compare pens, smoothing, bands and period |
 
 ## Adding a test

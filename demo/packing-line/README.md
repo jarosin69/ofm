@@ -750,14 +750,17 @@ every panel shows.
   below, green from: OEE 60/85 %, A 80/90 %, P 80/95 %, Q 95/99 % (amber
   between). Next to them good units, rejects, downtime and the time nobody
   has explained (*Not accounted for*).
-- **Downtime by reason / by machine:** where the planned production time
-  went, longest first, coloured by loss type. *By machine* charges the
-  filler's starved and blocked time to the machine that caused it. There is
-  no OEE per machine: OEE is the line's, measured at the filler.
+- **Downtime by reason / by machine:** the unplanned stops (what the
+  *Downtime* tile counts: breakdowns, minor stops, not accounted for),
+  longest first, coloured by loss type. *By machine* charges the filler's
+  starved and blocked time to the machine that caused it. Planned stops
+  (changeover, cleaning, maintenance) are not downtime: they are in the
+  *Loss waterfall* and the *Stops* table. There is no OEE per machine: OEE
+  is the line's, measured at the filler.
 - **OEE trend** per hour (per day for longer periods) and **OEE by shift**.
 - **Loss waterfall:** calendar time down to fully productive time; red bars
   are losses.
-- **Machines** (time charged, breakdowns, MTBF, MTTR), **Stops** (with who
+- **Machines** (unplanned stop time charged, breakdowns, MTBF, MTTR), **Stops** (with who
   coded them) and **Work orders** (good, reject, OEE).
 
 Hover over a panel's title (ⓘ) for what it shows. The dashboard reloads
