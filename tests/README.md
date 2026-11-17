@@ -521,7 +521,8 @@ annotations query runs). By hand:
 
 **Planned quantity reached** (migration 027, ADR-0010 amendment), and
 **stops split where an order starts or ends** (migration 028, fix), and
-**live order progress** (migration 029).
+**live order progress** (migration 029), and **a minute's units in the
+period where it ends** (migration 030).
 Automated: `database` (the line view's status gives the minute the running
 order reached its planned quantity; the order stays active; a stop is
 waiting for order only after Complete, and the changeover window applies
@@ -536,6 +537,7 @@ line with the auto-operator **off** (simulator panel):
 | LV11 | *Complete* (sign in when asked) | the note is gone; *No order running – stopped time counts as waiting for order*; from now on the stop is booked as waiting for order and OEE stops falling |
 | LV12 | (migration 028) After LV11, wait 3 minutes; Grafana *Line OEE*, *Order* = the completed order; and *Today* | line view: *not accounted for* (hour, today) no longer grows and OEE holds; *Stops waiting for a reason* shows only the part of the stop before *Complete* (*Uncoded* = up to Complete, *Whole stop* = all of it); Grafana: the order's figures stay the same on each refresh |
 | LV13 | (migration 029) *Start an order…* → mix250 × 300; watch the progress while the line runs | the count rises every second or two (the gauges still move once a minute); when the line stops at 300, the note says *Planned quantity reached at hh:mm:ss* within about 2 seconds |
+| LV14 | (migration 030) Run an order of 300 to the end, *Complete* it; Grafana *Line OEE*, *Order* = that order | *Good units* + *Rejects* = what the closer counted for the order (simulator panel *300 of 300*, plus rejects); also for an older order such as adhoc-584 (now 300, not 257); *This hour* and *Today* are unchanged |
 
 **Step H2b, period, compare, bands, smoothing** (migration 026, ADR-0029
 amendment). Automated: `database` (state colours `#rrggbb`, changed by the

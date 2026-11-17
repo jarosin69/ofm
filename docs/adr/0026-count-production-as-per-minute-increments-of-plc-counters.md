@@ -81,3 +81,12 @@ business records.
   period at `hist.fn_counted_until()`, the end of the last written minute;
   past periods are unchanged. The line view's order progress lags the
   panel by up to about a minute for the same reason.
+- 2026-11-17 (migration 030): a minute's units count in the period in which
+  the minute **ends**, not starts. An order started part-way through a
+  minute (18:54:20) used to lose that minute's units, so its good count,
+  performance and OEE were too low (257 instead of 300 good). Hours, days and
+  shifts start on whole minutes and are unchanged; the minute's rated speed
+  is that of the order running at its end. Limit: if one order is completed
+  and the next started while the line keeps running, that minute's units go
+  to the new order. Cutting the counters at the order's start in the
+  runtime would be exact; it can follow if the limit ever matters.

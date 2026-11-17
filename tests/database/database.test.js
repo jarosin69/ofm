@@ -619,6 +619,14 @@ const CASES = [
     { as: "ofm_reader", sql: STOPS, expect: r => stops(r) === "01:01-01:05 starved none" }] },
 
   // --- time ledger and KPIs (migration 017, step 3a.7) -------------------------------------------
+  { name: "KPIs: a minute's units count in the period where the minute ends, so a period starting part-way through a minute keeps them (migration 030)", steps: [
+    ...LEDGER_SETUP,
+    // 100 good per minute 09:05-09:24 (stamped with the minute's start)
+    { as: "ofm_reader", sql: "SELECT good FROM hist.fn_line_kpi($line, '2026-11-02 09:05:30+11', " + L("09:30") + ")", expect: r => r[0].good === 2000 },
+    { as: "ofm_reader", sql: "SELECT good FROM hist.fn_line_kpi($line, '2026-11-02 09:05:30+11', '2026-11-02 09:20:30+11')", expect: r => r[0].good === 1500 },
+    // whole hours are unchanged: 2000 good and 50 rejects 09:00-10:00, the 10:05 minute in the next hour
+    { as: "ofm_reader", sql: "SELECT good, reject FROM hist.fn_line_kpi($line, " + L("09:00") + ", " + L("10:00") + ")", expect: r => r[0].good === 2000 && r[0].reject === 50 },
+    { as: "ofm_reader", sql: "SELECT good FROM hist.fn_line_kpi($line, " + L("09:04") + ", " + L("09:05") + ")", expect: r => r[0].good === 0 }] },
   { name: "time ledger: each slice by the first rule that applies (ADR-0009), the worked example", steps: [
     ...LEDGER_SETUP,
     { as: "ofm_reader", sql: "SELECT to_char(slice_start AT TIME ZONE 'Australia/Melbourne', 'HH24:MI') || ' ' || round(duration_s) || ' ' || rule || coalesce(' ' || loss_category_id, '') || coalesce(' ' || reason_code, '') AS s " +
