@@ -1,8 +1,8 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-19. Update this file at the end of every working session.*
+*Updated: 2026-11-20. Update this file at the end of every working session.*
 
-**▶ We are here: historian trends H1–H2b checked (TR34 passed 2026-11-17); demo kit: OFM installed on the TBOX 2026-11-19, a few days' run from 2026-11-20; next the demo-kit step (remote access, backups, UPS), then step 3a.9; H2c after the management demo.** Decided
+**▶ We are here: historian trends H1–H2b checked (TR34 passed 2026-11-17); demo kit: OFM on the TBOX since 2026-11-19, two shifts run fine; remote access (part 1 of the demo-kit step) built 2026-11-20, RA1–RA6 to do; next part 2 (update script, Linux quick-install guide, backup, Tailscale, UPS), then step 3a.9; H2c after the management demo.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -225,7 +225,7 @@ networks, preparation, checks and pilot backups: deploy README section 7.
 
 | Step | What | Status |
 |---|---|---|
-| C0 | Management demo on the simulated line, after `v0.3`: presentation, live demo (line calibrated to the real packing line's figures), recorded backup; the decision to go ahead with C1–C4. Over Teams to the regional and possibly the global team, from the demo kit at home with remote access. Demo kit (2026-11-19): the work's TBOX-12T35 (fanless, Core i7-1165G7, 16 GB, two network ports) on a spare NVMe drive, Ubuntu Server 26.04 LTS, Docker Engine 29.10, OFM from GitHub `main` in `/opt/ofm`, 192.168.1.182 on the home network (one network for the TBOX, PLCs and laptop); checks pass. Planned: Cloudflare Tunnel + Access on an own domain (DuckDNS cannot be used), Tailscale for maintenance, a UPS | ▶ |
+| C0 | Management demo on the simulated line, after `v0.3`: presentation, live demo (line calibrated to the real packing line's figures), recorded backup; the decision to go ahead with C1–C4. Over Teams to the regional and possibly the global team, from the demo kit at home with remote access. Demo kit (2026-11-19): the work's TBOX-12T35 (fanless, Core i7-1165G7, 16 GB, two network ports) on a spare NVMe drive, Ubuntu Server 26.04 LTS, Docker Engine 29.10, OFM from GitHub `main` in `/opt/ofm`, 192.168.1.182 on the home network (one network for the TBOX, PLCs and laptop); checks pass. Domain `freewebtests.com` (GoDaddy registration, DNS on Cloudflare, active 2026-11-20). Remote access built 2026-11-20 (ADR-0032, deploy README 7.8: `cloudflared` with profile `remote`, Access email code, names ofm./grafana./sim./mathesar.); RA1–RA6 to do. Planned: Tailscale for maintenance, a UPS | ▶ |
 | C1.1 | Docker and operating system: plant servers on Ubuntu Server 26.04 LTS with Docker Engine (ADR-0020); the laptop keeps Docker Desktop for development | ✅ ADR-0020 accepted 2026-11-10 |
 | C1.2 | Latency target: 2 s for 95 % at default read settings, OFM's own share < 250 ms (ADR-0022); load-test threshold 2.0 s | ✅ ADR-0022 accepted 2026-11-10 |
 | C1.3 | Pilot line and its controllers chosen (question 31); S7 access agreed with the PLC owners (ADR-0021, question 24); pilot duration and success criteria agreed (question 32) | ⬜ |
@@ -338,12 +338,12 @@ Must be complete before the repository is made public:
    on; auto-operator on) and note anything odd. Git: develop on a branch
    on the laptop, merge into `main` when its checks pass, push; the TBOX
    pulls `main` only (`phase3a-sim` merged into `main` 2026-11-19).
-2. The demo-kit step (design first): `deploy/update.sh` (one-command
-   update), nightly backup, UPS shutdown (NUT) and power-on after a power
-   cut, Cloudflare Tunnel + Access on an own domain, Tailscale for
-   maintenance, a "reset demo" script, a Linux runbook in the deploy
-   README; a git tag to freeze the demo version about a week before the
-   presentation.
+2. Remote access on the TBOX: Cloudflare steps and `.env` (deploy README
+   7.8), then RA1–RA6 (`tests/README.md`). Then the demo-kit step, part 2
+   (design first): `deploy/update.sh`, a Linux quick-install guide
+   (README 7.0, the TBOX snags), nightly backup, Tailscale for
+   maintenance, UPS shutdown (NUT) once the UPS is bought; a git tag to
+   freeze the demo version about a week before the presentation.
 3. Step 3a.9 (simulator part 2: PLC backends) with the bench PLCs on the
    home network: S7-300 192.168.1.120 (to be confirmed), S7-1200
    192.168.1.221, CompactLogix 192.168.1.180; only one OFM (laptop or

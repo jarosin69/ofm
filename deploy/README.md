@@ -982,6 +982,76 @@ docker run --rm -v ofm_certs:/c:ro -v /var/backups/ofm:/b alpine:3.22 tar czf /b
 chmod 600 /var/backups/ofm/certs.tgz          # contains private keys
 ```
 
+### 7.8 Remote access (Cloudflare Tunnel and Access, ADR-0032)
+
+For a demo shown from elsewhere, or viewing from outside the plant network
+when IT agrees. The server needs internet; nothing is opened on the router.
+Needs a domain whose DNS is on Cloudflare (*example.com* below; the demo kit
+uses its own). Do the steps in this order, so no page is ever public without
+the login in front. Cloudflare renames its menus from time to time; the
+items below are as of November 2026.
+
+**1. The tunnel** (Cloudflare dashboard → *Zero Trust*; the free plan is
+enough, it may ask for a payment card):
+*Networks* → *Connectors* → *Cloudflare Tunnels* → *Create a tunnel* →
+*Cloudflared* → name it (e.g. `ofm-demo`) → on the install page choose
+*Docker* and copy only the long token after `--token` (it starts with `ey…`).
+Do not run the command shown; OFM runs `cloudflared` itself.
+
+**2. OFM on the server.** After `git pull`, add the new settings, then edit
+the existing lines (each appears once; do not add a second line):
+
+```sh
+cd /opt/ofm/deploy
+docker run --rm -v "$PWD:/work" -w /work alpine:3.22 sh make-env.sh
+nano .env
+```
+```
+COMPOSE_PROFILES=simulator,demo,remote
+OFM_PUBLIC_DOMAIN=example.com
+CLOUDFLARE_TUNNEL_TOKEN=ey...the token...
+```
+```sh
+docker compose up -d
+docker compose logs cloudflared --tail 20     # "Registered tunnel connection" (4 times)
+```
+The tunnel shows *Healthy* in the dashboard.
+
+**3. The login (Cloudflare Access)** — before publishing any page.
+*Zero Trust* → *Access controls* → *Applications* → *Add an application* →
+*Self-hosted*:
+
+| Application | Public names | Policy (Allow, Include → Emails) |
+|---|---|---|
+| `OFM demo` | `ofm.example.com`, `grafana.example.com`, `sim.example.com` | the people who may view (to begin with, your own address) |
+| `OFM model editor` | `mathesar.example.com` | your own address only |
+
+Login method: *One-time PIN* (an emailed code; on by default). Session
+duration: 24 hours.
+
+**4. The routes.** The tunnel → *Published application routes* →
+*Add a published application route*, four times. For each: *Service*
+type **HTTPS**; then *Additional application settings* → *TLS* →
+*Origin Server Name* `proxy` and *Certificate Authority Pool*
+`/certs/ca.crt`; leave *No TLS Verify* off.
+
+| Subdomain | Path | Service URL |
+|---|---|---|
+| `ofm` | `^/(dashboard\|trend/export\|ofm/)` | `proxy:1882` |
+| `grafana` | (empty) | `proxy:3000` |
+| `sim` | `^/dashboard` | `proxy:1881` |
+| `mathesar` | (empty) | `proxy:8080` |
+
+The path is a pattern; type it exactly as shown. Any other path, e.g. the screens' Node-RED editor at `https://ofm.example.com/`, gets
+"not found". The pages are then at `https://ofm.example.com/dashboard/line`,
+`…/dashboard/trend`, `https://grafana.example.com`,
+`https://sim.example.com/dashboard` and `https://mathesar.example.com`.
+Checks: `tests/README.md`, RA1–RA6.
+
+**Switching it off:** remove `remote` from `COMPOSE_PROFILES` and run
+`docker compose rm -sf cloudflared`; or delete the tunnel in the
+dashboard, which also removes the public names.
+
 ## Installing without internet (plant LAN)
 
 Most plant networks have no internet. OFM needs none once its images are on

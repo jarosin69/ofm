@@ -4,7 +4,8 @@
 // - only the encrypted entrances may be opened to the network, the database
 //   never (ADR-0019);
 // - no password or secret is written into docker-compose.yml (.env only);
-// - no component contacts the internet by itself (step 2.8);
+// - no component contacts the internet by itself (step 2.8), except the
+//   remote-access tunnel, which runs only when asked for (ADR-0032);
 // - the offline bundle contains every image the installation uses.
 "use strict";
 const fs = require("fs"), path = require("path");
@@ -71,7 +72,7 @@ module.exports.run = async function (t) {
   const literal = [];
   for (const name of Object.keys(services)) {
     for (const [k, v] of Object.entries(env(name))) {
-      if (/PASSWORD|SECRET/.test(k) && !/^\$\{[A-Z0-9_]+(:?[?-][^}]*)?\}$/.test(String(v))) literal.push(name + "." + k);
+      if (/PASSWORD|SECRET|TOKEN/.test(k) && !/^\$\{[A-Z0-9_]+(:?[?-][^}]*)?\}$/.test(String(v))) literal.push(name + "." + k);
     }
   }
   t.check("no password or secret written into docker-compose.yml (all come from .env)", literal.length === 0, literal.join(", "));
@@ -89,6 +90,21 @@ module.exports.run = async function (t) {
            "GF_NEWS_NEWS_FEED_ENABLED"].map(k => k + "=" + g[k]).join(", "));
   t.check("Node-RED: telemetry and update notification off (settings.js)",
           /telemetry:\s*\{\s*enabled:\s*false,\s*updateNotification:\s*false/.test(read("deploy", "nodered", "settings.js")));
+  // Remote access (ADR-0032): an outbound tunnel, only when asked for.
+  const cf = services.cloudflared;
+  const cfCmd = JSON.stringify(cf && cf.command || []);
+  t.check("remote access (cloudflared) runs only when asked for (profile remote), publishes no port and never updates itself",
+          cf && JSON.stringify(cf.profiles) === '["remote"]' && !cf.ports && cfCmd.includes('"--no-autoupdate"') && cfCmd.includes('"run"'));
+  t.check("remote access: the tunnel's token comes from .env, and the tunnel sees only the public certificates, read-only",
+          cf && env("cloudflared").TUNNEL_TOKEN === "${CLOUDFLARE_TUNNEL_TOKEN:-}" &&
+          JSON.stringify(cf.volumes) === JSON.stringify(["certs:/certs:ro"]));
+  const mh = env("mathesar").ALLOWED_HOSTS || "";
+  t.check("remote access: Mathesar and Grafana accept their public names only when OFM_PUBLIC_DOMAIN is set",
+          mh.includes("${OFM_PUBLIC_DOMAIN:+mathesar.${OFM_PUBLIC_DOMAIN}}") &&
+          g.GF_LIVE_ALLOWED_ORIGINS === "${OFM_PUBLIC_DOMAIN:+https://grafana.${OFM_PUBLIC_DOMAIN}}");
+  t.check("remote access: make-env.sh adds OFM_PUBLIC_DOMAIN and CLOUDFLARE_TUNNEL_TOKEN empty (off until set)",
+          /add OFM_PUBLIC_DOMAIN\s+""/.test(read("deploy", "make-env.sh")) && /add CLOUDFLARE_TUNNEL_TOKEN\s+""/.test(read("deploy", "make-env.sh")) &&
+          /^OFM_PUBLIC_DOMAIN=$/m.test(read("deploy", ".env.example")) && /^CLOUDFLARE_TUNNEL_TOKEN=$/m.test(read("deploy", ".env.example")));
   t.check("Caddy: obtains no certificates from the internet (auto_https off)",
           /^\s*auto_https off\s*$/m.test(read("deploy", "proxy", "Caddyfile")));
 

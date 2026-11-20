@@ -564,6 +564,23 @@ By hand:
 | TR33 | Copy the page address into a new browser tab | the same pens, compare pens, smoothing, bands and period |
 | TR34 | (2026-11-17) *From / To…*: a period starting at a moment to the second (e.g. today 10:35:24, 30 min); two signals on the chart; on one: *Compare…* → *Starting at* an earlier moment to the second (e.g. yesterday 07:51:56), tick *All 2 signals of the chart* → *Add* | two dashed pens, each named *(from dd/mm 07:51:56)*; hovering at the left edge shows the compared values recorded at 07:51:56; the address keeps them (TR33) |
 
+**Remote access** (ADR-0032, deploy README 7.8). Automated: `deploy`
+(the tunnel runs only with profile `remote`, publishes no port, never
+updates itself, reads its token from `.env`, sees only the public
+certificates; Mathesar and Grafana accept their public names only when
+`OFM_PUBLIC_DOMAIN` is set); `live` (with `remote`: the domain is set and
+the tunnel is connected; skipped otherwise). By hand, on a phone **on mobile
+data** (Wi-Fi off), so the test really comes from outside:
+
+| # | Do | Expect |
+|---|---|---|
+| RA1 | On the server: `docker compose logs cloudflared --tail 20`; `docker compose run --rm test live` | "Registered tunnel connection" four times; the remote-access checks pass; the tunnel shows *Healthy* in the Cloudflare dashboard |
+| RA2 | Open `https://ofm.<domain>/dashboard/line`; enter your email, then the emailed code | Cloudflare's login page first; then the line view, with machine states and the order's progress changing within seconds (live updates through the tunnel); *Trend* opens the trend page, a chart draws, *Export → CSV* downloads |
+| RA3 | In a private browser window, open the same address and enter an email that is not on the list | no code is sent / access refused; no OFM page is shown |
+| RA4 | Open `https://ofm.<domain>/` and `https://sim.<domain>/` (no path) | "not found" from Cloudflare: the Node-RED editors are not reachable from outside |
+| RA5 | `https://grafana.<domain>` (Grafana login, *Line OEE*); `https://sim.<domain>/dashboard` (simulator panel); `https://mathesar.<domain>` (log in, change a cell in a model table, save, change it back) | each works as at home; Mathesar's login and save are accepted (no "CSRF" error) |
+| RA6 | `sudo reboot` the server; wait 3 minutes | the pages open again from outside without touching anything |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

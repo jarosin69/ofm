@@ -198,6 +198,8 @@ services:
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /ofm/dashboards/ofm-live-data.json
       TZ: Australia/Melbourne      # display layer: local time lives here (ADR-0003)
       GF_SECURITY_COOKIE_SECURE: "true"   # login cookie only over HTTPS (via the proxy)
+      # Remote access (ADR-0032): live updates are also accepted from the public name.
+      GF_LIVE_ALLOWED_ORIGINS: ${OFM_PUBLIC_DOMAIN:+https://grafana.${OFM_PUBLIC_DOMAIN}}
     # No ports: reached through the proxy, https://<server>:3000
     volumes:
       - grafana-data:/var/lib/grafana
@@ -221,8 +223,10 @@ services:
       DOMAIN_NAME: https://localhost:8080
       # Names Mathesar answers to: this computer, the test runner (mathesar),
       # the proxy, and the server's names from .env. It trusts the proxy's
-      # "this was HTTPS" header (production settings), so logins work.
-      ALLOWED_HOSTS: localhost,127.0.0.1,mathesar,proxy,${OFM_TLS_NAMES:-}
+      # "this was HTTPS" header (production settings), so logins work. With
+      # remote access (ADR-0032) also its public name; Django then accepts
+      # logins from it too (the page's origin is the name it answers to).
+      ALLOWED_HOSTS: localhost,127.0.0.1,mathesar,proxy,${OFM_TLS_NAMES:-},${OFM_PUBLIC_DOMAIN:+mathesar.${OFM_PUBLIC_DOMAIN}}
       POSTGRES_HOST: mathesar-db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: mathesar_django
@@ -258,6 +262,28 @@ services:
     depends_on:
       certs:
         condition: service_completed_successfully
+
+  # Remote access (ADR-0032): an outbound tunnel to Cloudflare. Nothing is
+  # opened on this computer or the router; Cloudflare Access asks for an
+  # email code before any page is shown. Runs only with COMPOSE_PROFILES
+  # containing "remote" and CLOUDFLARE_TUNNEL_TOKEN in .env. The public names,
+  # the paths they may reach and who may log in are set in the Cloudflare
+  # dashboard (deploy/README.md 7.8). It reaches the pages through the proxy
+  # over HTTPS and checks OFM's certificate (Certificate Authority Pool
+  # /certs/ca.crt, origin server name "proxy"). Metrics on the internal
+  # network only, for the test's readiness check.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    container_name: ofm-cloudflared
+    restart: unless-stopped
+    profiles: ["remote"]
+    command: ["tunnel", "--no-autoupdate", "--metrics", "0.0.0.0:20241", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    volumes:
+      - certs:/certs:ro            # only ca.crt is read (public)
+    depends_on:
+      - proxy
 
   # Mathesar's own settings database (its users and saved views; no plant
   # data). Same image as the main database, so nothing extra to download.
@@ -406,6 +432,8 @@ services:
       GRAFANA_USER: ${GRAFANA_USER}
       GRAFANA_PASSWORD: ${GRAFANA_PASSWORD}
       OFM_TLS_NAMES: ${OFM_TLS_NAMES:-}
+      OFM_PUBLIC_DOMAIN: ${OFM_PUBLIC_DOMAIN:-}
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
     volumes:
       - ..:/repo:ro
       - certs:/certs:ro            # the public certificates, to check TLS

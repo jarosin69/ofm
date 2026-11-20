@@ -52,9 +52,11 @@ add MATHESAR_ADMIN_USER        admin      "Mathesar model editor: type these on 
 add MATHESAR_ADMIN_PASSWORD    "$(pw)"
 add MATHESAR_DB_PASSWORD       "$(pw)"    "Mathesar's own settings database, and its session key"
 add MATHESAR_SECRET_KEY        "$(pw 50)"
-add COMPOSE_PROFILES           simulator  "Optional services to run, comma-separated. 'simulator' = the OPC UA simulator, 'demo' = the simulated packing line (development and demos; leave empty at a plant)"
+add COMPOSE_PROFILES           simulator  "Optional services to run, comma-separated. 'simulator' = the OPC UA simulator, 'demo' = the simulated packing line (development and demos; leave empty at a plant), 'remote' = remote access through a Cloudflare tunnel"
 add OFM_LISTEN_ADDRESS         127.0.0.1  "Who can reach OFM's encrypted ports (MQTT 8883, web pages 3000/8080/1880/1882): 127.0.0.1 = this computer only, 0.0.0.0 = the network"
 add OFM_TLS_NAMES              ""         "This server's network name(s) and IP address(es), comma-separated, e.g. ofm-server,192.168.10.20: the TLS certificate is valid for these (and localhost)"
+add OFM_PUBLIC_DOMAIN          ""         "Remote access (ADR-0032, deploy/README.md 7.8): the domain whose names reach this server through the tunnel, e.g. example.com; empty = no remote access"
+add CLOUDFLARE_TUNNEL_TOKEN    ""         "Remote access: the tunnel's token from the Cloudflare dashboard (secret). Used only with COMPOSE_PROFILES containing remote"
 
 # On Linux, give the file to the owner of the folder rather than root.
 chown "$(stat -c %u:%g .)" .env 2>/dev/null || true
