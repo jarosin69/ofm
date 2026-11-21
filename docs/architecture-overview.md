@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | **Document** | OFM Architecture Overview |
-| **Version** | 0.6.18 (2026-11-20) — remote access through an outbound tunnel with a login in front, ADR-0032 (§13); 0.6.17: trend periods, compare, event bands and display-only smoothing |
+| **Version** | 0.6.19 (2026-11-22) — §13.2 remote access and how a remote sign-in works (Cloudflare, Caddy, Figures 5–6); 0.6.18: remote access through an outbound tunnel with a login in front, ADR-0032 (§13) |
 | **Status** | Living document — updated as decisions are made |
 | **Audience** | Engineers building, operating, or contributing to OFM |
 | **Companion documents** | Architecture Decision Records (`docs/adr/`), payload JSON Schemas (`schemas/`), database migrations (`db/migrations/`) |
@@ -344,7 +344,7 @@ Substitution points are deliberate: EMQX can replace Mosquitto if clustering is 
 
 OFM assumes a segmented OT network and adds application-layer controls on top; it never substitutes for network segmentation. The runtime host sits in the OT/IT DMZ pattern: plant protocols (S7, EtherNet/IP, Modbus, OPC UA) terminate at the runtime and are never routed north; only encrypted connections cross upward — MQTT over TLS and HTTPS for the web pages (ADR-0019); PostgreSQL stays local to the server until a remote client needs it, and then crosses over TLS too. Modbus, S7 and EtherNet/IP have no native security (S7 additionally needs PUT/GET access enabled on S7-1200/1500, which OFM requests only with a port-102 firewall rule and a dedicated export data block, ADR-0021), so their segments are isolated at the network layer; OPC UA connections use signed-and-encrypted mode with certificates where the controller supports it.
 
-Mosquitto runs with TLS for every client outside the stack (port 8883; plain MQTT exists only on Docker's internal network), no anonymous access, and per-role ACLs: acquisition credentials may publish telemetry but not `_cmd`; applications may subscribe broadly but publish nothing; only the command flow's credential may publish `_cmd`, and only operator-facing services may trigger it. PostgreSQL follows the same least-privilege split — `ofm_runtime` (SELECT on model; SELECT and INSERT on historian, never UPDATE or DELETE), `ofm_config` (DML on configuration schema; held by the model editor's role `ofm_mathesar` and by personal editing logins), `ofm_reader` (Grafana/analytics, read-only), `ofm_screens` (the operator screens: no table at all, only the functions that read the line view's model, record as a signed-in person and read trends, ADR-0027, ADR-0029) — so a compromised dashboard cannot alter the model and a compromised runtime cannot rewrite history. Secrets — including database role passwords — live in the deployment environment (Compose env files with restricted permissions in v1), never in flows or the repository. The Node-RED editor is protected by `adminAuth`, because anyone who can reach an unprotected editor can deploy code that runs next to the PLCs. By default every port is bound to the loopback interface (this computer only); one setting, `OFM_LISTEN_ADDRESS`, opens the encrypted entrances — and only those — to the network (section 13.1). Every component runs offline, with no dependency on external services at run time; most plant installations sit on automation networks without internet access. **Remote access** (ADR-0032), when switched on, is only an outbound tunnel (Cloudflare Tunnel, the `remote` profile): no port is opened anywhere, an emailed one-time code (Cloudflare Access) is required before any page, only the screens, Grafana, the simulator panel and Mathesar are published (the editors and the broker never), and the tunnel reaches the pages over HTTPS, checking OFM's certificate.
+Mosquitto runs with TLS for every client outside the stack (port 8883; plain MQTT exists only on Docker's internal network), no anonymous access, and per-role ACLs: acquisition credentials may publish telemetry but not `_cmd`; applications may subscribe broadly but publish nothing; only the command flow's credential may publish `_cmd`, and only operator-facing services may trigger it. PostgreSQL follows the same least-privilege split — `ofm_runtime` (SELECT on model; SELECT and INSERT on historian, never UPDATE or DELETE), `ofm_config` (DML on configuration schema; held by the model editor's role `ofm_mathesar` and by personal editing logins), `ofm_reader` (Grafana/analytics, read-only), `ofm_screens` (the operator screens: no table at all, only the functions that read the line view's model, record as a signed-in person and read trends, ADR-0027, ADR-0029) — so a compromised dashboard cannot alter the model and a compromised runtime cannot rewrite history. Secrets — including database role passwords — live in the deployment environment (Compose env files with restricted permissions in v1), never in flows or the repository. The Node-RED editor is protected by `adminAuth`, because anyone who can reach an unprotected editor can deploy code that runs next to the PLCs. By default every port is bound to the loopback interface (this computer only); one setting, `OFM_LISTEN_ADDRESS`, opens the encrypted entrances — and only those — to the network (section 13.1). Every component runs offline, with no dependency on external services at run time; most plant installations sit on automation networks without internet access. **Remote access** (ADR-0032), when switched on, is only an outbound tunnel (Cloudflare Tunnel, the `remote` profile): no port is opened anywhere, an emailed one-time code (Cloudflare Access) is required before any page, only the screens, Grafana, the simulator panel and Mathesar are published (the editors and the broker never), and the tunnel reaches the pages over HTTPS, checking OFM's certificate. How a remote sign-in works, and the layers that protect it: section 13.2.
 
 ### 13.1 Encryption and certificates
 
@@ -402,6 +402,63 @@ flowchart LR
 - **MQTT clients** (SCADA, MQTT Explorer) usually do not use the Windows certificate store: give each its CA file in its own TLS settings.
 
 Operating details — opening OFM to the network, firewall, renewal, importing plant certificates — are in `deploy/README.md` section 6.
+
+### 13.2 Remote access and how a remote sign-in works
+
+Remote access (ADR-0032) is optional: it runs only with the Compose profile `remote`, and a plant without internet never has it. When it is on, two outside services join the path in front of OFM's existing front door:
+
+- **Cloudflare**, an internet-infrastructure company whose network sits in front of many of the world's websites, provides three services. *DNS* answers for the domain's names. *Tunnel*: the `cloudflared` container on the OFM server opens an outbound, encrypted connection to Cloudflare and keeps it open, so requests come back down it and no port is opened on the router or a firewall. *Access* is the login gate: only allow-listed email addresses receive a one-time 6-digit code, and a correct code gives a signed pass (a cookie) for 24 hours. Cloudflare ends TLS at its edge to apply the login, so it handles the pages a remote viewer sees (ADR-0032, consequences).
+- **Caddy (`proxy`)** is OFM's reverse proxy (section 13.1): one program that receives every web request and hands it to the right application. It is the only HTTPS front door for every web page, local or remote, so the tunnel is just a second way to the same door, and remote access needed no change to Grafana, Mathesar or the screens. `cloudflared` reaches Caddy over HTTPS and checks its certificate against OFM's own certificate authority (server name `proxy`, CA `/certs/ca.crt`). Behind Caddy the applications speak plain HTTP, only on Docker's internal network.
+
+**In factory terms.** Cloudflare is the security company running the site gatehouse: it checks every visitor's ID against our list before anyone reaches the building. We decide who is on the list, and we can close the gate at any time. Caddy is the reception desk inside the building: every visitor comes through it, whether they walked in from the car park (the local network) or were let through the gatehouse (Cloudflare), and reception sends each visitor to the right department. The departments have no street doors of their own.
+
+*Figure 5 — Where Cloudflare and Caddy sit. Remote and local visitors end at the same front door; only the way in differs. The tunnel publishes less than the local network sees: the Node-RED editor (port 1880) is never published. The broker and the database are not behind Caddy.*
+
+![Remote access through Cloudflare, the tunnel and Caddy to OFM's applications](images/remote-access-stack.svg)
+
+*Figure 6 — A remote sign-in. Steps 2–8 are Cloudflare Access (step 8 only for an address not on the list); nothing reaches the OFM server before step 10, and only with a valid pass. Within the 24 hours of a pass, steps 2–8 are skipped.*
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Browser (phone or laptop)
+  participant A as Cloudflare Access
+  participant M as User's mailbox
+  participant T as cloudflared (OFM server)
+  participant P as Caddy (proxy)
+  participant O as OFM page
+  Note over A,T: At start-up cloudflared opens an outbound, encrypted tunnel to Cloudflare. No inbound port anywhere.
+  U->>A: HTTPS: open ofm.example.com/dashboard/line
+  A-->>U: no valid pass: login page
+  U->>A: email address
+  alt address on the allow-list
+    A->>M: 6-digit one-time code by email
+    M-->>U: the user reads the code
+    U->>A: the code
+    A-->>U: signed pass (cookie), valid 24 h
+  else not on the list
+    A-->>U: no code is sent, no access
+  end
+  U->>A: request with the pass
+  A->>T: request down the tunnel
+  T->>P: HTTPS, certificate checked against OFM's CA
+  P->>O: plain HTTP, inside the server only
+  O-->>U: the page, back the same way
+  Note over U,O: OFM's own sign-in still applies: Grafana or Mathesar password, employee number and PIN for any action on the line view (ADR-0028)
+```
+
+Six layers protect the path, each on its own, from the internet inwards:
+
+| # | Layer | How |
+|---|---|---|
+| 1 | No door in the wall | The tunnel is outbound only; nothing is opened on the router, the server or a firewall |
+| 2 | Encrypted on every hop | Browser → Cloudflare: HTTPS with a public certificate; Cloudflare → server: the tunnel; `cloudflared` → Caddy: HTTPS checked against OFM's CA (ADR-0019) |
+| 3 | Prove who you are | Allow-listed email, one-time code, 24-hour pass; people are added or removed in the Cloudflare policy, not on the server |
+| 4 | Little is published | Four names (`ofm.`, `grafana.`, `sim.`, `mathesar.`), on two of them only selected paths; the Node-RED editors, the broker and the database never |
+| 5 | OFM's own logins | Grafana and Mathesar accounts; employee number and PIN for line actions, recorded against the person |
+| 6 | Machines untouched | OFM only reads PLCs (ADR-0018); the PLC network is not reachable through the tunnel |
+
+Known limits: an emailed code is only as strong as the mailbox, so everyone on the list should use two-step sign-in for their email; a pass stays valid on its device for 24 hours unless revoked in Cloudflare; at a plant, company IT decides whether Cloudflare is acceptable, and their own sign-in (for example the company identity provider through Cloudflare Access) or their own remote-access service may replace the emailed code (an assumption until IT decides). `docker compose rm -sf cloudflared` ends all remote access at once while local use continues. Set-up: `deploy/README.md` section 7.8; checks: `tests/README.md`, RA1–RA6.
 
 ## 14. Deployment architecture
 
@@ -477,4 +534,4 @@ Where the details live, by concern: contested decisions and their alternatives �
 
 ---
 
-*End of Architecture Overview v0.6.18. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*
+*End of Architecture Overview v0.6.19. Corrections and challenges are welcome — disagreement with anything in sections 5–9 should arrive as a proposed ADR.*

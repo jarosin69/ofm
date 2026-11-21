@@ -986,71 +986,123 @@ chmod 600 /var/backups/ofm/certs.tgz          # contains private keys
 
 For a demo shown from elsewhere, or viewing from outside the plant network
 when IT agrees. The server needs internet; nothing is opened on the router.
-Needs a domain whose DNS is on Cloudflare (*example.com* below; the demo kit
-uses its own). Do the steps in this order, so no page is ever public without
-the login in front. Cloudflare renames its menus from time to time; the
-items below are as of November 2026.
+How it works and why it is safe: Architecture Overview §13.2. The checks
+after set-up: `tests/README.md`, RA1–RA6.
 
-**1. The tunnel** (Cloudflare dashboard → *Zero Trust*; the free plan is
-enough, it may ask for a payment card):
-*Networks* → *Connectors* → *Cloudflare Tunnels* → *Create a tunnel* →
-*Cloudflared* → name it (e.g. `ofm-demo`) → on the install page choose
-*Docker* and copy only the long token after `--token` (it starts with `ey…`).
-Do not run the command shown; OFM runs `cloudflared` itself.
+**What you need:** a domain whose DNS is run by Cloudflare (*example.com*
+below; the demo kit uses `freewebtests.com`), a free Cloudflare account,
+and OFM running on the server (section 7.4). Do the steps in this order:
+the login (steps 3 and 4) is in place before any page is published
+(step 5), so no page is ever public without it. Cloudflare renames its
+menus from time to time; the names below are as they were in November
+2026. Where a screen looks different, look for the same words.
 
-**2. OFM on the server.** After `git pull`, add the new settings, then edit
-the existing lines (each appears once; do not add a second line):
+**0. The domain on Cloudflare** (once per domain). In the Cloudflare
+dashboard: *Add a domain* → type the domain → *Free* plan → keep the DNS
+records it finds. Cloudflare shows two nameservers (e.g.
+`casey.ns.cloudflare.com`). At the registrar (GoDaddy for the demo kit):
+turn *DNSSEC* off if it is on, then replace the domain's nameservers with
+Cloudflare's two. The domain shows *Active* in Cloudflare within minutes to
+hours, and Cloudflare emails when it is.
+
+**1. Zero Trust** (once per account). In the dashboard's left menu,
+*Zero Trust* → *Get started*: choose a team name (it becomes the login
+page's address, `<team>.cloudflareaccess.com`) and the *Free* plan (up to
+50 users; it may ask for a payment card, nothing is charged). Until this is
+done, the *Applications* page has no button to add one.
+
+**2. The tunnel.** Left menu *Networking* → *Tunnels* → *Create a tunnel*
+→ *Cloudflared* → name it (e.g. `ofm-demo`) → on the install page choose
+*Docker* and copy only the long token after `--token` (it starts with
+`ey…`). Do not run the command shown; OFM runs `cloudflared` itself. On the
+server, after `git pull`:
 
 ```sh
 cd /opt/ofm/deploy
 docker run --rm -v "$PWD:/work" -w /work alpine:3.22 sh make-env.sh
 nano .env
 ```
+
+`make-env.sh` adds any new setting with an empty value. Edit the existing
+lines; each appears once, so do not add a second line:
+
 ```
 COMPOSE_PROFILES=simulator,demo,remote
 OFM_PUBLIC_DOMAIN=example.com
 CLOUDFLARE_TUNNEL_TOKEN=ey...the token...
 ```
+
 ```sh
 docker compose up -d
 docker compose logs cloudflared --tail 20     # "Registered tunnel connection" (4 times)
 ```
-The tunnel shows *Healthy* in the dashboard.
 
-**3. The login (Cloudflare Access)** — before publishing any page.
-*Zero Trust* → *Access controls* → *Applications* → *Add an application* →
-*Self-hosted*:
+In Cloudflare the tunnel's status turns *Healthy*. The token is a
+password: it lives only in `.env`, never in a tracked file or a message.
 
-| Application | Public names | Policy (Allow, Include → Emails) |
+**3. The login method: One-time PIN.** *Zero Trust* → *Integrations* →
+*Identity providers* → *Add new* → *One-time PIN* → *Save*. This is the
+emailed 6-digit code. Do **not** use the login method called
+*Cloudflare* (signing in with a Cloudflare account): with it the browser
+ended at `oauth-callbacks.cloudflareaccess.com` with "Invalid state" and an
+empty page.
+
+**4. The applications (who may log in).** *Zero Trust* → *Access controls*
+→ *Applications* → *Add an application* → *Self-hosted*. Create two:
+
+| Application | Public names (subdomain + domain) | Policy |
 |---|---|---|
-| `OFM demo` | `ofm.example.com`, `grafana.example.com`, `sim.example.com` | the people who may view (to begin with, your own address) |
-| `OFM model editor` | `mathesar.example.com` | your own address only |
+| `OFM demo` | `ofm`, `grafana`, `sim` . example.com | the people who may view |
+| `OFM model editor` | `mathesar` . example.com | your own address only |
 
-Login method: *One-time PIN* (an emailed code; on by default). Session
-duration: 24 hours.
+For each: *Session duration* 24 hours. *Add a policy*: name (e.g.
+`Jarek only`), action *Allow*, *Include* → *Emails* → the addresses, one
+per line. *Login methods*: tick *One-time PIN* only and untick *Cloudflare*
+(and *Accept all available identity providers*, if shown). Save. To add or
+remove a person later, edit the policy; nothing changes on the server.
 
-**4. The routes.** The tunnel → *Published application routes* →
-*Add a published application route*, four times. For each: *Service*
-type **HTTPS**; then *Additional application settings* → *TLS* →
-*Origin Server Name* `proxy` and *Certificate Authority Pool*
-`/certs/ca.crt`; leave *No TLS Verify* off.
+**5. The routes (what is published).** *Networking* → *Tunnels* → the
+tunnel → *Published application routes* → *Add a published application*,
+four times:
 
-| Subdomain | Path | Service URL |
-|---|---|---|
-| `ofm` | `^/(dashboard\|trend/export\|ofm/)` | `proxy:1882` |
-| `grafana` | (empty) | `proxy:3000` |
-| `sim` | `^/dashboard` | `proxy:1881` |
-| `mathesar` | (empty) | `proxy:8080` |
+| Subdomain | Domain | Path | Service URL |
+|---|---|---|---|
+| `ofm` | example.com | `^/(dashboard\|trend/export\|ofm/)` | `https://proxy:1882` |
+| `grafana` | example.com | (empty) | `https://proxy:3000` |
+| `sim` | example.com | `^/dashboard` | `https://proxy:1881` |
+| `mathesar` | example.com | (empty) | `https://proxy:8080` |
 
-The path is a pattern; type it exactly as shown. Any other path, e.g. the screens' Node-RED editor at `https://ofm.example.com/`, gets
-"not found". The pages are then at `https://ofm.example.com/dashboard/line`,
-`…/dashboard/trend`, `https://grafana.example.com`,
-`https://sim.example.com/dashboard` and `https://mathesar.example.com`.
-Checks: `tests/README.md`, RA1–RA6.
+Type the Service URL with `https://`. For each route open *Additional
+application settings* → *TLS*: *Origin Server Name* `proxy`, *Certificate
+Authority Pool* `/certs/ca.crt`, and leave *No TLS Verify* **off**. This is
+what makes the tunnel check that it is talking to OFM's own front door
+(ADR-0019). The path is a pattern (a regular expression); type it exactly
+as shown, including `^`. Cloudflare creates the four DNS names itself.
 
-**Switching it off:** remove `remote` from `COMPOSE_PROFILES` and run
-`docker compose rm -sf cloudflared`; or delete the tunnel in the
-dashboard, which also removes the public names.
+**6. Open the pages** from a phone on mobile data (not the home Wi-Fi),
+with the full address:
+
+| Page | Address |
+|---|---|
+| Line view | `https://ofm.example.com/dashboard/line` |
+| Trend | `https://ofm.example.com/dashboard/trend` |
+| Grafana | `https://grafana.example.com` |
+| Simulator panel | `https://sim.example.com/dashboard` |
+| Model editor | `https://mathesar.example.com` |
+
+Cloudflare's login page comes first: type your email, then the 6-digit code
+from the email. An address not on the list gets no code. After that OFM's
+own logins apply as at home (Grafana, Mathesar; employee number and PIN for
+actions on the line view). The bare address `https://ofm.example.com/`
+answers "404 not found" on purpose: the screens' Node-RED editor lives
+there and is not published. Bookmark the full addresses.
+
+**Switching it off:** `docker compose rm -sf cloudflared` stops the tunnel
+at once; local pages keep working. To keep it off after a restart, also
+remove `remote` from `COMPOSE_PROFILES` in `.env`. In Cloudflare you can
+instead revoke everyone's sessions (*Zero Trust* → *Access controls* →
+*Applications* → the application → *Revoke existing tokens*), or delete
+the tunnel, which also removes the public names.
 
 ## Installing without internet (plant LAN)
 

@@ -54,3 +54,14 @@ security-minded audience. The same question will come back at a plant:
 - One more container image (pinned), used only with the `remote` profile.
 - Routes, paths and who may log in live in the Cloudflare dashboard, not in
   the repository; deploy README 7.8 lists them.
+
+## Amendments
+
+- 2026-11-22: **Explained and checked.** How a remote sign-in works, step
+  by step, and the six layers that protect it: Architecture Overview §13.2
+  (Figures 5 and 6). The set-up steps in deploy README 7.8 now follow the
+  Cloudflare screens as met on the demo kit: Zero Trust *Get started* first;
+  tunnels under *Networking*; *One-time PIN* as the only login method (the
+  *Cloudflare* login method ends in "Invalid state"); routes with
+  `https://` Service URLs; the bare address answers 404 on purpose.
+  RA1–RA6 passed on the demo kit 2026-11-21.

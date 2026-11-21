@@ -1,8 +1,8 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-20. Update this file at the end of every working session.*
+*Updated: 2026-11-22. Update this file at the end of every working session.*
 
-**▶ We are here: historian trends H1–H2b checked (TR34 passed 2026-11-17); demo kit: OFM on the TBOX since 2026-11-19, two shifts run fine; remote access (part 1 of the demo-kit step) built 2026-11-20, RA1–RA6 to do; next part 2 (update script, Linux quick-install guide, backup, Tailscale, UPS), then step 3a.9; H2c after the management demo.** Decided
+**▶ We are here: historian trends H1–H2b checked (TR34 passed 2026-11-17); demo kit: OFM on the TBOX since 2026-11-19, two shifts run fine; remote access (part 1 of the demo-kit step) built 2026-11-20, RA1–RA6 passed 2026-11-21, explained for management 2026-11-22 (Overview §13.2); next part 2 (update script, Linux quick-install guide, backup, Tailscale, UPS), then step 3a.9; H2c after the management demo.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -225,7 +225,7 @@ networks, preparation, checks and pilot backups: deploy README section 7.
 
 | Step | What | Status |
 |---|---|---|
-| C0 | Management demo on the simulated line, after `v0.3`: presentation, live demo (line calibrated to the real packing line's figures), recorded backup; the decision to go ahead with C1–C4. Over Teams to the regional and possibly the global team, from the demo kit at home with remote access. Demo kit (2026-11-19): the work's TBOX-12T35 (fanless, Core i7-1165G7, 16 GB, two network ports) on a spare NVMe drive, Ubuntu Server 26.04 LTS, Docker Engine 29.10, OFM from GitHub `main` in `/opt/ofm`, 192.168.1.182 on the home network (one network for the TBOX, PLCs and laptop); checks pass. Domain `freewebtests.com` (GoDaddy registration, DNS on Cloudflare, active 2026-11-20). Remote access built 2026-11-20 (ADR-0032, deploy README 7.8: `cloudflared` with profile `remote`, Access email code, names ofm./grafana./sim./mathesar.); RA1–RA6 to do. Planned: Tailscale for maintenance, a UPS | ▶ |
+| C0 | Management demo on the simulated line, after `v0.3`: presentation, live demo (line calibrated to the real packing line's figures), recorded backup; the decision to go ahead with C1–C4. Over Teams to the regional and possibly the global team, from the demo kit at home with remote access. Demo kit (2026-11-19): the work's TBOX-12T35 (fanless, Core i7-1165G7, 16 GB, two network ports) on a spare NVMe drive, Ubuntu Server 26.04 LTS, Docker Engine 29.10, OFM from GitHub `main` in `/opt/ofm`, 192.168.1.182 on the home network (one network for the TBOX, PLCs and laptop); checks pass. Domain `freewebtests.com` (GoDaddy registration, DNS on Cloudflare, active 2026-11-20). Remote access built 2026-11-20 (ADR-0032, deploy README 7.8: `cloudflared` with profile `remote`, Access email code, names ofm./grafana./sim./mathesar.); RA1–RA6 passed 2026-11-21 from a phone on mobile data; README 7.8 rewritten to the Cloudflare screens as met, how it works and why it is safe in Overview §13.2 (2026-11-22). Planned: Tailscale for maintenance, a UPS | ▶ |
 | C1.1 | Docker and operating system: plant servers on Ubuntu Server 26.04 LTS with Docker Engine (ADR-0020); the laptop keeps Docker Desktop for development | ✅ ADR-0020 accepted 2026-11-10 |
 | C1.2 | Latency target: 2 s for 95 % at default read settings, OFM's own share < 250 ms (ADR-0022); load-test threshold 2.0 s | ✅ ADR-0022 accepted 2026-11-10 |
 | C1.3 | Pilot line and its controllers chosen (question 31); S7 access agreed with the PLC owners (ADR-0021, question 24); pilot duration and success criteria agreed (question 32) | ⬜ |
@@ -260,7 +260,7 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | 3a.8 | Screens: OFM line view (drawn from the UNS; work orders; stops to code; per-person sign-in) and Grafana *Line OEE* | ✅ 2026-11-10: 3a.8a line view and sign-in (migration 018, ADR-0027, ADR-0028), 3a.8b shifts and *Line OEE* (migration 019), fixes (migrations 020–022); LV1–LV8, LO1–LO8 passed on the laptop; 2026-11-16: note when the planned quantity is reached (migration 027); 2026-11-17: stops split where an order starts or ends (migration 028, fix); live order progress (migration 029); minutes counted where they end (migration 030, fix); LV9–LV14 passed 2026-11-17; downtime charts unplanned only (LO9 passed) |
 | H1 | Historian trends, part 1 (ADR-0029): *OFM Trend* page (tag tree, overlay or stacked, zoom and back, live, cursors A/B, statistics, limits LoLo/Lo/Hi/HiHi in amber and red, min–max band, CSV as stored and as shown, PNG/JPG, chart in the address, historian list); made-up year of history for the demo | ✅ 2026-11-16 (migration 023, fixes in migration 024; TR1–TR12 passed, TR13 optional) |
 | H2a | Annotations (ADR-0031): sign-in on the trend page, a moment or a period on a signal, machine or line, kinds with colours (Mathesar), correct and remove append-only, shown on every chart of that signal, machine or line and in Grafana *Line OEE* | ✅ 2026-11-16 (migration 025; TR14–TR23 passed) |
-| H2b | Historian trends, analysis: an order or shift as the period, compare a signal with itself at another time (also to the start of an order or shift), bands for machine states (colours in Mathesar), orders and shifts, smoothing per pen for display only (average, median, PT1) | ✅ 2026-11-17 (migration 026, ADR-0029 amendment; TR24–TR33 passed); compare from a moment to the second added (TR34 to do) |
+| H2b | Historian trends, analysis: an order or shift as the period, compare a signal with itself at another time (also to the start of an order or shift), bands for machine states (colours in Mathesar), orders and shifts, smoothing per pen for display only (average, median, PT1) | ✅ 2026-11-17 (migration 026, ADR-0029 amendment; TR24–TR33 passed); compare from a moment to the second added (TR34 passed 2026-11-17) |
 | H2c | Historian trends, personal: preferences per person (dark theme…), saved charts (personal and shared; a shared chart is changed only by its author, others *Save as*), swap machine (the same signals on another machine) | ⬜ design agreed 2026-11-16 |
 | H3 | Optional: scheduled trend reports (PNG/PDF to a folder or e-mail), calculated pens | ⬜ later |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
@@ -338,9 +338,10 @@ Must be complete before the repository is made public:
    on; auto-operator on) and note anything odd. Git: develop on a branch
    on the laptop, merge into `main` when its checks pass, push; the TBOX
    pulls `main` only (`phase3a-sim` merged into `main` 2026-11-19).
-2. Remote access on the TBOX: Cloudflare steps and `.env` (deploy README
-   7.8), then RA1–RA6 (`tests/README.md`). Then the demo-kit step, part 2
-   (design first): `deploy/update.sh`, a Linux quick-install guide
+2. Remote access is done (RA1–RA6 passed 2026-11-21; deploy README 7.8,
+   Overview §13.2). Optional later: a Cloudflare redirect from each bare
+   address to its page (`/` → `/dashboard/line`). Next the demo-kit step,
+   part 2 (design first): `deploy/update.sh`, a Linux quick-install guide
    (README 7.0, the TBOX snags), nightly backup, Tailscale for
    maintenance, UPS shutdown (NUT) once the UPS is bought; a git tag to
    freeze the demo version about a week before the presentation.
@@ -351,7 +352,8 @@ Must be complete before the repository is made public:
    S7-1200 in STOP) then too.
 4. The OFM presentation (`docs/presentation/ofm-overview.pptx`, for C0):
    add a trend slide and the security answers (read-only, separate PLC
-   network, outbound-only remote access, certificates, audit trail); a
+   network, outbound-only remote access, certificates, audit trail; the
+   remote-access explanation of Overview §13.2 and its management page); a
    recorded fallback of the key moments.
 5. Step H2c after the management demo: preferences per person (dark
    theme), saved charts (personal and shared, author-only changes,
@@ -786,4 +788,12 @@ Numbers are stable; answered questions are removed rather than renumbered.
   `docker exec ofm-nodered sh -c 'echo $HOME; ls -a ~/.config'`.
 - Mosquitto 2.1 deprecates `password_file`/`acl_file` in favour of plugins
   (removal planned for 3.0). Migrate before any upgrade to 3.x.
+- Remote access (2026-11-20/21, demo kit): the first set-up met Cloudflare
+  screens different from the draft steps — Zero Trust needs *Get started*
+  before applications can be added; tunnels are under *Networking*; the
+  *Cloudflare* login method ended in "Invalid state", so *One-time PIN* is
+  the only one; routes need `https://` in the Service URL; the bare address
+  answers 404 because only selected paths are published. All in deploy
+  README 7.8 (rewritten 2026-11-22). Menu names there are as of November
+  2026.
 - The installation has been run end-to-end on one machine only.
