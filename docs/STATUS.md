@@ -1,8 +1,8 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-22. Update this file at the end of every working session.*
+*Updated: 2026-11-22 (R1). Update this file at the end of every working session.*
 
-**▶ We are here: historian trends H1–H2b checked (TR34 passed 2026-11-17); demo kit: OFM on the TBOX since 2026-11-19, two shifts run fine; remote access (part 1 of the demo-kit step) built 2026-11-20, RA1–RA6 passed 2026-11-21, explained for management 2026-11-22 (Overview §13.2); next part 2 (update script, Linux quick-install guide, backup, Tailscale, UPS), then step 3a.9; H2c after the management demo.** Decided
+**▶ We are here: historian trends H1–H2b checked (TR34 passed 2026-11-17); demo kit: OFM on the TBOX since 2026-11-19, two shifts run fine; remote access (part 1 of the demo-kit step) built 2026-11-20, RA1–RA6 passed 2026-11-21, explained for management 2026-11-22 (Overview §13.2); period reports R1 built 2026-11-22 (design and mock-up agreed the same day; RP1–RP9 to do), then R2 (shift handover, compare two periods, changeovers); next part 2 (update script, Linux quick-install guide, backup, Tailscale, UPS), then step 3a.9; H2c after the management demo.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -263,6 +263,8 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | H2b | Historian trends, analysis: an order or shift as the period, compare a signal with itself at another time (also to the start of an order or shift), bands for machine states (colours in Mathesar), orders and shifts, smoothing per pen for display only (average, median, PT1) | ✅ 2026-11-17 (migration 026, ADR-0029 amendment; TR24–TR33 passed); compare from a moment to the second added (TR34 passed 2026-11-17) |
 | H2c | Historian trends, personal: preferences per person (dark theme…), saved charts (personal and shared; a shared chart is changed only by its author, others *Save as*), swap machine (the same signals on another machine) | ⬜ design agreed 2026-11-16 |
 | H3 | Optional: scheduled trend reports (PNG/PDF to a folder or e-mail), calculated pens | ⬜ later |
+| R1 | Period reports (ADR-0033): page *OFM Report* at `…:1882/dashboard/report` (any period up to 93 days, previous-period comparison, OEE target per line, OEE per day or week, top losses with OEE points adding up to 100 − OEE, how often against how long, planned time and GE, machines with MTBF/MTTR, orders with plan attainment and biggest loss, products with a rated-speed flag, shifts with % coded, data quality; A4 *Save as PDF*); Grafana *Line OEE*: *Top losses*, *OEE by product*, fuller *Work orders*; `hist.fn_line_kpi` about 30 times faster, same results | ✅ built 2026-11-22 (migration 031); RP1–RP9 to do |
+| R2 | Reports for daily use: *Shift handover* mode (output against plan, hour by hour, uncoded stops, notes for the next shift), *Compare* two periods (loss by loss in OEE points), changeovers by product pair | ⬜ design and mock-up agreed 2026-11-22 |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
 | 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |
 
@@ -334,31 +336,38 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Demo kit: run the demo line on the TBOX for a few days (shift pattern
+1. Period reports R1: apply, then RP1–RP9 (`tests/README.md`); then R2
+   (shift handover, compare, changeovers), design as in the mock-up of
+   2026-11-22.
+2. Demo kit: run the demo line on the TBOX for a few days (shift pattern
    on; auto-operator on) and note anything odd. Git: develop on a branch
    on the laptop, merge into `main` when its checks pass, push; the TBOX
    pulls `main` only (`phase3a-sim` merged into `main` 2026-11-19).
-2. Remote access is done (RA1–RA6 passed 2026-11-21; deploy README 7.8,
+3. Remote access is done (RA1–RA6 passed 2026-11-21; deploy README 7.8,
    Overview §13.2). Optional later: a Cloudflare redirect from each bare
    address to its page (`/` → `/dashboard/line`). Next the demo-kit step,
    part 2 (design first): `deploy/update.sh`, a Linux quick-install guide
-   (README 7.0, the TBOX snags), nightly backup, Tailscale for
+   (README 7.0, the TBOX snags; also: each client computer trusts the
+   server's own `ofm-ca.crt` — the laptop needed the TBOX's, 2026-11-22 —
+   and the server's address is reserved on the router: TBOX 192.168.1.182
+   and the bench CompactLogix 192.168.1.180 reserved 2026-11-22, both
+   inside the router's DHCP pool 140–199), nightly backup, Tailscale for
    maintenance, UPS shutdown (NUT) once the UPS is bought; a git tag to
    freeze the demo version about a week before the presentation.
-3. Step 3a.9 (simulator part 2: PLC backends) with the bench PLCs on the
+4. Step 3a.9 (simulator part 2: PLC backends) with the bench PLCs on the
    home network: S7-300 192.168.1.120 (to be confirmed), S7-1200
    192.168.1.221, CompactLogix 192.168.1.180; only one OFM (laptop or
    TBOX) reads a PLC at a time (connection limits). Drill F2 (bench
    S7-1200 in STOP) then too.
-4. The OFM presentation (`docs/presentation/ofm-overview.pptx`, for C0):
+5. The OFM presentation (`docs/presentation/ofm-overview.pptx`, for C0):
    add a trend slide and the security answers (read-only, separate PLC
    network, outbound-only remote access, certificates, audit trail; the
    remote-access explanation of Overview §13.2 and its management page); a
    recorded fallback of the key moments.
-5. Step H2c after the management demo: preferences per person (dark
+6. Step H2c after the management demo: preferences per person (dark
    theme), saved charts (personal and shared, author-only changes,
    *Save as*), swap machine.
-6. Jarek: update the Claude Project instructions: model editor is Mathesar
+7. Jarek: update the Claude Project instructions: model editor is Mathesar
    (not NocoDB, ADR-0013); secrets live in deploy/.env, the Mosquitto
    password file (generated) and the Docker volume `certs`.
 
@@ -796,4 +805,14 @@ Numbers are stable; answered questions are removed rather than renumbered.
   answers 404 because only selected paths are published. All in deploy
   README 7.8 (rewritten 2026-11-22). Menu names there are as of November
   2026.
+- Step R1 was tested on the local replica with a made-up, busy October on
+  the demo line (3,000 state changes, 270 coded stops, 44 orders, 31,000
+  count rows; generator kept outside the repository): `database` 151 checks
+  (4 new cases), `flows` 411 (new: `report`); the faster `hist.fn_line_kpi`
+  gave the same figures as before for all 31 days of October, and the
+  grouped figures equal it per day, order and shift. A month: OEE 70.9 %,
+  `hist.fn_line_kpi` 8.5 s before, 0.3 s after; the whole report about
+  3 s. The page drawn and printed in Chromium (4 A4 pages for the month);
+  every new Grafana panel query run as `ofm_reader`. Not tested here:
+  Grafana itself drawing the new panels, printing from Edge on Windows.
 - The installation has been run end-to-end on one machine only.

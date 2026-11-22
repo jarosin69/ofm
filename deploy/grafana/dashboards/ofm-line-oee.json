@@ -1284,7 +1284,7 @@
    "gridPos": {
     "x": 0,
     "y": 39,
-    "w": 14,
+    "w": 24,
     "h": 12
    },
    "targets": [
@@ -1372,16 +1372,16 @@
   {
    "id": 17,
    "type": "table",
-   "title": "Work orders",
-   "description": "Orders that ran in the period, newest first; good, reject and OEE inside the period.",
+   "title": "Top losses",
+   "description": "What kept OEE from 100 % in the period: each stop reason per machine (breakdowns, other unplanned, not accounted for) with its number of stops, plus speed loss and quality loss. OEE points lost = hours / production hours × 100; all of them add up to 100 − OEE. Negative speed loss: the line ran above its rated speed.",
    "datasource": {
     "type": "grafana-postgresql-datasource",
     "uid": "ofm-historian"
    },
    "gridPos": {
-    "x": 14,
-    "y": 39,
-    "w": 10,
+    "x": 0,
+    "y": 51,
+    "w": 14,
     "h": 12
    },
    "targets": [
@@ -1394,7 +1394,7 @@
      "editorMode": "code",
      "rawQuery": true,
      "format": "table",
-     "rawSql": "SELECT o.wo_number AS \"Order\", o.sku AS \"Product\", o.planned_qty AS \"Planned\", o.good AS \"Good\", o.reject AS \"Reject\",\n       o.oee AS \"OEE\", o.started_at AS \"Started\", o.completed_at AS \"Completed\", o.started_by AS \"Started by\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p, hist.fn_line_orders(${line}, p.t0, p.t1) o"
+     "rawSql": "SELECT row_number() OVER (ORDER BY l.seconds DESC) AS \"#\", l.reason AS \"Loss\", l.machine AS \"Machine\",\n       CASE l.kind WHEN 'breakdown' THEN 'Breakdown' WHEN 'minor_stop' THEN 'Minor stops' WHEN 'other_unplanned' THEN 'Other unplanned'\n                   WHEN 'speed' THEN 'Speed' WHEN 'quality' THEN 'Quality' ELSE 'Not accounted' END AS \"Kind\",\n       l.stops AS \"Stops\", l.seconds / nullif(l.stops, 0) / 60 AS \"Avg min\", l.seconds / 3600 AS \"Hours\",\n       l.share_of_lost AS \"% of lost\", l.oee_points AS \"OEE points lost\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p, hist.fn_report_losses(${line}, p.t0, p.t1) l\nORDER BY l.seconds DESC\nLIMIT 15"
     }
    ],
    "fieldConfig": {
@@ -1408,6 +1408,427 @@
      "noValue": "–"
     },
     "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Avg min"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Hours"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "% of lost"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "OEE points lost"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 1
+       },
+       {
+        "id": "min",
+        "value": 0
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "gauge",
+         "mode": "basic",
+         "valueDisplayMode": "text"
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#c4162a"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "#"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 40
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   }
+  },
+  {
+   "id": 18,
+   "type": "table",
+   "title": "OEE by product",
+   "description": "Per product, its orders in the period added up (times, not percentages, ADR-0008). P in red: above 100 % or below 75 % of the rated speed; check the product's rated speed in Mathesar (material_line_rate).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 14,
+    "y": 51,
+    "w": 10,
+    "h": 12
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT k.label AS \"Product\", k.good AS \"Good\", k.pos8_s / 3600 AS \"Hours\",\n       k.availability AS \"A\", k.performance AS \"P\", k.quality AS \"Q\", k.oee AS \"OEE\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p, hist.fn_report_kpi(${line}, p.t0, p.t1, 'product') k\nORDER BY k.pos8_s DESC"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "cellOptions": {
+       "type": "auto"
+      }
+     },
+     "noValue": "–"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Hours"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "A"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Q"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "P"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "#d44a3a",
+           "value": null
+          },
+          {
+           "color": "text",
+           "value": 0.75
+          },
+          {
+           "color": "#d44a3a",
+           "value": 1.0000001
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "OEE"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "#d44a3a",
+           "value": null
+          },
+          {
+           "color": "#e5a823",
+           "value": 0.6
+          },
+          {
+           "color": "#299c46",
+           "value": 0.85
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false
+    }
+   }
+  },
+  {
+   "id": 19,
+   "type": "table",
+   "title": "Work orders",
+   "description": "Orders that ran in the period, newest first, with their figures inside the period: plan attainment (only for orders wholly inside the period), start against the planned start, scheduled time, changeover, A, P, Q, OEE and the biggest single loss.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "ofm-historian"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 63,
+    "w": 24,
+    "h": 12
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "ofm-historian"
+     },
+     "editorMode": "code",
+     "rawQuery": true,
+     "format": "table",
+     "rawSql": "SELECT o.wo_number AS \"Order\", o.sku AS \"Product\", o.planned_qty AS \"Planned\", o.good AS \"Good\",\n       CASE WHEN NOT o.partly_outside THEN o.good / nullif(o.planned_qty, 0) END AS \"Of plan\",\n       o.started_at AS \"Started\", extract(epoch FROM o.started_at - o.planned_start) / 60 AS \"vs planned start (min)\",\n       o.completed_at AS \"Completed\", o.scheduled_s / 3600 AS \"Scheduled (h)\", o.changeover_s / 60 AS \"Changeover (min)\",\n       o.availability AS \"A\", o.performance AS \"P\", o.quality AS \"Q\", o.oee AS \"OEE\",\n       o.biggest_loss AS \"Biggest loss\", o.biggest_loss_s / 60 AS \"Loss (min)\", o.started_by AS \"Started by\"\nFROM hist.fn_dashboard_period(${line}, '${shift}', '${order}', $__timeFrom(), $__timeTo()) p, hist.fn_report_orders(${line}, p.t0, p.t1) o"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "cellOptions": {
+       "type": "auto"
+      }
+     },
+     "noValue": "–"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Of plan"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "vs planned start (min)"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 0
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Scheduled (h)"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Changeover (min)"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 0
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Loss (min)"
+      },
+      "properties": [
+       {
+        "id": "decimals",
+        "value": 0
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "A"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "P"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Q"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percentunit"
+       },
+       {
+        "id": "decimals",
+        "value": 1
+       }
+      ]
+     },
      {
       "matcher": {
        "id": "byName",

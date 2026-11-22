@@ -581,6 +581,27 @@ data** (Wi-Fi off), so the test really comes from outside:
 | RA5 | `https://grafana.<domain>` (Grafana login, *Line OEE*); `https://sim.<domain>/dashboard` (simulator panel); `https://mathesar.<domain>` (log in, change a cell in a model table, save, change it back) | each works as at home; Mathesar's login and save are accepted (no "CSRF" error) |
 | RA6 | `sudo reboot` the server; wait 3 minutes | the pages open again from outside without touching anything |
 
+**Period report** (step R1, ADR-0033, migration 031). Automated: `database`
+(grouped KPIs equal `hist.fn_line_kpi` of each day and order; a product's
+OEE adds up its orders' seconds, not their percentages; the OEE points of
+the losses add up to 100 − OEE; orders, machines and the header; the target
+can be set to a fraction only; the screens role runs the report functions
+and reads no table); `flows` (the page, the node "report": the period worked
+out in the site's time zone, only the report functions asked, over 93 days
+refused). By hand, after a few days of the simulated line (or a month):
+
+| # | Do | Expect |
+|---|---|---|
+| RP1 | Line view → *Report*; or `https://<server>:1882/dashboard/report` | *OFM Report* with the demo line; *Last month* (or *Last 7 days*) draws within a few seconds |
+| RP2 | Compare the headline with Grafana *Line OEE* for the same dates (time picker, *Shift* All, *Order* None) | OEE, A, P, Q, good units, rejects and downtime are the same |
+| RP3 | *Top losses* | the last row *Total lost* says −x pts = 100 − OEE; speed loss and quality loss are in the list; the largest stop reasons match *Downtime by reason* in Grafana |
+| RP4 | Untick *Compare with previous period*, then tick it again | the ▲▼ changes disappear and come back; with no production in the previous period the header says so and shows none |
+| RP5 | In Mathesar, *line* → *oee_target* of the demo line: 0.72; reload the report | the dashed line moves to 72 %; days below it turn red; typing 72 is refused (a fraction: 0.72 = 72 %) |
+| RP6 | *From – To*: one day; then a period of 60 days; then 100 days | one bar; bars per week; "a report covers at most 93 days" |
+| RP7 | *Save as PDF* → *Save as PDF* (Chrome or Edge) | an A4 document of a few pages with only the report: no buttons, every order listed, colours kept |
+| RP8 | Copy the address into a new tab; open it remotely too (RA2) | the same line, period and comparison |
+| RP9 | Grafana *Line OEE*, *Last 30 days* | *Top losses*, *OEE by product* and the fuller *Work orders* (A, P, Q, scheduled time, changeover, biggest loss) draw; the dashboard is no slower than for a day |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

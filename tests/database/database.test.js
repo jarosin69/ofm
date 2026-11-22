@@ -818,6 +818,53 @@ const CASES = [
         "09:50 600 Planned window | 09:40 420 Not accounted for | 09:30 120 Minor stop | 09:15 300 zz_motor by tester | 09:00 300 Changeover (order)" },
     { as: "ofm_reader", sql: "SELECT wo_number, started_by, good, reject, round(oee::numeric, 5) AS oee FROM hist.fn_line_orders($line, " + L("08:30") + ", " + L("10:30") + ")",
       expect: r => r.length === 1 && r[0].wo_number === "wo1" && r[0].good === 2000 && r[0].reject === 50 && r[0].started_by === "tester" && Number(r[0].oee) > 0 }] },
+  // --- period reports (migration 031, step R1) ----------------------------------------------
+  { name: "reports: KPIs grouped from one pass equal hist.fn_line_kpi of each part (total, day, order); as ofm_reader and ofm_screens", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_screens", sql: "SELECT oee FROM hist.fn_report_kpi($line, " + L("08:30") + ", " + L("10:30") + ", 'total')", expect: r => r.length === 1 && near(r[0].oee, 1200 / 2700) },
+    { as: "ofm_reader", sql: "SELECT r.*, k.oee AS k_oee, k.pos8_s AS k8, k.pos13_s AS k13, k.good AS k_good FROM hist.fn_report_kpi($line, " + L("08:30") + ", " + L("10:30") + ", 'total') r, (" + KPI + ") k",
+      expect: r => r.length === 1 && r[0].group_key === "total" && near(r[0].oee, r[0].k_oee) && near(r[0].pos8_s, r[0].k8) && near(r[0].pos13_s, r[0].k13) &&
+        r[0].good === r[0].k_good && closes(r[0]) },
+    { as: "ofm_reader", sql: "SELECT count(*)::int AS n, bool_and(abs(coalesce(r.oee, -1) - coalesce(s.oee, -1)) < 1e-9 AND abs(r.pos8_s - s.pos8_s) < 1e-6 AND r.good = s.good) AS same " +
+        "FROM hist.fn_report_kpi($line, '2026-11-01 00:00+11', '2026-11-04 00:00+11', 'day') r JOIN hist.fn_line_kpi_series($line, '2026-11-01 00:00+11', '2026-11-04 00:00+11', 'day') s ON s.period_start = r.period_start",
+      expect: r => r[0].n === 3 && r[0].same === true },
+    { as: "ofm_reader", sql: "SELECT r.label, round(r.oee::numeric, 9) AS a, round(o.oee::numeric, 9) AS b FROM hist.fn_report_kpi($line, " + L("08:30") + ", " + L("10:30") + ", 'order') r " +
+        "JOIN hist.fn_line_orders($line, " + L("08:30") + ", " + L("10:30") + ") o ON o.work_order_id::text = r.group_key",
+      expect: r => r.length === 1 && r[0].label === "wo1" && r[0].a === r[0].b },
+    { as: "ofm_reader", sql: "SELECT 1 FROM hist.fn_report_kpi($line, '2025-01-01', '2026-11-01', 'day')", expect: "22023" },
+    { as: "ofm_reader", sql: "SELECT 1 FROM hist.fn_report_kpi($line, " + L("08:30") + ", " + L("10:30") + ", 'month')", expect: "22023" }] },
+  { name: "reports: a product's OEE adds up its orders' seconds, it is not the average of their percentages", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_config", sql: ADD_ORDER("wo2") },
+    { as: "ofm_runtime", sql: "INSERT INTO hist.work_order_event (work_order_id, event_type, ts, entered_by) VALUES (" + WO("wo1") + ", 'complete', " + L("09:25") + ", 'tester'), (" +
+        WO("wo2") + ", 'start', " + L("09:25") + ", 'tester'), (" + WO("wo2") + ", 'changeover_end', " + L("09:25") + ", 'ofm')" },
+    { as: "ofm_reader", sql: "SELECT (SELECT oee FROM hist.fn_report_kpi($line, " + L("08:30") + ", " + L("10:30") + ", 'product')) AS product, " +
+        "(SELECT sum(pos13_s) / sum(pos8_s) FROM hist.fn_report_kpi($line, " + L("08:30") + ", " + L("10:30") + ", 'order')) AS weighted, " +
+        "(SELECT avg(oee) FROM hist.fn_report_kpi($line, " + L("08:30") + ", " + L("10:30") + ", 'order')) AS average, " +
+        "(SELECT oee FROM hist.fn_report_kpi($line, " + L("08:30") + ", " + L("10:30") + ", 'total')) AS total",
+      expect: r => near(r[0].product, r[0].weighted) && near(r[0].product, r[0].total) && Math.abs(r[0].product - r[0].average) > 0.01 }] },
+  { name: "reports: losses ranked with stops; the OEE points add up to 100 - OEE; speed and quality loss included", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_screens", sql: "SELECT kind, reason, stops, round(seconds) AS s, round(oee_points::numeric, 2) AS pts, round(share_of_lost::numeric, 4) AS share FROM hist.fn_report_losses($line, " + L("08:30") + ", " + L("10:30") + ")",
+      expect: r => r.map(x => x.kind + ":" + x.reason + ":" + (x.stops === null ? "-" : x.stops) + ":" + x.s + ":" + x.pts).join(" | ") ===
+          "speed:Speed loss:-:630:23.33 | not_accounted:Not accounted for:1:420:15.56 | breakdown:zz_motor:1:300:11.11 | minor_stop:Minor stops:1:120:4.44 | quality:Quality loss (rejects):-:30:1.11" &&
+        Math.abs(r.reduce((a, x) => a + Number(x.share), 0) - 1) < 0.001 },
+    { as: "ofm_reader", sql: "SELECT sum(l.oee_points) AS pts, (SELECT 100 - oee * 100 FROM hist.fn_report_kpi($line, " + L("08:30") + ", " + L("10:30") + ", 'total')) AS gap " +
+        "FROM hist.fn_report_losses($line, " + L("08:30") + ", " + L("10:30") + ") l",
+      expect: r => near(r[0].pts, Number(r[0].gap)) }] },
+  { name: "reports: orders with changeover, scheduled time and biggest loss; machines; the header with the OEE target", steps: [
+    ...LEDGER_SETUP,
+    { as: "ofm_screens", sql: "SELECT wo_number, round(changeover_s) AS co, round(scheduled_s) AS sch, biggest_loss, round(biggest_loss_s) AS bl, partly_outside FROM hist.fn_report_orders($line, " + L("08:30") + ", " + L("10:30") + ")",
+      expect: r => r.length === 1 && r[0].wo_number === "wo1" && Number(r[0].co) === 300 && Number(r[0].sch) === 3600 && r[0].biggest_loss === "Speed loss" && Number(r[0].bl) === 630 && r[0].partly_outside === true },
+    { as: "ofm_screens", sql: "SELECT machine, is_constraint, round(charged_s) AS ch, breakdowns FROM hist.fn_report_machines($line, " + L("08:30") + ", " + L("10:30") + ") WHERE machine = 'Machine'",
+      expect: r => r.length === 1 && r[0].is_constraint === true && Number(r[0].ch) === 840 && r[0].breakdowns === 1 },
+    { as: "ofm_screens", sql: "SELECT line_name, line_path, time_zone, oee_target, has_rule FROM hist.fn_report_summary($line, " + L("08:30") + ", " + L("10:30") + ")",
+      expect: r => r[0].line_name === "Line" && r[0].line_path === "zz_test/site1/area1" && r[0].time_zone === "Australia/Melbourne" && r[0].oee_target === 0.65 && r[0].has_rule === true },
+    { as: "ofm_config", sql: "UPDATE config.line SET oee_target = 0.72 WHERE id = $line" },
+    { as: "ofm_config", sql: "UPDATE config.line SET oee_target = 72 WHERE id = $line", expect: REFUSED_BY_RULE },
+    { as: "ofm_screens", sql: "SELECT oee_target FROM hist.fn_report_summary($line, now(), now())", expect: r => r[0].oee_target === 0.72 },
+    { as: "ofm_screens", sql: "SELECT * FROM hist.fn_report_ledger($line, now(), now())", expect: NO_PERMISSION },
+    { as: "ofm_screens", sql: "SELECT oee_target FROM config.line", expect: NO_PERMISSION }] },
   { name: "dashboard period: the time picker, or the chosen shift", steps: [
     { as: "ofm_reader", sql: "SELECT (SELECT t0 = '2026-11-02 06:00+11' AND t1 = '2026-11-02 14:00+11' FROM hist.fn_dashboard_period('1793559600000-1793588400000', now(), now())) AS shift, " +
         "(SELECT t0 = '2026-11-01' FROM hist.fn_dashboard_period('all', '2026-11-01', '2026-11-02')) AS picker",

@@ -130,6 +130,10 @@ docker compose run --rm migrate example
      sign in on it with employee number and PIN (ADR-0028).
    - **OFM Trend** — https://localhost:1882/dashboard/trend: the historian's
      trends (ADR-0029).
+   - **OFM Report** — https://localhost:1882/dashboard/report: a period of a
+     line as an A4 report, *Save as PDF* (ADR-0033). The OEE target of each
+     line is *oee_target* in Mathesar's *line* table, as a fraction
+     (0.65 = 65 %).
    - **Grafana** — https://localhost:3000. Then Connections → Data sources →
      **OFM historian** → **Test** must report success.
    - **Mathesar** — https://localhost:8080; the first visit is described in steps 16–17.

@@ -74,6 +74,7 @@ erDiagram
     text display_name
     text description
     timestamptz retired_at
+    float8 oee_target
   }
   line_kpi_rule {
     int4 id PK
