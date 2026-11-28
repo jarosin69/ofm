@@ -68,3 +68,14 @@ the same period.
   no scheduled delivery yet.
 - Follow-up (step R2): shift handover mode, comparison of two chosen
   periods, changeover analysis by product pair.
+
+## Amendments
+
+- 2026-11-28: **No data, made-up operations (migration 032).** A period
+  without any recorded state, count or order shows one notice instead of
+  empty figures; time without data (state unknown) is its own chip under
+  *Data quality*. `migrate test-operations [1-12]` makes up months of
+  operations for the demo line before its real history (ADR-0006
+  amendment), so reports and *Line OEE* can be shown with history; the
+  report and Grafana's *Period shown* mark it. RP1–RP9 passed on the demo
+  kit 2026-11-28.

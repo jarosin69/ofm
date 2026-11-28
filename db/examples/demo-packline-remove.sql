@@ -50,6 +50,7 @@ WHERE line_id IN (SELECT id FROM rm_line) OR machine_id IN (SELECT id FROM rm_ma
 DELETE FROM hist.annotation_removal WHERE annotation_id IN (SELECT id FROM rm_annotations);
 DELETE FROM hist.annotation WHERE id IN (SELECT id FROM rm_annotations);
 DROP TABLE rm_annotations;
+DELETE FROM hist.test_operation_range WHERE line_id IN (SELECT id FROM rm_line);      -- made-up operations (migration 032)
 DELETE FROM hist.state_reason WHERE machine_id IN (SELECT id FROM rm_machines);
 DELETE FROM hist.machine_state_event WHERE machine_id IN (SELECT id FROM rm_machines);
 DELETE FROM hist.work_order_event WHERE work_order_id IN (SELECT id FROM config.work_order WHERE line_id IN (SELECT id FROM rm_line));

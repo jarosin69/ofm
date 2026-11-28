@@ -309,6 +309,12 @@ erDiagram
     timestamptz to_ts
     text note
   }
+  test_operation_range {
+    int4 line_id PK
+    timestamptz from_ts PK
+    timestamptz to_ts
+    text note
+  }
   work_order {
     int4 id PK
     text wo_number

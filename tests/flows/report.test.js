@@ -26,7 +26,7 @@ function fakePg(asked, opts) {
         if (/unnest/.test(text)) return { rows: [{ id: 1, has_rule: false }, { id: 7, has_rule: true }] };
         if (/AS d0/.test(text)) return { rows: [opts.period] };
         if (/fn_report_summary/.test(text)) return { rows: [{ line_name: "Packing line 1", line_path: "acme/melbourne/packing", time_zone: "Australia/Melbourne",
-                                                             oee_target: 0.65, kpi_rule_changed: false, test_data: false, has_rule: true }] };
+                                                             oee_target: 0.65, kpi_rule_changed: false, test_data: false, has_rule: true, test_operations: true }] };
         if (/fn_report_kpi/.test(text)) { const g = groupOf({ text, params }); return { rows: g === "total" ? [KPI("total")] : g === "product" ? [KPI("707", { label: "mix250" })] : [KPI("2026-10-01")] }; }
         if (/fn_report_losses/.test(text)) return { rows: [{ loss_category_id: 10, kind: "speed", reason: "Speed loss", machine: null, stops: null, seconds: 5400,
                                                             share_of_lost: 0.45, oee_points: 10 }] };
@@ -68,6 +68,10 @@ module.exports.run = async function (t) {
           m && m.topic === "report" && r.req === 4 && r.period.days === 31 && r.group === "day" && r.line.target === 0.65 && r.line.tz === "Australia/Melbourne" &&
           r.total.oee === 0.778 && r.prev && r.series.length === 1 && r.losses[0].pts === 10 && r.orders[0].wo === "WO-31" &&
           r.products[0].name === "Assorted 250 g" && r.machines[0].constraint === true && r.prevMachines.length === 1);
+  t.check("report: made-up operations in the period are passed on to the page (migration 032)", r.flags.testOperations === true && r.flags.testData === false);
+  const tpl = flow.find(n => n.id === "ofm_sc_report_view").format;
+  t.check("report page: a period without recorded operations gets one plain notice, and time without data its own chip",
+          tpl.includes("No machine states, counts or orders were recorded") && tpl.includes("without data (state unknown") && tpl.includes("Made-up test operations in this period"));
   t.check("report: only the report functions are asked, all as ofm_screens (no table read)",
           asked.every(q => q.user === "ofm_screens") && asked.every(q => /hist\.fn_report_|config\.fn_screen_model/.test(q.text)) &&
           !asked.some(q => /\bFROM\s+(config|hist)\.(?!fn_)/i.test(q.text)));

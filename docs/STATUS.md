@@ -1,8 +1,8 @@
 # OFM — Status and development plan
 
-*Updated: 2026-11-22 (R1). Update this file at the end of every working session.*
+*Updated: 2026-11-28. Update this file at the end of every working session.*
 
-**▶ We are here: historian trends H1–H2b checked (TR34 passed 2026-11-17); demo kit: OFM on the TBOX since 2026-11-19, two shifts run fine; remote access (part 1 of the demo-kit step) built 2026-11-20, RA1–RA6 passed 2026-11-21, explained for management 2026-11-22 (Overview §13.2); period reports R1 built 2026-11-22 (design and mock-up agreed the same day; RP1–RP9 to do), then R2 (shift handover, compare two periods, changeovers); next part 2 (update script, Linux quick-install guide, backup, Tailscale, UPS), then step 3a.9; H2c after the management demo.** Decided
+**▶ We are here: historian trends H1–H2b checked (TR34 passed 2026-11-17); demo kit: OFM on the TBOX since 2026-11-19, two shifts run fine; remote access (part 1 of the demo-kit step) built 2026-11-20, RA1–RA6 passed 2026-11-21, explained for management 2026-11-22 (Overview §13.2); period reports R1 built 2026-11-22, RP1–RP9 passed on the TBOX 2026-11-28 (a week of use); its follow-ups built 2026-11-28 (no-data notice, `migrate test-operations`, migration 032; RP10–RP13 to do), then R2 (shift handover, compare two periods, changeovers); next part 2 (update script, Linux quick-install guide, backup, Tailscale, UPS), then step 3a.9; H2c after the management demo.** Decided
 2026-11-02: before the plant pilot, management sees OFM on a **simulated
 packing line** (six machines, work orders, OEE and downtime) built with the
 real Phase 3a features; the simulator ships with OFM as its demo, with a
@@ -263,7 +263,7 @@ Phase 3b. Docker Desktop on the laptop for this phase (development only).
 | H2b | Historian trends, analysis: an order or shift as the period, compare a signal with itself at another time (also to the start of an order or shift), bands for machine states (colours in Mathesar), orders and shifts, smoothing per pen for display only (average, median, PT1) | ✅ 2026-11-17 (migration 026, ADR-0029 amendment; TR24–TR33 passed); compare from a moment to the second added (TR34 passed 2026-11-17) |
 | H2c | Historian trends, personal: preferences per person (dark theme…), saved charts (personal and shared; a shared chart is changed only by its author, others *Save as*), swap machine (the same signals on another machine) | ⬜ design agreed 2026-11-16 |
 | H3 | Optional: scheduled trend reports (PNG/PDF to a folder or e-mail), calculated pens | ⬜ later |
-| R1 | Period reports (ADR-0033): page *OFM Report* at `…:1882/dashboard/report` (any period up to 93 days, previous-period comparison, OEE target per line, OEE per day or week, top losses with OEE points adding up to 100 − OEE, how often against how long, planned time and GE, machines with MTBF/MTTR, orders with plan attainment and biggest loss, products with a rated-speed flag, shifts with % coded, data quality; A4 *Save as PDF*); Grafana *Line OEE*: *Top losses*, *OEE by product*, fuller *Work orders*; `hist.fn_line_kpi` about 30 times faster, same results | ✅ built 2026-11-22 (migration 031); RP1–RP9 to do |
+| R1 | Period reports (ADR-0033): page *OFM Report* at `…:1882/dashboard/report` (any period up to 93 days, previous-period comparison, OEE target per line, OEE per day or week, top losses with OEE points adding up to 100 − OEE, how often against how long, planned time and GE, machines with MTBF/MTTR, orders with plan attainment and biggest loss, products with a rated-speed flag, shifts with % coded, data quality; A4 *Save as PDF*); Grafana *Line OEE*: *Top losses*, *OEE by product*, fuller *Work orders*; `hist.fn_line_kpi` about 30 times faster, same results | ✅ 2026-11-22 (migration 031); RP1–RP9 passed 2026-11-28; follow-ups 2026-11-28: a notice for periods without data, time without data as its own chip, `migrate test-operations [1-12]` / `test-operations-remove` (made-up months of operations before the real history, marked in the report and Grafana; migration 032, ADR-0006 and ADR-0033 amendments), RP10–RP13 to do |
 | R2 | Reports for daily use: *Shift handover* mode (output against plan, hour by hour, uncoded stops, notes for the next shift), *Compare* two periods (loss by loss in OEE points), changeovers by product pair | ⬜ design and mock-up agreed 2026-11-22 |
 | 3a.9 | Simulator, part 2: S7-300, S7-1200 and CompactLogix backends, PLC data block and tag files, `demo.set_machine_backend` | ⬜ |
 | 3a.10 | Ground truth and `demo` test suite; demo in the offline bundle; demo guide; exit check (OFM's KPIs agree with the simulator, on OPC UA and on each PLC family); release `v0.3` | ⬜ |
@@ -336,9 +336,10 @@ Must be complete before the repository is made public:
 
 ## Next actions
 
-1. Period reports R1: apply, then RP1–RP9 (`tests/README.md`); then R2
-   (shift handover, compare, changeovers), design as in the mock-up of
-   2026-11-22.
+1. R1 follow-ups: apply, then RP10–RP13 on the TBOX (`tests/README.md`);
+   then R2 (shift handover, compare, changeovers), design as in the mock-up
+   of 2026-11-22. Order agreed 2026-11-28: R2, demo kit part 2, step 3a.9,
+   step 3a.10 (v0.3), the management demo C0, then H2c.
 2. Demo kit: run the demo line on the TBOX for a few days (shift pattern
    on; auto-operator on) and note anything odd. Git: develop on a branch
    on the laptop, merge into `main` when its checks pass, push; the TBOX
@@ -815,4 +816,10 @@ Numbers are stable; answered questions are removed rather than renumbered.
   3 s. The page drawn and printed in Chromium (4 A4 pages for the month);
   every new Grafana panel query run as `ofm_reader`. Not tested here:
   Grafana itself drawing the new panels, printing from Edge on Windows.
+- `migrate test-operations` was tested on the local replica: three months
+  (8,660 state changes, 698 coded stops, 138 orders, 94,000 count rows) in
+  about a second; weekly OEE 69–75 %; closer jams 5.3 OEE points before the
+  middle of the period, 2.6 after; removal left the real history row for row;
+  a report of three months needs about 12 s of database work, which the
+  page runs in parallel (6 connections).
 - The installation has been run end-to-end on one machine only.

@@ -119,6 +119,39 @@ module.exports.run = async function (t) {
     t.check("demo.start_order starts an order on the demo line, completing the running one",
             started > 0 && orders.length === 1 && orders[0].sku === "mix250" && orders[0].active && orders[0].line_topic === "acme/melbourne/packing/packline01",
             JSON.stringify(orders));
+    // made-up operations (migration 032): one month before the real history, marked, refused twice, removed exactly
+    const LINE = "(SELECT l.id FROM config.line l JOIN config.area a ON a.id = l.area_id WHERE a.name = 'packing' AND l.name = 'packline01' AND l.retired_at IS NULL)";
+    const REAL = `SELECT (SELECT count(*) FROM hist.machine_state_event e JOIN config.machine m ON m.id = e.machine_id WHERE m.line_id = ${LINE})::int AS ev,
+      (SELECT count(*) FROM hist.production_count c JOIN config.machine_property p ON p.id = c.property_id JOIN config.machine m ON m.id = p.machine_id WHERE m.line_id = ${LINE})::int AS counts,
+      (SELECT count(*) FROM config.work_order WHERE line_id = ${LINE})::int AS orders,
+      (SELECT count(*) FROM hist.state_reason r JOIN config.machine m ON m.id = r.machine_id WHERE m.line_id = ${LINE})::int AS reasons`;
+    await db.query(read("demo-test-operations-remove.sql"));          // start from none (removal has its own check below)
+    const real = (await db.query(REAL)).rows[0];
+    await db.query("SET LOCAL ofm.test_months = '1'");
+    await db.query(read("demo-test-operations.sql"));
+    const made = (await db.query(`WITH r AS (SELECT * FROM hist.test_operation_range WHERE line_id = ${LINE})
+      SELECT (SELECT count(*) FROM r)::int AS ranges, (SELECT max(to_ts) FROM r) AS to_ts,
+        (SELECT min(e.ts) FROM hist.machine_state_event e JOIN config.machine m ON m.id = e.machine_id WHERE m.line_id = ${LINE} AND e.ts >= (SELECT max(to_ts) FROM r)) AS first_real,
+        (SELECT count(*) FROM config.work_order WHERE line_id = ${LINE} AND wo_number LIKE 'TEST-%')::int AS orders,
+        (SELECT count(*) FROM hist.annotation WHERE line_id = ${LINE} AND text LIKE '%made-up test operations%')::int AS notes,
+        k.oee, k.good, k.pos9_s, k.pos12_s, k.unaccounted_s, k.pos6_s,
+        (SELECT test_operations FROM hist.fn_report_summary(${LINE}, (SELECT from_ts FROM r), (SELECT to_ts FROM r))) AS flagged,
+        (SELECT label FROM hist.fn_dashboard_period(${LINE}, 'all', 'none', (SELECT from_ts FROM r), (SELECT to_ts FROM r))) AS label
+      FROM r, hist.fn_report_kpi(${LINE}, r.from_ts, r.to_ts, 'total') k`)).rows[0] || {};
+    t.check("test-operations: a month of made-up states, stops, orders and counts before the real history, OEE 55-85 %",
+            made.ranges === 1 && made.orders > 20 && made.good > 100000 && made.oee > 0.55 && made.oee < 0.85 && made.pos9_s > 0 && made.pos12_s > 0 &&
+            made.pos6_s > 0 && made.notes === 1 && (made.first_real === null || made.first_real >= made.to_ts), JSON.stringify(made));
+    t.check("test-operations: the report and Grafana's period say it is made-up", made.flagged === true && /made-up test data/.test(made.label || ""), made.label);
+    await db.query("SAVEPOINT twice");
+    let again = null;
+    try { await db.query(read("demo-test-operations.sql")); } catch (e) { again = e.message; }
+    await db.query("ROLLBACK TO SAVEPOINT twice");
+    t.check("test-operations: refused while made-up operations exist", /already exist/.test(again || ""), again);
+    await db.query(read("demo-test-operations-remove.sql"));
+    const after = (await db.query(REAL)).rows[0];
+    const left = (await db.query(`SELECT count(*)::int AS n FROM hist.test_operation_range WHERE line_id = ${LINE}`)).rows[0].n;
+    t.check("test-operations-remove takes exactly the made-up history away (real history unchanged)",
+            JSON.stringify(after) === JSON.stringify(real) && left === 0, JSON.stringify({ real, after, left }));
     await db.query("SAVEPOINT before_remove");
     await db.query(read("demo-packline-remove.sql"));
     // While the removal is open, a value written by anyone else must wait

@@ -602,6 +602,19 @@ refused). By hand, after a few days of the simulated line (or a month):
 | RP8 | Copy the address into a new tab; open it remotely too (RA2) | the same line, period and comparison |
 | RP9 | Grafana *Line OEE*, *Last 30 days* | *Top losses*, *OEE by product* and the fuller *Work orders* (A, P, Q, scheduled time, changeover, biggest loss) draw; the dashboard is no slower than for a day |
 
+**No data, made-up operations** (migration 032, ADR-0033 amendment).
+Automated: `database` (`demo`: a month made up before the real history with
+OEE between 55 and 85 %, marked in the report and Grafana's period, refused
+a second time, removed exactly); `flows` (`report`: the flag reaches the
+page; the notice and the chips are on it). By hand, on the TBOX:
+
+| # | Do | Expect |
+|---|---|---|
+| RP10 | Report, *From – To* a month before the TBOX's first day (e.g. 1–31/10/2026), before RP11 | one notice: *No machine states, counts or orders were recorded …*; no tiles or tables |
+| RP11 | `docker compose run --rm migrate test-operations` | `Made-up operations: <date> to <date> (Australia/Melbourne): … state changes, … coded stops, … orders, … count rows`, within a minute |
+| RP12 | Report *Last month* and *From – To* over the three months; Grafana *Line OEE* with the time picker over one of them; trend page, 30 d with *States* and *Orders* bands | a full report with OEE around 70 %, *Made-up test operations in this period* under *Data quality*; Grafana's *Period shown* ends in *· made-up test data*; the trend's bands show the made-up states and orders; an annotation *Closer guide rail replaced* in the middle of the period, and *Closer: carton jam* about half as large after it |
+| RP13 | `docker compose run --rm migrate test-operations` again; then `docker compose run --rm migrate test-operations-remove` | the first is refused (*already exist … remove them first*); after the removal RP10's notice is back, and the real days since the TBOX started are unchanged |
+
 ## Adding a test
 
 - **A schema rule:** add an example file to `tests/schemas/<schema>/valid/`

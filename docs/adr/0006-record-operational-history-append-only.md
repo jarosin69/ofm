@@ -150,3 +150,11 @@ existing decisions:
   `hist.state_reason` gains `person_id` for reasons coded on the line view
   (ADR-0027, ADR-0028); `assigned_by` keeps the name as it was; PLC reasons
   have none.
+- 2026-11-28: **Made-up operations for tests and demos (migration 032).**
+  `migrate test-operations` writes months of made-up state events, reasons,
+  work orders and counts for the demo line, always before its first real
+  history, and records each period in `hist.test_operation_range`; reports
+  and Grafana mark it. `test-operations-remove` deletes exactly those rows,
+  as the administrator. Like `test-history` (ADR-0002 amendment of
+  2026-11-11) it is the only deletion of operational history besides
+  removing the demo line: these rows were never recorded by the runtime.

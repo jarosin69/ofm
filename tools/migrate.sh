@@ -16,6 +16,8 @@
 #   docker compose run --rm migrate demo-remove  remove it and all its history
 #   docker compose run --rm migrate test-history         add a year of made-up history to the demo line (step H1)
 #   docker compose run --rm migrate test-history-remove  remove all made-up history
+#   docker compose run --rm migrate test-operations [N]  add N months (1-12, default 3) of made-up operations to the demo line
+#   docker compose run --rm migrate test-operations-remove  remove them
 #
 # The stack also runs "up" automatically on every "docker compose up".
 # After applying migrations, "up" sets the passwords of the platform roles
@@ -293,6 +295,28 @@ cmd_test_history_remove() {
   echo "Made-up history removed, with its averages; measured values are untouched."
 }
 
+# Made-up operations for the demo line (migration 032): N months of machine
+# states, stops with reasons, work orders and counts, before the line's real
+# history begins, so that reports and Line OEE have months to show. One
+# transaction; refused while made-up operations exist.
+cmd_test_operations() {
+  months=${1:-3}
+  if ! echo "$months" | grep -Eq '^([1-9]|1[0-2])$'; then echo "Months must be 1 to 12, not '$months'." >&2; exit 2; fi
+  echo "Making up $months month(s) of operations for the demo line (under a minute)..."
+  { echo "BEGIN;"; echo "SET LOCAL ofm.test_months = '$months';"; cat "$REPO/db/examples/demo-test-operations.sql"; echo; echo "COMMIT;"; } | sql
+  sql -At -c "SELECT 'Made-up operations: ' || to_char(r.from_ts AT TIME ZONE s.time_zone, 'DD/MM/YYYY') || ' to ' ||
+                     to_char(r.to_ts AT TIME ZONE s.time_zone - interval '1 day', 'DD/MM/YYYY') || ' (' || s.time_zone || '): ' || r.note
+              FROM hist.test_operation_range r JOIN config.line l ON l.id = r.line_id
+              JOIN config.area a ON a.id = l.area_id JOIN config.site s ON s.id = a.site_id"
+  echo "Done. Try it: https://<server>:1882/dashboard/report, demo line, Last month."
+}
+
+cmd_test_operations_remove() {
+  if [ -z "$(sql -At -c "SELECT 1 FROM hist.test_operation_range LIMIT 1")" ]; then echo "There are no made-up operations."; return 0; fi
+  { echo "BEGIN;"; cat "$REPO/db/examples/demo-test-operations-remove.sql"; echo; echo "COMMIT;"; } | sql
+  echo "Made-up operations removed; real history is untouched."
+}
+
 # Creates a personal login for editing the model. It has exactly the rights
 # of ofm_config, but the audit log and updated_by record the person's name.
 cmd_adduser() {
@@ -331,5 +355,7 @@ case "${1:-up}" in
   demo-remove) cmd_demo_remove ;;
   test-history) cmd_test_history ;;
   test-history-remove) cmd_test_history_remove ;;
-  *) echo "Usage: migrate [up|status|example|erd|adduser NAME|loadtest [N]|loadtest-remove|demo|demo-remove|test-history|test-history-remove]" >&2; exit 2 ;;
+  test-operations) cmd_test_operations "${2:-3}" ;;
+  test-operations-remove) cmd_test_operations_remove ;;
+  *) echo "Usage: migrate [up|status|example|erd|adduser NAME|loadtest [N]|loadtest-remove|demo|demo-remove|test-history|test-history-remove|test-operations [N]|test-operations-remove]" >&2; exit 2 ;;
 esac
